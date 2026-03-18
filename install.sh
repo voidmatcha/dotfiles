@@ -104,7 +104,7 @@ link_file "$DOTFILES_DIR/configs/.gitconfig-work"      "$HOME/.gitconfig-work"
 mkdir -p "$HOME/.config"
 link_file "$DOTFILES_DIR/configs/starship.toml"        "$HOME/.config/starship.toml"
 
-mkdir -p "$HOME/.claude/hooks"
+mkdir -p "$HOME/.claude/hooks" "$HOME/.claude/plugins"
 if $DRY_RUN; then
   info "[dry-run] Generate ~/.claude/settings.json (HONE_DIR=$HONE_DIR)"
 else

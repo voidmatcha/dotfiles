@@ -86,4 +86,20 @@ for plugin in "${PLUGINS[@]}"; do
   fi
 done
 
+# session-wrap plugin
+if ! [ -d ~/.claude/plugins/session-wrap ]; then
+  if $DRY_RUN; then
+    info "[dry-run] install session-wrap plugin"
+  else
+    TMPDIR=$(mktemp -d)
+    git clone https://github.com/team-attention/plugins-for-claude-natives "$TMPDIR" \
+      && cp -r "$TMPDIR/plugins/session-wrap" ~/.claude/plugins/ \
+      && info "Installed plugin: session-wrap" \
+      || info "⚠️  Failed plugin: session-wrap"
+    rm -rf "$TMPDIR"
+  fi
+else
+  info "session-wrap already installed, skipping"
+fi
+
 info "Claude Code setup done"
