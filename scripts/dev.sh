@@ -134,6 +134,19 @@ else
   fi
 fi
 
+# ── oh-my-opencode (OpenCode AI agent plugin) ──
+info "Checking oh-my-opencode..."
+if $DRY_RUN; then
+  info "[dry-run] Skipping oh-my-opencode install"
+else
+  if ! npm list -g oh-my-opencode &>/dev/null; then
+    info "Installing oh-my-opencode (global)"
+    npm install -g oh-my-opencode@latest 2>/dev/null || info "⚠️  oh-my-opencode install failed — check manually"
+  else
+    info "oh-my-opencode already installed"
+  fi
+fi
+
 # ── rtk (Claude Code hook for LLM token savings) ──
 info "Checking rtk hook setup..."
 if $DRY_RUN; then

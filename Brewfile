@@ -41,6 +41,7 @@ cask "claude-code"
 cask "cursor"
 cask "zoom"
 cask "keka"                     # file archiver
+cask "cmux"                     # Ghostty-based terminal for AI coding agents
 
 # ── VS Code extensions ──
 vscode "alefragnani.bookmarks"
