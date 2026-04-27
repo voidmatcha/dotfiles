@@ -20,6 +20,8 @@ brew "tmux"                     # terminal multiplexer
 brew "vercel-cli"               # Vercel deployment CLI
 brew "postgresql"               # PostgreSQL database
 brew "mole"
+brew "google-authenticator-libpam"  # TOTP for SSH 2FA
+brew "qrencode"                     # QR code for TOTP setup
 brew "mas"                      # Mac App Store CLI
 
 

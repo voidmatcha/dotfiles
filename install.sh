@@ -43,6 +43,9 @@ echo "  5. Git — config + SSH keys (git.sh)"
 echo "  6. Claude Code setup (claude.sh)"
 echo "  7. dotfiles symlinks"
 echo "  8. hone-english (Claude Code hooks)"
+echo "  9. SSH server (ssh-server.sh)"
+echo " 10. DuckDNS dynamic DNS (ddns.sh)"
+echo " 11. OTP two-factor auth (otp.sh)"
 echo ""
 
 read -rp "Ready to continue? (y/N) " confirm
@@ -52,31 +55,31 @@ if [[ "$confirm" != [yY] ]]; then
 fi
 
 # ── 1. Homebrew ──
-info "1/8 Installing Homebrew & apps..."
+info "1/11 Installing Homebrew & apps..."
 bash "$DOTFILES_DIR/scripts/brew.sh"
 
 # ── 2. macOS settings ──
-info "2/8 Applying macOS system settings..."
+info "2/11 Applying macOS system settings..."
 bash "$DOTFILES_DIR/scripts/macos.sh"
 
 # ── 3. Dev environment ──
-info "3/8 Setting up dev environment..."
+info "3/11 Setting up dev environment..."
 bash "$DOTFILES_DIR/scripts/dev.sh"
 
 # ── 4. Shell ──
-info "4/8 Configuring shell environment..."
+info "4/11 Configuring shell environment..."
 bash "$DOTFILES_DIR/scripts/shell.sh"
 
 # ── 5. Git ──
-info "5/8 Configuring Git..."
+info "5/11 Configuring Git..."
 bash "$DOTFILES_DIR/scripts/git.sh"
 
 # ── 6. Claude Code ──
-info "6/8 Setting up Claude Code..."
+info "6/11 Setting up Claude Code..."
 bash "$DOTFILES_DIR/scripts/claude.sh"
 
 # ── 7. Symlinks ──
-info "7/8 Creating dotfiles symlinks..."
+info "7/11 Creating dotfiles symlinks..."
 
 link_file() {
   local src="$1"
@@ -129,7 +132,7 @@ mkdir -p "$RTK_CONFIG_DIR"
 link_file "$DOTFILES_DIR/configs/rtk-config.toml"     "$RTK_CONFIG_DIR/config.toml"
 
 # ── 8. hone-english ──
-info "8/8 Cloning hone-english..."
+info "8/11 Cloning hone-english..."
 if [ -d "$HONE_DIR" ]; then
   info "hone-english already exists, skipping"
 elif $DRY_RUN; then
@@ -138,6 +141,18 @@ else
   git clone https://github.com/dididy/hone-english "$HONE_DIR"
   info "Cloned: hone-english → $HONE_DIR"
 fi
+
+# ── 9. SSH server ──
+info "9/11 Setting up SSH server..."
+bash "$DOTFILES_DIR/scripts/ssh-server.sh"
+
+# ── 10. DuckDNS ──
+info "10/11 Setting up DuckDNS..."
+bash "$DOTFILES_DIR/scripts/ddns.sh"
+
+# ── 11. OTP ──
+info "11/11 Setting up OTP two-factor auth..."
+bash "$DOTFILES_DIR/scripts/otp.sh"
 
 echo ""
 info "Done."

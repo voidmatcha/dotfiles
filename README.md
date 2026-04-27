@@ -16,7 +16,7 @@ cd ~/dotfiles
 
 **Homebrew + apps** — packages from `Brewfile`, including starship and the usual CLI tools.
 
-**macOS settings** — dock autohide, Finder tweaks, keyboard repeat rates, CapsLock → Escape, three-finger drag, screenshots to `~/Desktop/screenshots`.
+**macOS settings** — dock autohide, Finder tweaks, keyboard repeat rates, CapsLock → Escape, three-finger drag, screenshots to `~/Screenshots`.
 
 **Dev tools:**
 - nvm + Node.js LTS, corepack (pnpm + yarn)
@@ -43,6 +43,12 @@ cd ~/dotfiles
 
 **hone-english** — cloned separately to `~/Documents/hone-english` (Claude Code hooks for English learning).
 
+**SSH server** — enables macOS Remote Login with hardened sshd config (key + OTP required, no root, no password).
+
+**DuckDNS** — dynamic DNS via LaunchAgent, updates your public IP to `*.duckdns.org` every 5 minutes.
+
+**OTP** — TOTP two-factor auth for SSH using google-authenticator PAM module. Requires both SSH key and authenticator app code.
+
 ## Structure
 
 ```
@@ -55,7 +61,10 @@ dotfiles/
 │   ├── dev.sh              # nvm, pyenv, Java, etc.
 │   ├── shell.sh            # Oh My Zsh + plugins
 │   ├── git.sh              # Git config + SSH keys
-│   └── claude.sh           # Claude Code skills, plugins, tools
+│   ├── claude.sh           # Claude Code skills, plugins, tools
+│   ├── ssh-server.sh       # SSH server + hardened config
+│   ├── ddns.sh             # DuckDNS dynamic DNS
+│   └── otp.sh              # TOTP two-factor auth
 └── configs/
     ├── .zshrc
     ├── .gitconfig
@@ -66,6 +75,9 @@ dotfiles/
     ├── claude-settings.json
     ├── rtk-config.toml
     ├── starship.toml
+    ├── com.user.duckdns.plist  # DuckDNS LaunchAgent template
+    ├── sshd_config.d/
+    │   └── hardened.conf   # hardened sshd config template
     └── hooks/
         └── skill-eval.sh   # forced skill activation hook
 ```
