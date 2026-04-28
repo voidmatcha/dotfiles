@@ -1,3 +1,4 @@
 .DS_Store
 configs/.gitconfig-personal
 configs/.gitconfig-work
+.sisyphus/

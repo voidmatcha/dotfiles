@@ -1,11 +1,8 @@
 #!/bin/bash
 set -euo pipefail
-
-DRY_RUN="${DRY_RUN:-false}"
-
-GREEN='\033[0;32m'
-NC='\033[0m'
-info() { echo -e "${GREEN}[claude]${NC} $1"; }
+TAG="claude"
+# shellcheck source=scripts/lib/common.sh
+source "$(cd "$(dirname "$0")" && pwd)/lib/common.sh"
 
 info "Setting up Claude Code..."
 
@@ -14,14 +11,22 @@ if ! ls ~/.agents/skills/ralph-kage-bunshin-* &>/dev/null 2>&1; then
   if $DRY_RUN; then
     info "[dry-run] npm install -g ralph-kage-bunshin"
   else
-    npm install -g ralph-kage-bunshin && info "ralph-kage-bunshin installed" || info "⚠️  ralph-kage-bunshin install failed"
+    if npm install -g ralph-kage-bunshin; then
+      info "ralph-kage-bunshin installed"
+    else
+      info "⚠️  ralph-kage-bunshin install failed"
+    fi
   fi
 fi
 
 if $DRY_RUN; then
   info "[dry-run] ralph install-skills"
 else
-  ralph install-skills && info "ralph install-skills done" || info "⚠️  ralph install-skills failed"
+  if ralph install-skills; then
+    info "ralph install-skills done"
+  else
+    info "⚠️  ralph install-skills failed"
+  fi
 fi
 
 # npm 11.x breaks npx for packages not in package.json
@@ -29,7 +34,11 @@ if ! command -v skills &>/dev/null; then
   if $DRY_RUN; then
     info "[dry-run] npm install -g skills"
   else
-    npm install -g skills && info "skills CLI installed" || info "⚠️  skills CLI install failed"
+    if npm install -g skills; then
+      info "skills CLI installed"
+    else
+      info "⚠️  skills CLI install failed"
+    fi
   fi
 fi
 
@@ -37,7 +46,7 @@ SKILL_REPOS=(
   "dididy/e2e-skills"
   "dididy/ui-skills"
   "blader/humanizer"
-  "forrestchang/andrej-karpathy-skills"
+  "forrestchang/andrej-karpathy-skills@karpathy-guidelines"
   "obra/superpowers"
   "vercel-labs/agent-skills"
   "anthropics/skills@frontend-design"
@@ -54,9 +63,11 @@ for repo in "${SKILL_REPOS[@]}"; do
   if $DRY_RUN; then
     info "[dry-run] skills add $repo --yes --global"
   else
-    skills add "$repo" --yes --global 2> >(grep -v "invalid option" >&2) \
-      && info "Installed: $repo" \
-      || info "⚠️  Failed: $repo"
+    if skills add "$repo" --yes --global 2> >(grep -v "invalid option" >&2); then
+      info "Installed: $repo"
+    else
+      info "⚠️  Failed: $repo"
+    fi
   fi
 done
 
@@ -65,9 +76,12 @@ for url_args in "${SKILL_URLS[@]}"; do
     info "[dry-run] npx skills add $url_args --yes --global"
   else
     # shellcheck disable=SC2086
-    npx skills add $url_args --yes --global 2> >(grep -v "invalid option" >&2) \
-      && info "Installed: $url_args" \
-      || info "⚠️  Failed: $url_args"
+    # url_args intentionally stores pre-tokenized flags.
+    if npx skills add $url_args --yes --global 2> >(grep -v "invalid option" >&2); then
+      info "Installed: $url_args"
+    else
+      info "⚠️  Failed: $url_args"
+    fi
   fi
 done
 
@@ -81,9 +95,11 @@ for plugin in "${PLUGINS[@]}"; do
   if $DRY_RUN; then
     info "[dry-run] claude plugin install $plugin"
   else
-    claude plugin install "$plugin" \
-      && info "Installed plugin: $plugin" \
-      || info "⚠️  Failed plugin: $plugin"
+    if claude plugin install "$plugin"; then
+      info "Installed plugin: $plugin"
+    else
+      info "⚠️  Failed plugin: $plugin"
+    fi
   fi
 done
 
@@ -93,10 +109,12 @@ if ! [ -d ~/.claude/plugins/session-wrap ]; then
     info "[dry-run] install session-wrap plugin"
   else
     TMPDIR=$(mktemp -d)
-    git clone https://github.com/team-attention/plugins-for-claude-natives "$TMPDIR" \
-      && cp -r "$TMPDIR/plugins/session-wrap" ~/.claude/plugins/ \
-      && info "Installed plugin: session-wrap" \
-      || info "⚠️  Failed plugin: session-wrap"
+    if git clone https://github.com/team-attention/plugins-for-claude-natives "$TMPDIR" \
+      && cp -r "$TMPDIR/plugins/session-wrap" ~/.claude/plugins/; then
+      info "Installed plugin: session-wrap"
+    else
+      info "⚠️  Failed plugin: session-wrap"
+    fi
     rm -rf "$TMPDIR"
   fi
 else

@@ -31,23 +31,34 @@ cd ~/dotfiles
 **Git** — separate personal/work accounts via `includeIf`, each with its own SSH key.
 
 **Claude Code:**
-- Skills — humanizer, e2e-skills, karpathy-guidelines, superpowers, agent-skills, frontend-design, security-best-practices, code-review, ultrawork, clarify
+- Skills — agent-skills, clarify, code-review, e2e-skills, frontend-design, humanizer, karpathy-guidelines, security-best-practices, superpowers, ui-skills, ultrawork
 - Plugin — ralph-loop (iterative autonomous dev loops)
 - Tool — ralph-kage-bunshin (parallel multi-agent orchestration via tmux)
-- Hooks — skill-eval (forced skill activation), hone-english (grammar feedback + vault logging)
+- Hooks — skill-eval (forced-eval prompt injection per Scott Spence pattern, ~84% activation rate), hone-english (grammar feedback + vault logging)
 - MCP — chrome-devtools (browser control via Chrome DevTools Protocol)
 
-**Shared agent config** — `~/.agent/AGENT.md` with shared rules, symlinked to both `~/.claude/` (via `@` import) and `~/.cursor/rules/`.
+**opencode:**
+- Brew tap — `anomalyco/tap` (third-party tap with current versions; homebrew-core formula is stale)
+- Plugins (auto-installed via Bun on first run from `opencode.json`):
+  - `oh-my-openagent@latest` — Sisyphus/Oracle/Librarian/Explore agents + category-based delegation
+  - `@ex-machina/opencode-anthropic-auth@1.7.5` — Anthropic OAuth refresh
+- Config — `configs/opencode/{opencode.json, oh-my-openagent.json}` symlinked to `~/.config/opencode/`
+- Auth — `opencode.sh` detects missing `~/.local/share/opencode/auth.json` and prompts to run `opencode auth login`
+- AGENTS.md — same canonical file as Claude Code/Cursor (symlinked to `~/.config/opencode/AGENTS.md`)
 
-**Dotfiles symlinks** — zshrc, gitconfig, starship.toml, Claude Code settings, skill-eval hook.
+**Shared agent config** — canonical `~/.agent/AGENTS.md` with shared rules, also symlinked to `~/.cursor/rules/AGENTS.md` and (after opencode setup) `~/.config/opencode/AGENTS.md`. `~/.claude/CLAUDE.md` imports it via `@AGENTS.md`.
+
+**Dotfiles symlinks** — zshrc, gitconfig, Claude Code settings, skill-eval hook.
 
 **hone-english** — cloned separately to `~/Documents/hone-english` (Claude Code hooks for English learning).
 
 **SSH server** — enables macOS Remote Login with hardened sshd config (key + OTP required, no root, no password).
 
-**DuckDNS** — dynamic DNS via LaunchAgent, updates your public IP to `*.duckdns.org` every 5 minutes.
+**Tailscale** — private mesh VPN for remote access. Each device gets a stable `100.x.x.x` IP and `*.ts.net` hostname. No port forwarding, no public exposure. Free tier covers personal use.
 
-**OTP** — TOTP two-factor auth for SSH using google-authenticator PAM module. Requires both SSH key and authenticator app code.
+**OTP** — TOTP two-factor auth for SSH using google-authenticator PAM module. Requires both SSH key and authenticator app code (defense-in-depth over Tailscale).
+
+**mosh** — mobile shell for resilient remote access. Auto-reconnects on network changes (WiFi → LTE, sleep/wake). Use with tmux for persistent sessions: `mosh yongjae@100.x.x.x -- tmux attach`
 
 ## Structure
 
@@ -62,24 +73,28 @@ dotfiles/
 │   ├── shell.sh            # Oh My Zsh + plugins
 │   ├── git.sh              # Git config + SSH keys
 │   ├── claude.sh           # Claude Code skills, plugins, tools
+│   ├── lib/
+│   │   └── common.sh       # shared helpers (info/warn/error/run_or_dry/link_file)
+│   ├── opencode.sh         # opencode config + plugin auto-install + auth prompt
 │   ├── ssh-server.sh       # SSH server + hardened config
-│   ├── ddns.sh             # DuckDNS dynamic DNS
+│   ├── tailscale.sh        # Tailscale VPN setup
 │   └── otp.sh              # TOTP two-factor auth
 └── configs/
     ├── .zshrc
     ├── .gitconfig
     ├── .gitconfig-personal
     ├── .gitconfig-work
-    ├── AGENT.md            # shared agent rules (Claude + Cursor)
-    ├── CLAUDE.md           # Claude Code instructions (imports AGENT.md)
+    ├── AGENTS.md           # canonical agent rules (Claude + Cursor + opencode)
+    ├── CLAUDE.md           # Claude Code wrapper (imports AGENTS.md)
     ├── claude-settings.json
+    ├── opencode/
+    │   ├── opencode.json           # opencode global config + plugin list
+    │   └── oh-my-openagent.json    # agents/categories with model fallbacks
     ├── rtk-config.toml
-    ├── starship.toml
-    ├── com.user.duckdns.plist  # DuckDNS LaunchAgent template
     ├── sshd_config.d/
     │   └── hardened.conf   # hardened sshd config template
     └── hooks/
-        └── skill-eval.sh   # forced skill activation hook
+        └── skill-eval.sh   # forced-eval prompt injection hook
 ```
 
 ## Run individual scripts

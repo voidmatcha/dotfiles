@@ -1,3 +1,6 @@
+# ── Taps ──
+tap "anomalyco/tap"
+
 # ── CLI tools ──
 brew "git"
 brew "gh"
@@ -9,8 +12,11 @@ brew "htop"                     # system monitor (top replacement)
 brew "ripgrep"                  # fast grep replacement
 brew "fd"                       # friendlier find replacement
 brew "bat"                      # cat with syntax highlighting
+brew "git-delta"                # syntax-highlighted git diff/blame viewer
 brew "eza"                      # ls with icons and colors
 brew "fzf"                      # fuzzy finder (Ctrl+R etc.)
+brew "atuin"                    # SQLite-backed shell history with sync
+brew "direnv"                   # auto-load per-directory env from .envrc
 brew "zoxide"                   # smarter cd with directory learning
 brew "starship"                 # cross-shell prompt
 brew "rtk"                      # CLI proxy for 60-90% LLM token savings
@@ -22,6 +28,8 @@ brew "postgresql"               # PostgreSQL database
 brew "mole"
 brew "google-authenticator-libpam"  # TOTP for SSH 2FA
 brew "qrencode"                     # QR code for TOTP setup
+brew "mosh"                         # mobile shell (SSH with auto-reconnect)
+brew "anomalyco/tap/opencode"   # AI coding agent (third-party tap; tracks latest)
 brew "mas"                      # Mac App Store CLI
 
 
@@ -44,6 +52,7 @@ cask "cursor"
 cask "zoom"
 cask "keka"                     # file archiver
 cask "cmux"                     # Ghostty-based terminal for AI coding agents
+cask "tailscale-app"            # private mesh VPN for remote access (cask renamed from "tailscale" in 2025)
 
 # ── VS Code extensions ──
 vscode "alefragnani.bookmarks"
@@ -81,5 +90,7 @@ vscode "mkxml.vscode-filesize"
 vscode "tomoki1207.pdf"
 vscode "vscode-icons-team.vscode-icons"
 
-# ── Fonts ──
-cask "font-meslo-lg-nerd-font"  # for Starship icons
+# ── Mac App Store apps (managed via mas) ──
+# Re-generate with: mas list | awk '{id=$1; $1=""; sub(/^ /,""); name=$0; sub(/ +\([^)]+\) *$/,"",name); printf "mas \"%s\", id: %s\n", name, id}'
+
+

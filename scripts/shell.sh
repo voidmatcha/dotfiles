@@ -1,11 +1,8 @@
 #!/bin/bash
 set -euo pipefail
-
-DRY_RUN="${DRY_RUN:-false}"
-
-GREEN='\033[0;32m'
-NC='\033[0m'
-info() { echo -e "${GREEN}[shell]${NC} $1"; }
+TAG="shell"
+# shellcheck source=scripts/lib/common.sh
+source "$(cd "$(dirname "$0")" && pwd)/lib/common.sh"
 
 ZSH_CUSTOM="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}"
 

@@ -1,14 +1,8 @@
 #!/bin/bash
 set -euo pipefail
-
-DOTFILES_DIR="${DOTFILES_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
-DRY_RUN="${DRY_RUN:-false}"
-
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
-info() { echo -e "${GREEN}[ssh]${NC} $1"; }
-warn() { echo -e "${YELLOW}[ssh]${NC} $1"; }
+TAG="ssh"
+# shellcheck source=scripts/lib/common.sh
+source "$(cd "$(dirname "$0")" && pwd)/lib/common.sh"
 
 # ── Enable Remote Login ──
 info "Enabling macOS Remote Login (SSH server)..."
@@ -35,22 +29,26 @@ fi
 # ── Install hardened config ──
 SSHD_CONFIG_DIR="/etc/ssh/sshd_config.d"
 HARDENED_CONF="$SSHD_CONFIG_DIR/hardened.conf"
+SSHD_MAIN="/etc/ssh/sshd_config"
+INCLUDE_LINE="Include /etc/ssh/sshd_config.d/*.conf"
+INCLUDE_ADDED_BY_US=false
 
 info "Installing hardened sshd config..."
 if $DRY_RUN; then
-  info "[dry-run] sudo cp hardened.conf → $HARDENED_CONF"
+  info "[dry-run] sudo cp hardened.conf -> $HARDENED_CONF"
 else
   sudo mkdir -p "$SSHD_CONFIG_DIR"
 
-  # Check if /etc/ssh/sshd_config includes the config.d directory
-  if ! grep -q "^Include.*sshd_config.d" /etc/ssh/sshd_config 2>/dev/null; then
-    warn "Adding Include directive to /etc/ssh/sshd_config"
-    echo "Include /etc/ssh/sshd_config.d/*.conf" | sudo tee -a /etc/ssh/sshd_config >/dev/null
+  if ! sudo grep -q "^Include.*sshd_config.d" "$SSHD_MAIN" 2>/dev/null; then
+    warn "Adding Include directive to $SSHD_MAIN"
+    echo "$INCLUDE_LINE" | sudo tee -a "$SSHD_MAIN" >/dev/null
+    INCLUDE_ADDED_BY_US=true
   fi
 
-  sed "s/__SSH_USER__/$(whoami)/g" "$DOTFILES_DIR/configs/sshd_config.d/hardened.conf" | sudo tee "$HARDENED_CONF" >/dev/null
+  sed "s/__SSH_USER__/$(whoami)/g" "$DOTFILES_DIR/configs/sshd_config.d/hardened.conf" \
+    | sudo tee "$HARDENED_CONF" >/dev/null
   sudo chmod 644 "$HARDENED_CONF"
-  info "Installed: hardened.conf → $HARDENED_CONF (AllowUsers=$(whoami))"
+  info "Installed: hardened.conf -> $HARDENED_CONF (AllowUsers=$(whoami))"
 fi
 
 # ── Validate and reload ──
@@ -65,6 +63,10 @@ if ! $DRY_RUN; then
     warn "sshd config validation failed (see error above)"
     warn "Reverting hardened config..."
     sudo rm -f "$HARDENED_CONF"
+    if $INCLUDE_ADDED_BY_US; then
+      warn "Reverting Include directive added to $SSHD_MAIN"
+      sudo sed -i '' "\\|^${INCLUDE_LINE}\$|d" "$SSHD_MAIN"
+    fi
     exit 1
   fi
 fi

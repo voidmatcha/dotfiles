@@ -1,12 +1,8 @@
 #!/bin/bash
 set -euo pipefail
-
-DOTFILES_DIR="${DOTFILES_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
-DRY_RUN="${DRY_RUN:-false}"
-
-GREEN='\033[0;32m'
-NC='\033[0m'
-info() { echo -e "${GREEN}[brew]${NC} $1"; }
+TAG="brew"
+# shellcheck source=scripts/lib/common.sh
+source "$(cd "$(dirname "$0")" && pwd)/lib/common.sh"
 
 # Install Homebrew
 if ! command -v brew &>/dev/null; then

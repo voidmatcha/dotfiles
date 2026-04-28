@@ -1,14 +1,8 @@
 #!/bin/bash
 set -euo pipefail
-
-DOTFILES_DIR="${DOTFILES_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
-DRY_RUN="${DRY_RUN:-false}"
-
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
-info() { echo -e "${GREEN}[git]${NC} $1"; }
-warn() { echo -e "${YELLOW}[git]${NC} $1"; }
+TAG="git"
+# shellcheck source=scripts/lib/common.sh
+source "$(cd "$(dirname "$0")" && pwd)/lib/common.sh"
 
 # ── User info ──
 echo ""
@@ -61,9 +55,19 @@ generate_ssh_key() {
   local name="$1"
   local email="$2"
   local key_file="$HOME/.ssh/id_ed25519_$name"
+  local pub_file="${key_file}.pub"
 
-  if [ -f "$key_file" ]; then
-    info "SSH key already exists: $key_file"
+  if [ -f "$key_file" ] && [ -f "$pub_file" ]; then
+    info "SSH key already exists: $key_file (with .pub)"
+    return
+  fi
+
+  if [ -f "$key_file" ] && [ ! -f "$pub_file" ]; then
+    warn "Found $key_file but no .pub — regenerating .pub from private key"
+    if ! $DRY_RUN; then
+      ssh-keygen -y -f "$key_file" > "$pub_file"
+      chmod 644 "$pub_file"
+    fi
     return
   fi
 
@@ -71,7 +75,12 @@ generate_ssh_key() {
   if $DRY_RUN; then
     info "[dry-run] Skipping ssh-keygen"
   else
-    ssh-keygen -t ed25519 -C "$email" -f "$key_file"
+    read -rp "Use a passphrase for $name key? (Y/n) " want_pw
+    if [[ "$want_pw" =~ ^[Nn]$ ]]; then
+      ssh-keygen -t ed25519 -C "$email" -f "$key_file" -N ""
+    else
+      ssh-keygen -t ed25519 -C "$email" -f "$key_file"
+    fi
   fi
 }
 

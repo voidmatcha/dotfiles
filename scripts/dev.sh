@@ -1,11 +1,8 @@
 #!/bin/bash
 set -euo pipefail
-
-DRY_RUN="${DRY_RUN:-false}"
-
-GREEN='\033[0;32m'
-NC='\033[0m'
-info() { echo -e "${GREEN}[dev]${NC} $1"; }
+TAG="dev"
+# shellcheck source=scripts/lib/common.sh
+source "$(cd "$(dirname "$0")" && pwd)/lib/common.sh"
 
 # ── nvm + Node.js ──
 info "Installing nvm..."
@@ -138,12 +135,22 @@ fi
 info "Checking rtk hook setup..."
 if $DRY_RUN; then
   info "[dry-run] Skipping rtk init --global"
-else
-  if command -v rtk &>/dev/null; then
-    rtk init --global 2>/dev/null && info "rtk hook registered (restart Claude Code to activate)" || info "⚠️  rtk init failed — check manually"
+elif command -v rtk &>/dev/null; then
+  if rtk init --global; then
+    if [ -f "$HOME/.claude/hooks/rtk-rewrite.sh" ]; then
+      info "rtk hook registered (restart Claude Code to activate)"
+    else
+      error "rtk init succeeded but ~/.claude/hooks/rtk-rewrite.sh is missing"
+      error "claude-settings.json references this file — Claude Code will fail to load it"
+      exit 1
+    fi
   else
-    info "⚠️  rtk not installed — run brew bundle first"
+    error "rtk init failed — fix this before continuing or remove the rtk-rewrite.sh hook from configs/claude-settings.json"
+    exit 1
   fi
+else
+  warn "rtk not installed yet — run brew bundle first"
+  exit 1
 fi
 
 # ── agent-browser (Vercel Labs) ──

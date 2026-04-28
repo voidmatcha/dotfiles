@@ -1,15 +1,8 @@
 #!/bin/bash
 set -euo pipefail
-
-DRY_RUN="${DRY_RUN:-false}"
-
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m'
-info() { echo -e "${GREEN}[otp]${NC} $1"; }
-warn() { echo -e "${YELLOW}[otp]${NC} $1"; }
-error() { echo -e "${RED}[otp]${NC} $1"; }
+TAG="otp"
+# shellcheck source=scripts/lib/common.sh
+source "$(cd "$(dirname "$0")" && pwd)/lib/common.sh"
 
 # ── Check dependencies ──
 if ! command -v google-authenticator &>/dev/null; then

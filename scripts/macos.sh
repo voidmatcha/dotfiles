@@ -1,19 +1,10 @@
 #!/bin/bash
 set -euo pipefail
+TAG="macos"
+# shellcheck source=scripts/lib/common.sh
+source "$(cd "$(dirname "$0")" && pwd)/lib/common.sh"
 
-DRY_RUN="${DRY_RUN:-false}"
-
-GREEN='\033[0;32m'
-NC='\033[0m'
-info() { echo -e "${GREEN}[macos]${NC} $1"; }
-
-run_defaults() {
-  if $DRY_RUN; then
-    info "[dry-run] defaults $*"
-  else
-    defaults "$@"
-  fi
-}
+run_defaults() { run_or_dry "defaults" defaults "$@"; }
 
 # ── Dock ──
 info "Configuring Dock..."
@@ -117,6 +108,45 @@ if ! $DRY_RUN; then
   killall Dock 2>/dev/null || true
   killall Finder 2>/dev/null || true
   killall SystemUIServer 2>/dev/null || true
+fi
+
+# ── Touch ID for sudo ──
+info "Configuring Touch ID for sudo..."
+TOUCHID_CONF="/etc/pam.d/sudo_local"
+if $DRY_RUN; then
+  info "[dry-run] Would create $TOUCHID_CONF with pam_tid.so"
+else
+  if [ -f "$TOUCHID_CONF" ] && grep -q "pam_tid.so" "$TOUCHID_CONF" 2>/dev/null; then
+    info "Touch ID for sudo already enabled"
+  else
+    if [ ! -f /etc/pam.d/sudo_local.template ]; then
+      warn "/etc/pam.d/sudo_local.template missing — your macOS may not support sudo_local; skipping"
+    else
+      info "Creating $TOUCHID_CONF (will require sudo)"
+      sudo tee "$TOUCHID_CONF" > /dev/null <<'PAM'
+auth       sufficient     pam_tid.so
+PAM
+      info "Touch ID for sudo enabled — try 'sudo -k && sudo true' to verify"
+    fi
+  fi
+fi
+
+# ── Application Firewall + stealth mode ──
+# Defense-in-depth alongside Tailscale: even if a dev server binds to
+# 0.0.0.0 by accident, stealth mode makes the cafe-wifi attacker's
+# port scan see closed ports instead of open ones.
+info "Configuring macOS Application Firewall..."
+FW_TOOL="/usr/libexec/ApplicationFirewall/socketfilterfw"
+if [ ! -x "$FW_TOOL" ]; then
+  warn "$FW_TOOL not found — skipping firewall config"
+elif $DRY_RUN; then
+  info "[dry-run] would enable firewall + stealth + signed-allow"
+else
+  sudo "$FW_TOOL" --setglobalstate on        > /dev/null
+  sudo "$FW_TOOL" --setstealthmode on        > /dev/null
+  sudo "$FW_TOOL" --setallowsigned on        > /dev/null
+  sudo "$FW_TOOL" --setallowsignedapp on     > /dev/null
+  info "Firewall: ON, stealth: ON, signed apps: allowed"
 fi
 
 info "macOS settings done"

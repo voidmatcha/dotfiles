@@ -1,2 +1,1 @@
-@RTK.md
-@~/.agent/AGENT.md
+@~/.agent/AGENTS.md
