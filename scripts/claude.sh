@@ -6,19 +6,6 @@ source "$(cd "$(dirname "$0")" && pwd)/lib/common.sh"
 
 info "Setting up Claude Code..."
 
-# ralph-kage-bunshin
-if ! ls ~/.agents/skills/ralph-kage-bunshin-* &>/dev/null 2>&1; then
-  if $DRY_RUN; then
-    info "[dry-run] npm install -g ralph-kage-bunshin"
-  else
-    if npm install -g ralph-kage-bunshin; then
-      info "ralph-kage-bunshin installed"
-    else
-      info "⚠️  ralph-kage-bunshin install failed"
-    fi
-  fi
-fi
-
 if $DRY_RUN; then
   info "[dry-run] ralph install-skills"
 else
@@ -46,6 +33,7 @@ SKILL_REPOS=(
   "dididy/e2e-skills"
   "dididy/ui-skills"
   "blader/humanizer"
+  "epoko77-ai/im-not-ai"
   "forrestchang/andrej-karpathy-skills@karpathy-guidelines"
   "obra/superpowers"
   "vercel-labs/agent-skills"

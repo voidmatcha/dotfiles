@@ -13,10 +13,11 @@ jobs:
       - name: Run shellcheck
         uses: ludeeus/action-shellcheck@master
         env:
-          SHELLCHECK_OPTS: -e SC1091
+          SHELLCHECK_OPTS: -e SC1091 -x
         with:
           severity: warning
           scandir: '.'
+          ignore_names: .zshrc
 
   syntax-check:
     runs-on: ubuntu-latest

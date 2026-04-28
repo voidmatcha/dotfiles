@@ -56,6 +56,10 @@ link_file() {
     mv "$dst" "${dst}.backup"
   fi
 
+  if [ -L "$dst" ]; then
+    rm "$dst"
+  fi
+
   mkdir -p "$(dirname "$dst")"
   ln -sf "$src" "$dst"
   info "Linked: $src -> $dst"
