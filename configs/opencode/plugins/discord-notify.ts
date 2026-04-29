@@ -7,14 +7,11 @@
 //                  e.g. the LaunchAgent's instance bound to a Tailscale IP — keeps
 //                  notifications private to the tailnet, never creates a public share)
 //   - color:       green
-//   - mention:     optional <@user_id> for guaranteed iPhone push
 //
 // Configuration (read from environment, typically sourced by the LaunchAgent
 // wrapper from ~/.opencode-secrets.env):
 //
 //   DISCORD_WEBHOOK_URL   required — channel webhook URL
-//   DISCORD_USER_ID       optional — numeric Discord user ID for mention
-//
 // If DISCORD_WEBHOOK_URL is unset, the plugin loads but does nothing.
 
 import type { Plugin } from "@opencode-ai/plugin"
@@ -22,6 +19,50 @@ import type { Plugin } from "@opencode-ai/plugin"
 const COLOR_GREEN = 0x57f287
 const TITLE_MAX_LENGTH = 240 // Discord embed title limit is 256
 const DESCRIPTION_MAX_LENGTH = 600 // keep notifications scannable on iPhone lock screen
+
+type DiscordEmbed = {
+  title: string
+  color: number
+  url?: string
+  description?: string
+}
+
+type DiscordWebhookBody = {
+  embeds: DiscordEmbed[]
+}
+
+type RuntimeInput = {
+  client: {
+    session: {
+      get(input: { path: { id: string } }): Promise<
+        | {
+            data?: {
+              title?: string
+              directory?: string
+            }
+          }
+        | undefined
+      >
+    }
+  }
+  serverUrl?: unknown
+}
+
+type MessageUpdatedProperties = {
+  info?: {
+    id?: string
+    role?: string
+  }
+}
+
+type MessagePartUpdatedProperties = {
+  part?: {
+    sessionID?: string
+    messageID?: string
+    type?: string
+    text?: unknown
+  }
+}
 
 function truncate(value: string, max: number): string {
   if (value.length <= max) return value
@@ -61,11 +102,26 @@ function buildSessionUrl(
   return `${baseUrl}/${projectSlug}/session/${sessionID}`
 }
 
+export function createDiscordWebhookBody(input: {
+  title: string
+  summary?: string
+  url?: string
+}): DiscordWebhookBody {
+  const embed: DiscordEmbed = {
+    title: truncate(input.title, TITLE_MAX_LENGTH),
+    color: COLOR_GREEN,
+  }
+  if (input.url) embed.url = input.url
+  if (input.summary) embed.description = truncate(input.summary, DESCRIPTION_MAX_LENGTH)
+
+  return { embeds: [embed] }
+}
+
 const plugin: Plugin = async (input) => {
   const webhookUrl = process.env.DISCORD_WEBHOOK_URL?.trim()
-  const userID = process.env.DISCORD_USER_ID?.trim()
-  const client = (input as any).client
-  const reachableServerUrl = externallyReachable((input as any).serverUrl)
+  const runtimeInput = input as unknown as RuntimeInput
+  const client = runtimeInput.client
+  const reachableServerUrl = externallyReachable(runtimeInput.serverUrl)
 
   if (!webhookUrl) {
     // Plugin disabled — no webhook configured.
@@ -80,9 +136,9 @@ const plugin: Plugin = async (input) => {
       const eventType = event.type as string
 
       if (eventType === "message.updated") {
-        const info = (event.properties as any)?.info
-        const id = info?.id as string | undefined
-        const role = info?.role as string | undefined
+        const info = (event.properties as MessageUpdatedProperties | undefined)?.info
+        const id = info?.id
+        const role = info?.role
         if (id && (role === "user" || role === "assistant")) {
           messageRoleById.set(id, role)
         }
@@ -90,9 +146,9 @@ const plugin: Plugin = async (input) => {
       }
 
       if (eventType === "message.part.updated") {
-        const part = (event.properties as any)?.part
-        const sessionID = part?.sessionID as string | undefined
-        const messageID = part?.messageID as string | undefined
+        const part = (event.properties as MessagePartUpdatedProperties | undefined)?.part
+        const sessionID = part?.sessionID
+        const messageID = part?.messageID
         if (!sessionID || !messageID || part?.type !== "text") return
         if (messageRoleById.get(messageID) !== "assistant") return
         const text = typeof part.text === "string" ? part.text : ""
@@ -116,20 +172,14 @@ const plugin: Plugin = async (input) => {
         const summary = lastAssistantTextBySession.get(sessionID)?.trim()
         lastAssistantTextBySession.delete(sessionID)
 
-        const embed: Record<string, unknown> = {
-          title: truncate(headline, TITLE_MAX_LENGTH),
-          color: COLOR_GREEN,
-        }
-        if (reachableServerUrl) {
-          embed.url = buildSessionUrl(reachableServerUrl, session?.directory, sessionID)
-        }
-        if (summary) embed.description = truncate(summary, DESCRIPTION_MAX_LENGTH)
-
-        const body: Record<string, unknown> = { embeds: [embed] }
-        if (userID) {
-          body.content = `<@${userID}>`
-          body.allowed_mentions = { users: [userID] }
-        }
+        const url = reachableServerUrl
+          ? buildSessionUrl(reachableServerUrl, session?.directory, sessionID)
+          : undefined
+        const body = createDiscordWebhookBody({
+          title: headline,
+          summary,
+          url,
+        })
 
         const res = await fetch(webhookUrl, {
           method: "POST",
