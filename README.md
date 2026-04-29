@@ -42,7 +42,7 @@ cd ~/dotfiles
   - `oh-my-openagent@latest` — Sisyphus/Oracle/Librarian/Explore agents + category-based delegation
   - `@ex-machina/opencode-anthropic-auth@1.7.5` — Anthropic OAuth refresh
 - Local plugins (in `configs/opencode/plugins/`, loaded as `.ts` directly via Bun):
-  - `discord-notify.ts` — posts one Discord embed on `session.idle`. Title `✅ [project] title`, description with the last assistant message (truncated), URL deep-linking into the LaunchAgent's tailnet-only `opencode web` (`<server>/<base64(directory)>/session/<id>` — never creates a public share), optional `<@user>` mention.
+  - `discord-notify.ts` — posts one Discord embed on `session.idle`. Title `✅ [project] title`, description with the last assistant message (truncated), URL deep-linking into the LaunchAgent's tailnet-only `opencode web` (`<server>/<base64(directory)>/session/<id>` — never creates a public share).
 - Config — `configs/opencode/{opencode.json, oh-my-openagent.json}` symlinked to `~/.config/opencode/`
 - Auth — `opencode.sh` detects missing `~/.local/share/opencode/auth.json` and prompts to run `opencode auth login`
 - AGENTS.md — same canonical file as Claude Code/Cursor (symlinked to `~/.config/opencode/AGENTS.md`)
@@ -55,14 +55,12 @@ cd ~/dotfiles
 
 **Discord notify setup:**
 1. In your Discord server, open a channel → Integrations → Webhooks → New Webhook → copy the URL.
-2. Get your numeric Discord user ID: User Settings → Advanced → enable Developer Mode, then right-click your name → Copy User ID.
-3. Edit `~/.opencode-secrets.env` (scaffolded by `opencode.sh` with chmod 600 on first run) and uncomment the two lines:
+2. Edit `~/.opencode-secrets.env` (scaffolded by `opencode.sh` with chmod 600 on first run) and uncomment the webhook line:
    ```bash
    DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/..."
-   DISCORD_USER_ID="123456789012345678"
    ```
-4. Restart the LaunchAgent so opencode picks up the new env: `launchctl kickstart -k gui/$(id -u)/com.user.opencode-web`
-5. Trigger any opencode session through the LaunchAgent's web UI; you should get a Discord notification when it goes idle.
+3. Restart the LaunchAgent so opencode picks up the new env: `launchctl kickstart -k gui/$(id -u)/com.user.opencode-web`
+4. Trigger any opencode session through the LaunchAgent's web UI; you should get a Discord notification when it goes idle.
 
 **Discord notify secrets / privacy:**
 - `~/.opencode-secrets.env` is gitignored and chmod 600. Wrapper refuses to source it if perms are not 600 or owner is not the current user (exits 78).
