@@ -1,6 +1,6 @@
 // Minimal Discord webhook notifier for opencode.
 //
-// Fires a single embed per `session.idle` event with:
+// Fires a single Discord message when a session becomes idle with:
 //   - title:       ✅ [{project}] {session_title}
 //   - description: last assistant message (truncated, summarises what was done)
 //   - url:         opencode web base URL (only when reachable from outside loopback,
@@ -68,6 +68,17 @@ type MessagePartUpdatedProperties = {
   }
 }
 
+type SessionIdleProperties = {
+  sessionID?: string
+}
+
+type SessionStatusProperties = {
+  sessionID?: string
+  status?: {
+    type?: string
+  }
+}
+
 function truncate(value: string, max: number): string {
   if (value.length <= max) return value
   return value.slice(0, max - 1) + "…"
@@ -106,7 +117,7 @@ function buildSessionUrl(
   return `${baseUrl}/${projectSlug}/session/${sessionID}`
 }
 
-export function createDiscordWebhookBody(input: {
+function createDiscordWebhookBody(input: {
   title: string
   summary?: string
   url?: string
@@ -129,6 +140,19 @@ export function createDiscordWebhookBody(input: {
   }
 
   return { content: title, embeds: [embed] }
+}
+
+function idleSessionID(eventType: string, properties: unknown): string | undefined {
+  if (eventType === "session.idle") {
+    return (properties as SessionIdleProperties | undefined)?.sessionID
+  }
+
+  if (eventType === "session.status") {
+    const status = properties as SessionStatusProperties | undefined
+    return status?.status?.type === "idle" ? status.sessionID : undefined
+  }
+
+  return undefined
 }
 
 const plugin: Plugin = async (input) => {
@@ -171,8 +195,7 @@ const plugin: Plugin = async (input) => {
         return
       }
 
-      if (eventType !== "session.idle") return
-      const sessionID = (event.properties as { sessionID?: string })?.sessionID
+      const sessionID = idleSessionID(eventType, event.properties)
       if (!sessionID) return
 
       try {
