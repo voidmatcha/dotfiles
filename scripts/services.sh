@@ -18,7 +18,8 @@ install_agent() {
   local label="$1"
   local plist_src="$2"
   local wrapper_src="$3"
-  local wrapper_dst="$HOME/.local/bin/$(basename "$wrapper_src")"
+  local wrapper_dst
+  wrapper_dst="$HOME/.local/bin/$(basename "$wrapper_src")"
   local plist_dst="$LAUNCH_AGENTS_DIR/${label}.plist"
 
   if $DRY_RUN; then
