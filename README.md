@@ -7,7 +7,7 @@ Clone and run `install.sh`. It'll ask for confirmation before starting, then pro
 ## Quick start
 
 ```bash
-git clone https://github.com/dididy/dotfiles.git ~/dotfiles
+git clone https://github.com/voidmatcha/dotfiles.git ~/dotfiles
 cd ~/dotfiles
 ./install.sh
 ```

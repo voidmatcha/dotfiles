@@ -30,8 +30,8 @@ if ! command -v skills &>/dev/null; then
 fi
 
 SKILL_REPOS=(
-  "dididy/e2e-skills"
-  "dididy/ui-skills"
+  "voidmatcha/e2e-skills"
+  "voidmatcha/ui-clone-skills"
   "blader/humanizer"
   "epoko77-ai/im-not-ai"
   "forrestchang/andrej-karpathy-skills@karpathy-guidelines"
