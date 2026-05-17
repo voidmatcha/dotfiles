@@ -4,6 +4,11 @@
 # https://gist.github.com/spilist/c468cbf1ed0ffc91100f813aabdcd520
 # (each setting below is verified against the official Codex docs linked inline.)
 
+model = "gpt-5.5"
+model_provider = "openai"
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+
 # ── Token saving ──
 
 # Web search mode: "disabled" | "cached" | "live" (default: "cached").
@@ -24,3 +29,11 @@ apps = false
 # (migrations, refactors, eval loops). Independent of the token-saving above.
 # Source: https://developers.openai.com/codex/use-cases/follow-goals
 goals = true
+
+[profiles.yolo]
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+
+[mcp_servers.chrome-devtools]
+command = "npx"
+args = ["-y", "chrome-devtools-mcp@0.23.0"]

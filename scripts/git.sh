@@ -9,23 +9,50 @@ echo ""
 echo "=== Git account setup ==="
 echo ""
 
+prompt_with_default() {
+  local prompt="$1"
+  local default="$2"
+  local value
+
+  if $DRY_RUN || $NON_INTERACTIVE; then
+    printf '%s\n' "$default"
+    return 0
+  fi
+
+  read -rp "$prompt [$default]: " value
+  printf '%s\n' "${value:-$default}"
+}
+
+backup_existing_file() {
+  local file="$1"
+  local backup_dst
+
+  if [ ! -e "$file" ]; then
+    return 0
+  fi
+
+  backup_dst="$(next_backup_path "$file")"
+  cp -p "$file" "$backup_dst"
+  info "Backed up: $file -> $backup_dst"
+}
+
 # Read current values as defaults
 _cur_personal_name=$(git config -f "$DOTFILES_DIR/configs/.gitconfig-personal" user.name 2>/dev/null || true)
 _cur_personal_email=$(git config -f "$DOTFILES_DIR/configs/.gitconfig-personal" user.email 2>/dev/null || true)
 _cur_work_name=$(git config -f "$DOTFILES_DIR/configs/.gitconfig-work" user.name 2>/dev/null || true)
 _cur_work_email=$(git config -f "$DOTFILES_DIR/configs/.gitconfig-work" user.email 2>/dev/null || true)
 
-# Personal account
-read -rp "Personal Git name [${_cur_personal_name}]: " personal_name
-personal_name="${personal_name:-$_cur_personal_name}"
-read -rp "Personal Git email [${_cur_personal_email}]: " personal_email
-personal_email="${personal_email:-$_cur_personal_email}"
+personal_name="$(prompt_with_default "Personal Git name" "$_cur_personal_name")"
+personal_email="$(prompt_with_default "Personal Git email" "$_cur_personal_email")"
+work_name="$(prompt_with_default "Work Git name" "$_cur_work_name")"
+work_email="$(prompt_with_default "Work Git email" "$_cur_work_email")"
 
-# Work account
-read -rp "Work Git name [${_cur_work_name}]: " work_name
-work_name="${work_name:-$_cur_work_name}"
-read -rp "Work Git email [${_cur_work_email}]: " work_email
-work_email="${work_email:-$_cur_work_email}"
+if ! $DRY_RUN && $NON_INTERACTIVE; then
+  if [ -z "$personal_name" ] || [ -z "$personal_email" ] || [ -z "$work_name" ] || [ -z "$work_email" ]; then
+    error "Non-interactive Git setup requires existing personal/work git name and email values."
+    exit 1
+  fi
+fi
 
 if $DRY_RUN; then
   info "[dry-run] .gitconfig-personal: $personal_name <$personal_email>"
@@ -34,6 +61,7 @@ else
   # Write user.name/email to the (tracked) personal/work configs.
   # signingkey lives in ~/.gitconfig.local because the SSH key path is
   # machine-specific and shouldn't be committed.
+  backup_existing_file "$DOTFILES_DIR/configs/.gitconfig-personal"
   cat > "$DOTFILES_DIR/configs/.gitconfig-personal" <<EOF
 [user]
     name = $personal_name
@@ -41,6 +69,7 @@ else
 # signingkey: machine-local — set in ~/.gitconfig.local
 EOF
 
+  backup_existing_file "$DOTFILES_DIR/configs/.gitconfig-work"
   cat > "$DOTFILES_DIR/configs/.gitconfig-work" <<EOF
 [user]
     name = $work_name
@@ -52,9 +81,15 @@ EOF
   # Verifiers (GitHub) need the same key registered as a "Signing key" on
   # the account, in addition to the auth key — separate dropdowns on
   # github.com/settings/keys.
+  #
+  # Override PERSONAL_SIGNING_KEY / WORK_SIGNING_KEY env vars to point at
+  # machine-specific paths (e.g. hardware-backed key, shared keychain).
+  PERSONAL_SIGNING_KEY="${PERSONAL_SIGNING_KEY:-$HOME/.ssh/id_ed25519_personal.pub}"
+  WORK_SIGNING_KEY="${WORK_SIGNING_KEY:-$HOME/.ssh/id_ed25519_work.pub}"
+
   cat > "$HOME/.gitconfig.local" <<EOF
 [user]
-    signingkey = ~/.ssh/id_ed25519_personal.pub
+    signingkey = $PERSONAL_SIGNING_KEY
 [gpg]
     format = ssh
 [commit]
@@ -73,7 +108,7 @@ EOF
 
   cat > "$HOME/.gitconfig.local-work" <<EOF
 [user]
-    signingkey = ~/.ssh/id_ed25519_work.pub
+    signingkey = $WORK_SIGNING_KEY
 EOF
 fi
 
@@ -112,7 +147,11 @@ generate_ssh_key() {
   if $DRY_RUN; then
     info "[dry-run] Skipping ssh-keygen"
   else
-    read -rp "Use a passphrase for $name key? (Y/n) " want_pw
+    if $NON_INTERACTIVE; then
+      want_pw=N
+    else
+      read -rp "Use a passphrase for $name key? (Y/n) " want_pw
+    fi
     if [[ "$want_pw" =~ ^[Nn]$ ]]; then
       ssh-keygen -t ed25519 -C "$email" -f "$key_file" -N ""
     else
@@ -126,11 +165,27 @@ generate_ssh_key "work" "$work_email"
 
 # ── SSH config ──
 SSH_CONFIG="$HOME/.ssh/config"
+SSH_CONFIG_DIR="$HOME/.ssh/config.d"
+DOTFILES_SSH_CONFIG="$HOME/.ssh/config.d/dotfiles.conf"
+SSH_INCLUDE_LINE='Include ~/.ssh/config.d/*.conf'
 if $DRY_RUN; then
-  info "[dry-run] Skipping SSH config write"
+  info "[dry-run] Would ensure $SSH_INCLUDE_LINE in $SSH_CONFIG"
+  info "[dry-run] Would write $DOTFILES_SSH_CONFIG"
 else
-  mkdir -p "$HOME/.ssh"
-  cat > "$SSH_CONFIG" <<EOF
+  ensure_dir "$HOME/.ssh" "$SSH_CONFIG_DIR"
+  if [ ! -f "$SSH_CONFIG" ]; then
+    printf '%s\n' "$SSH_INCLUDE_LINE" > "$SSH_CONFIG"
+  elif ! grep -Fxq "$SSH_INCLUDE_LINE" "$SSH_CONFIG"; then
+    backup_existing_file "$SSH_CONFIG"
+    tmp_ssh_config="$(mktemp)"
+    {
+      printf '%s\n\n' "$SSH_INCLUDE_LINE"
+      cat "$SSH_CONFIG"
+    } > "$tmp_ssh_config"
+    mv "$tmp_ssh_config" "$SSH_CONFIG"
+  fi
+
+  cat > "$DOTFILES_SSH_CONFIG" <<EOF
 # Personal GitHub
 Host github.com-personal
     HostName github.com
@@ -152,6 +207,7 @@ Host github.com
     IdentityFile ~/.ssh/id_ed25519_personal
     IdentitiesOnly yes
 EOF
+  chmod 600 "$DOTFILES_SSH_CONFIG"
   chmod 600 "$SSH_CONFIG"
 fi
 

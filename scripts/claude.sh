@@ -53,6 +53,7 @@ SKILL_REPOS=(
 
 SKILL_URLS=(
   "https://github.com/pbakaus/impeccable --skill clarify"
+  "https://github.com/kepano/obsidian-skills"
 )
 
 for repo in "${SKILL_REPOS[@]}"; do
@@ -129,14 +130,29 @@ PLUGINS=(
 
 info "Installing Claude Code Plugins..."
 
+# `claude plugin` is interactive when the marketplace/plugin is already
+# registered (confirmation prompt) — and stdin redirect doesn't bypass it
+# because Claude Code reads from /dev/tty. So we check state JSON first and
+# skip if already present. 180s timeout is the last-resort safety net for
+# first-time installs that legitimately stall.
+KNOWN_MARKETPLACES_JSON="$HOME/.claude/plugins/known_marketplaces.json"
+INSTALLED_PLUGINS_JSON="$HOME/.claude/plugins/installed_plugins.json"
+# shellcheck disable=SC2016 # jq variables are passed via --arg.
+MARKETPLACE_REPO_FILTER='to_entries[] | select(.value.source.repo == $r)'
+# shellcheck disable=SC2016 # jq variables are passed via --arg.
+INSTALLED_PLUGIN_FILTER='.plugins | has($p)'
+
 for marketplace in "${PLUGIN_MARKETPLACES[@]}"; do
   if $DRY_RUN; then
     info "[dry-run] claude plugin marketplace add $marketplace"
+  elif json_entry_exists "$KNOWN_MARKETPLACES_JSON" \
+      "$MARKETPLACE_REPO_FILTER" --arg r "$marketplace"; then
+    info "Marketplace already registered: $marketplace"
   else
-    if claude plugin marketplace add "$marketplace"; then
+    if with_timeout 180 claude plugin marketplace add "$marketplace" </dev/null; then
       info "Added marketplace: $marketplace"
     else
-      info "⚠️  Failed marketplace: $marketplace"
+      info "⚠️  Failed marketplace: $marketplace (timeout or error — re-run manually if needed)"
     fi
   fi
 done
@@ -144,26 +160,21 @@ done
 for plugin in "${PLUGINS[@]}"; do
   if $DRY_RUN; then
     info "[dry-run] claude plugin install $plugin"
+  elif json_entry_exists "$INSTALLED_PLUGINS_JSON" "$INSTALLED_PLUGIN_FILTER" --arg p "$plugin"; then
+    info "Plugin already installed: $plugin"
   else
-    if claude plugin install "$plugin"; then
+    if with_timeout 180 claude plugin install "$plugin" </dev/null; then
       info "Installed plugin: $plugin"
     else
-      info "⚠️  Failed plugin: $plugin"
+      info "⚠️  Failed plugin: $plugin (timeout or error — re-run manually if needed)"
     fi
   fi
 done
 
-# Codex CLI is required by codex@openai-codex; install if missing.
-if ! command -v codex >/dev/null 2>&1; then
-  if $DRY_RUN; then
-    info "[dry-run] npm install -g @openai/codex"
-  else
-    if npm install -g @openai/codex; then
-      info "Codex CLI installed"
-    else
-      info "⚠️  Codex CLI install failed"
-    fi
-  fi
+if $DRY_RUN; then
+  info "[dry-run] claude plugin list"
+else
+  with_timeout 30 claude plugin list </dev/null || warn "claude plugin list failed/timed out — verify plugin activation manually"
 fi
 
 # ── MCP servers (user scope) ──
@@ -186,11 +197,16 @@ register_mcp_from_file() {
   # Public mcp.json currently has no ${VAR} placeholders, but this keeps the
   # door open for adding entries that need keys later without code changes.
   if [ -f "$HOME/.dev.secrets.env" ]; then
+    set -a
     # shellcheck source=/dev/null
-    set -a; . "$HOME/.dev.secrets.env"; set +a
+    . "$HOME/.dev.secrets.env"
+    set +a
   fi
 
   local names
+  local envsubst_allowlist
+  # shellcheck disable=SC2016 # envsubst receives a variable allowlist.
+  envsubst_allowlist='${EXA_API_KEY}'
   names=$(jq -r '.mcpServers | keys[]' "$mcp_file" 2>/dev/null)
   while IFS= read -r name; do
     [ -z "$name" ] && continue
@@ -200,17 +216,19 @@ register_mcp_from_file() {
     # as a literal $VAR. Missing key → empty string (JSON still valid).
     # Extend the allowlist as new keys are added to mcp.json.
     entry=$(jq -c --arg n "$name" '.mcpServers[$n]' "$mcp_file" \
-      | envsubst '${EXA_API_KEY}')
+      | envsubst "$envsubst_allowlist")
     if $DRY_RUN; then
       info "[dry-run] claude mcp add-json --scope user $name '$entry'"
       continue
     fi
     # Remove first (idempotent), then add. Suppress "not found" errors on first run.
-    claude mcp remove --scope user "$name" >/dev/null 2>&1 || true
-    if claude mcp add-json --scope user "$name" "$entry" >/dev/null 2>&1; then
+    # 30s timeout: `claude` CLI subcommands have been observed to hang on
+    # certain machines/versions; don't let MCP setup stall install.sh.
+    with_timeout 30 claude mcp remove --scope user "$name" >/dev/null 2>&1 || true
+    if with_timeout 30 claude mcp add-json --scope user "$name" "$entry" >/dev/null 2>&1; then
       info "Registered MCP: $name"
     else
-      warn "Failed to register MCP: $name"
+      warn "Failed to register MCP: $name (timeout or error)"
     fi
   done <<< "$names"
 }

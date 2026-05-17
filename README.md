@@ -44,12 +44,13 @@ cd ~/dotfiles
 - Playwright CLI (for coding agents)
 - whisper-cpp model (~1.5GB, large-v3-turbo)
 - ccusage, rtk, agent-browser
+- defuddle — free local web extraction tool for LLM-friendly Markdown
 - [serena](https://github.com/oraios/serena) — MCP server for semantic code navigation (LSP-backed). Installed via `uv tool install`, registered in `configs/mcp.json` with `--context claude-code --project-from-cwd`. `.zshrc` wraps `claude` to inject serena's system-prompt-override (counters Opus 4.7 bias toward built-in tools)
 - [graphify](https://github.com/safishamsi/graphify) — Claude Code skill (`/graphify`) that turns any folder into a queryable knowledge graph. Installed via `pip install --user graphifyy && graphify install`
 - [wrangler](https://developers.cloudflare.com/workers/wrangler/) — Cloudflare Workers/Pages/R2/D1 CLI
 - Social / web read CLIs (subset of what [agent-reach](https://github.com/Panniantong/Agent-Reach) bundles, installed directly to keep the dependency surface small):
   - `yt-dlp` — YouTube/Bilibili/1800+ sites, metadata + subtitles, no auth
-  - `bird` (twitter-cli, via pipx) — X/Twitter read/search/timeline; `bird login` once for cookie capture
+  - `twitter` ([public-clis/twitter-cli](https://github.com/public-clis/twitter-cli), via pipx) — X/Twitter read/search/timeline/profile; auto-reads browser cookies (Chrome/Firefox), no API key required — matches Agent-Reach upstream
   - `rdt` (rdt-cli, via pipx) — Reddit search/read; `rdt login` once (Reddit requires auth since 2024)
   - `feedparser` (Python lib) — RSS/Atom feeds (blog/YouTube channel/GitHub releases/Hacker News etc.)
   - For any other URL, `curl https://r.jina.ai/<URL>` returns clean Markdown (Jina Reader, no install)
@@ -67,12 +68,18 @@ cd ~/dotfiles
 **Git** — separate personal/work accounts via `includeIf` with **remote-URL-based** routing (see "Separate Git accounts" below). Commits and tags are SSH-signed by default — register the public key as a Signing Key on GitHub to get a verified badge. A global `~/.gitignore_global` (symlink to `configs/.gitignore_global`) catches `.DS_Store`, editor leftovers, `.envrc`, `.env*`, etc., so individual repos don't have to.
 
 **Claude Code:**
-- Skills — agent-skills, ai-slop-cleaner, clarify, code-review, doc-coauthoring, e2e-skills, frontend-design, humanizer, im-not-ai, internal-comms, karpathy-guidelines, mcp-builder, project-session-manager (`/psm`), security-best-practices, skill-creator, ui-clone-skills, ultrawork, webapp-testing
-- Plugins — ralph-loop (iterative autonomous dev loops), [codex@openai-codex](https://github.com/openai/codex-plugin-cc) (delegate to / review with Codex from inside Claude Code; pulls in `@openai/codex` CLI), superpowers, rust-analyzer-lsp, fakechat, vercel, session-report, claude-md-management (`/revise-claude-md` + `claude-md-improver` audit skill), hookify, [claude-mem@thedotmack](https://github.com/thedotmack/claude-mem) (persistent memory + cross-session search), plus role-focused plugins from [wshobson/agents](https://github.com/wshobson/agents) marketplace (comprehensive-review, javascript-typescript, python-development, frontend-mobile-development, security-scanning, tdd-workflows, git-pr-workflows, error-debugging, ui-design, accessibility-compliance, content-marketing, seo-*)
-- Hooks — skill-eval (forced-eval prompt injection per Scott Spence pattern, ~84% activation rate), rtk-rewrite (auto-compresses Bash output, 60–90% token savings)
-- MCP — chrome-devtools (browser control via Chrome DevTools Protocol), serena (semantic code intelligence). Defined in `configs/mcp.json`; `scripts/claude.sh` reads that file and registers each entry via `claude mcp add-json --scope user` (writes to `~/.claude.json`, not the older `.mcp.json` symlink path).
-- Codex CLI — installed alongside via `codex@openai-codex`; `configs/codex/config.toml` enables the experimental `/goal` slash command (`[features].goals = true`, see https://developers.openai.com/codex/use-cases/follow-goals)
+- Skills — agent-skills, ai-slop-cleaner, clarify, code-review, doc-coauthoring, e2e-skills, frontend-design, humanizer, im-not-ai, internal-comms, karpathy-guidelines, mcp-builder, obsidian-skills, project-session-manager (`/oh-my-claudecode:psm`), security-best-practices, skill-creator, ui-clone-skills, ultrawork, webapp-testing
+- Plugins — ralph-loop (iterative autonomous dev loops; `/ralph-loop:ralph-loop`), [codex@openai-codex](https://github.com/openai/codex-plugin-cc) (delegate to / review with the local Codex CLI from inside Claude Code), superpowers, rust-analyzer-lsp, fakechat, vercel, session-report, claude-md-management (`/claude-md-management:revise-claude-md` + `claude-md-improver` audit skill), hookify, session-wrap, [claude-mem@thedotmack](https://github.com/thedotmack/claude-mem) (persistent memory + cross-session search), plus role-focused plugins from [wshobson/agents](https://github.com/wshobson/agents) marketplace (comprehensive-review, javascript-typescript, python-development, frontend-mobile-development, security-scanning, documentation-generation, unit-testing, tdd-workflows, git-pr-workflows, error-debugging, ui-design, accessibility-compliance, content-marketing, seo-*). Plugin slash commands use `/<plugin-name>:<command>` (e.g. `/ralph-loop:ralph-loop`, not bare `/ralph-loop`). Standalone skills (`/graphify`, etc.) don't take the prefix.
+- Hooks — skill-eval (forced-eval prompt injection per Scott Spence pattern, ~84% activation rate), `rtk hook claude` (in-place PreToolUse hook registered via `rtk init --global`; compresses Bash output 60–90%), pretool-guard (structured PreToolUse deny for risky Bash), skill-md-edit-warn (PostToolUse reminder after editing `SKILL.md`)
+- MCP — chrome-devtools (browser control via Chrome DevTools Protocol), serena (semantic code intelligence). Defined in `configs/mcp.json`; `scripts/claude.sh` registers each entry via `claude mcp add-json --scope user` (writes to `~/.claude.json`, not the older `.mcp.json` symlink path), while Claude settings pin the approved managed servers.
+- Codex CLI — first-class `scripts/codex.sh` setup owns `@openai/codex` install/auth and symlinks `configs/codex/config.toml` to `~/.codex/config.toml`.
 - Token saving — settings calibrated against [spilist's checklist gist](https://gist.github.com/spilist/c468cbf1ed0ffc91100f813aabdcd520) (verified against official docs). Claude Code: `includeGitInstructions: false` drops the built-in git workflow instructions + git status snapshot from the system prompt. `autoInstallIdeExtension: false` keeps Claude Code as a pure terminal tool — no auto-install of VS Code/JetBrains extensions. Codex: `web_search = "disabled"` drops the web_search tool definition (re-enable per-invocation with `codex --search`). `[features].apps = false` drops ChatGPT-connector tool definitions.
+
+**Codex CLI:**
+- CLI — `scripts/codex.sh` installs `@openai/codex` with npm when `codex` is missing; upstream also supports `brew install --cask codex`
+- Config — `configs/codex/config.toml` is symlinked to `~/.codex/config.toml`; it sets OpenAI `gpt-5.5`, `approval_policy = "on-request"`, `sandbox_mode = "workspace-write"`, `web_search = "disabled"`, `[features] apps = false`, `[features] goals = true`, and `[mcp_servers.chrome-devtools]`
+- Profile — `codex --profile yolo` is available as an explicit opt-in profile (`approval_policy = "never"`, `sandbox_mode = "danger-full-access"`); don't use it outside an isolated environment
+- Auth — `codex.sh` checks `codex login status`; run `codex login` for ChatGPT sign-in, `codex login --device-auth` for a headless device-code flow, or `printenv OPENAI_API_KEY | codex login --with-api-key` for API-key auth
 
 **opencode:**
 - Brew tap — `anomalyco/tap` (third-party tap with current versions; homebrew-core formula is stale)
@@ -80,7 +87,7 @@ cd ~/dotfiles
   - `oh-my-openagent@latest` — Sisyphus/Oracle/Librarian/Explore agents + category-based delegation
   - `@ex-machina/opencode-anthropic-auth@1.8.0` — Anthropic OAuth refresh
 - Config — `configs/opencode/{opencode.json, oh-my-openagent.json}` symlinked to `~/.config/opencode/`
-- Auth — `opencode.sh` detects missing `~/.local/share/opencode/auth.json` and prompts to run `opencode auth login`
+- Auth — `opencode.sh` detects missing `~/.local/share/opencode/auth.json` and prompts to run `opencode auth login`; configure OpenAI primary auth and Anthropic fallback auth before relying on model fallback routing
 - AGENTS.md — same canonical file as Claude Code/Cursor (symlinked to `~/.config/opencode/AGENTS.md`)
 
 **[Hermes Agent](https://github.com/NousResearch/hermes-agent):** Nous Research's self-improving AI agent. `hermes.sh` runs the upstream one-shot installer (`curl … | bash`) — idempotent, skips if `hermes` is already on PATH. Configure with `hermes setup` after a shell reload.
@@ -88,11 +95,11 @@ cd ~/dotfiles
 **tmux** — minimal `~/.tmux.conf` (symlinked from `configs/.tmux.conf`): `C-Space` prefix, mouse on, vi-mode copy, `|`/`-` splits that keep CWD, 100k scrollback, true-color.
 
 **Auto-launched browser dev services (LaunchAgents):**
-Both run at every login with `KeepAlive=true` (throttle 60s). Both are reached over the tailnet via `tailscale serve` (HTTPS via Tailscale's `*.ts.net` cert; configured automatically by `services.sh`). code-server binds to `127.0.0.1` (kernel-level isolation). purplemux binds to `*:8022` but enforces an app-level `networkAccess: "tailscale"` filter — non-tailnet/non-loopback IPs get HTTP 403 before auth. Defense-in-depth: `macos.sh` already enables the macOS firewall in stealth mode, so a hostile-wifi attacker sees stealthed ports even before reaching the app filter.
+Installed services run at every login with `KeepAlive=true` (throttle 60s); `services.sh` skips loading LaunchAgents when dependencies are missing. Both services are reached over the tailnet via `tailscale serve` (HTTPS via Tailscale's `*.ts.net` cert; configured automatically by `services.sh`). code-server binds to `127.0.0.1` (kernel-level isolation). purplemux binds to `*:8022`, so this setup relies on Tailscale Serve plus the macOS firewall rather than an app-level tailnet filter. Defense-in-depth: `macos.sh` already enables the macOS firewall in stealth mode, so a hostile-wifi attacker should see stealthed ports.
 
 - `com.user.purplemux` — [purplemux](https://github.com/subicura/purplemux), web-native terminal multiplexer for Claude Code
   - Installed via `npm install -g purplemux` (services.sh handles this)
-  - Listens on `*:8022` (no `--bind` flag upstream); enforces `networkAccess: "tailscale"` at the app layer. Logs at `~/Library/Logs/purplemux.{out,err}.log`
+  - Listens on `*:8022` (no `--bind` flag upstream); access is intended through Tailscale Serve, not an app-level IP filter. Logs at `~/Library/Logs/purplemux.{out,err}.log`
   - Tailnet exposure: `tailscale serve --bg --https=443 --set-path=/ http://localhost:8022`
   - Restart: `launchctl kickstart -k gui/$(id -u)/com.user.purplemux`
 - `com.user.code-server` — [code-server](https://github.com/coder/code-server), VS Code in the browser
@@ -102,15 +109,19 @@ Both run at every login with `KeepAlive=true` (throttle 60s). Both are reached o
   - Tailnet exposure: `tailscale serve --bg --https=8443 --set-path=/ http://localhost:8088`
   - Restart: `launchctl kickstart -k gui/$(id -u)/com.user.code-server`
 
-**Shared agent config** — canonical `~/.agent/AGENTS.md` with shared rules, also symlinked to `~/.cursor/rules/AGENTS.md` and (after opencode setup) `~/.config/opencode/AGENTS.md`. `~/.claude/CLAUDE.md` imports it via `@AGENTS.md`.
+**Shared agent config** — canonical `~/.agent/AGENTS.md` with shared rules, also symlinked to `~/.cursor/rules/AGENTS.md` and `~/.config/opencode/AGENTS.md` before Claude Code/opencode setup. `~/.claude/CLAUDE.md` imports it via `@AGENTS.md`.
 
-**Dotfiles symlinks** — zshrc, tmux.conf, gitconfig, gitignore_global, Claude Code settings, skill-eval hook.
+**Dotfiles symlinks** — zshrc, tmux.conf, gitconfig, gitignore_global, Claude Code settings, Codex config, skill-eval hook, pretool-guard hook, skill-md-edit-warn hook. `configs/mcp.json` is read by `scripts/claude.sh` for user-scope MCP registration.
 
-**Tailscale + Tailscale SSH** — private mesh VPN for remote access. Each device gets a stable `100.x.x.x` IP and `*.ts.net` hostname; no port forwarding, no public exposure. `tailscale.sh` runs `tailscale set --ssh` so inbound shell access can go through Tailscale (identity from the tailnet, ACL-gated in the admin console). Persistent sessions: `tailscale ssh yongjae@<host> -- tmux attach`. OpenSSH (`systemsetup -setremotelogin on`, set in `macos.sh`) is enabled in parallel — Tailscale SSH is the primary path, OpenSSH stays as a fallback for tooling that doesn't speak the Tailscale layer. Free tier covers personal use.
+**Web extraction** — use `defuddle parse <url> --markdown` for article-style extraction (local, LLM-friendly Markdown). For JS-heavy or auth-gated pages, use `agent-browser` to reuse your logged-in Chrome session.
+
+**Agent safety and secrets** — Claude settings include `permissions.deny` for `.env*`, `secrets/`, `WebFetch`, and filesystem MCP access; MCP governance approves `chrome-devtools` and `serena` from the shared MCP config and denies filesystem servers by `serverName`. `pretool-guard` is a PreToolUse Bash hook that emits structured JSON `permissionDecision: "deny"` for destructive commands such as `git reset --hard`, force push, root `rm -rf`, curl/wget piped to shell, and direct dotenv reads. `skill-md-edit-warn` is a PostToolUse hook that reminds you to restart Claude after editing a skill file mid-session. Prefer ephemeral secret injection: `op run --env-file .env -- <command>` for 1Password or `sops exec-env secrets.enc.env '<command>'` for SOPS.
+
+**Tailscale + Tailscale SSH** — private mesh VPN for remote access. Each device gets a stable `100.x.x.x` IP and `*.ts.net` hostname; no port forwarding, no public exposure. `tailscale.sh` runs `tailscale set --ssh` so inbound shell access can go through Tailscale (identity from the tailnet, ACL-gated in the admin console). Persistent sessions: `tailscale ssh user@<host> -- tmux attach`. OpenSSH (`systemsetup -setremotelogin on`, set in `macos.sh`) is enabled in parallel — Tailscale SSH is the primary path, OpenSSH stays as a fallback for tooling that doesn't speak the Tailscale layer. Free tier covers personal use.
 
 **mosh** — UDP-based shell that survives network changes / roaming / disconnects. Bootstraps over SSH for auth (so OpenSSH must stay enabled) then switches to UDP ports 60000–61000. Useful on mobile hotspots or unstable links. Connect with `mosh user@host` or `mosh --ssh="tailscale ssh" user@host` to layer mosh on top of Tailscale SSH. The macOS Application Firewall is in stealth mode, so the first `mosh` session may need a manual exception for `mosh-server` (System Settings → Network → Firewall → Options).
 
-**Tests** — bats-core suites under `tests/` cover `scripts/lib/common.sh` helpers and a smoke check that every shell script parses, uses `set -euo pipefail`, and that the `Brewfile` resolves. Run with `bats tests/`.
+**Tests** — bats-core suites under `tests/` cover `scripts/lib/common.sh` helpers, script syntax/conventions, config drift, GitHub Actions pinning, JSON/TOML validation, and `Brewfile` parsing. Run with `bats tests/`.
 
 ## Structure
 
@@ -125,6 +136,7 @@ dotfiles/
 │   ├── shell.sh            # Oh My Zsh + plugins
 │   ├── git.sh              # Git config + SSH keys
 │   ├── claude.sh           # Claude Code skills, plugins, tools
+│   ├── codex.sh            # Codex CLI config + auth prompt
 │   ├── lib/
 │   │   └── common.sh       # shared helpers (info/warn/error/run_or_dry/link_file)
 │   ├── opencode.sh         # opencode config + auth prompt
@@ -143,7 +155,9 @@ dotfiles/
 │   ├── AGENTS.md           # canonical agent rules (Claude + Cursor + opencode)
 │   ├── CLAUDE.md           # Claude Code wrapper (imports AGENTS.md)
 │   ├── claude-settings.json
-│   ├── mcp.json            # shared MCP servers imported by oh-my-openagent
+│   ├── mcp.json            # shared Claude MCP servers
+│   ├── codex/
+│   │   └── config.toml     # Codex CLI defaults + MCP servers
 │   ├── com.user.purplemux.plist     # LaunchAgent template (sed-substituted at install)
 │   ├── com.user.code-server.plist   # LaunchAgent template (sed-substituted at install)
 │   ├── opencode/
@@ -151,7 +165,9 @@ dotfiles/
 │   │   └── oh-my-openagent.json    # agents/categories with model fallbacks
 │   ├── rtk-config.toml
 │   └── hooks/
-│       └── skill-eval.sh   # forced-eval prompt injection hook
+│       ├── pretool-guard.sh     # structured PreToolUse deny hook
+│       ├── skill-eval.sh        # forced-eval prompt injection hook
+│       └── skill-md-edit-warn.sh # PostToolUse reminder after editing skills
 ├── tests/                  # bats-core suites: run `bats tests/`
 │   ├── common.bats
 │   └── scripts.bats
@@ -186,6 +202,7 @@ See `company/README.md` for what lives in the overlay and how to maintain it.
 ./scripts/dev.sh      # dev tools only
 ./scripts/shell.sh    # shell only
 ./scripts/git.sh      # Git only
+./scripts/codex.sh    # Codex CLI only
 ```
 
 ## Dry run

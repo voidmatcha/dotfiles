@@ -49,9 +49,9 @@ fi
 
 if ! $DRY_RUN; then
   export SDKMAN_DIR="$HOME/.sdkman"
-  # shellcheck source=/dev/null
   # set +u: SDKMAN references unset variables internally (ZSH_VERSION, SDKMAN_CANDIDATES_CACHE, etc.)
   set +u
+  # shellcheck source=/dev/null
   [[ -s "$SDKMAN_DIR/bin/sdkman-init.sh" ]] && source "$SDKMAN_DIR/bin/sdkman-init.sh"
 
   info "Installing Java LTS..."
@@ -81,12 +81,18 @@ fi
 if ! $DRY_RUN; then
   export PYENV_ROOT="$HOME/.pyenv"
   export PATH="$PYENV_ROOT/bin:$PATH"
-  eval "$(pyenv init -)"
+
+  # Stale `.pyenv-shim` is left behind when a previous `pyenv rehash` was
+  # interrupted; the next rehash can't overwrite it and spins for 60s before
+  # failing. Must remove BEFORE `pyenv init -` because init triggers rehash.
+  rm -f "$PYENV_ROOT/shims/.pyenv-shim"
+
+  eval "$(pyenv init -)" || warn "pyenv init failed — check manually"
 
   LATEST_PYTHON=$(pyenv install --list | grep -E '^\s+3\.[0-9]+\.[0-9]+$' | tail -1 | tr -d ' ')
   info "Installing Python $LATEST_PYTHON..."
-  pyenv install -s "$LATEST_PYTHON"
-  pyenv global "$LATEST_PYTHON"
+  pyenv install -s "$LATEST_PYTHON" || warn "pyenv install $LATEST_PYTHON failed — check manually"
+  pyenv global "$LATEST_PYTHON" || warn "pyenv global $LATEST_PYTHON failed — check manually"
 else
   info "[dry-run] Skipping latest Python install"
 fi
@@ -136,11 +142,12 @@ else
     info "serena already installed"
   fi
 
-  # serena init is idempotent; safe to re-run on existing setups
+  # serena init is idempotent; safe to re-run on existing setups.
+  # 120s timeout: first run can stall on LSP backend downloads.
   if command -v serena &>/dev/null; then
     info "Initialising serena (language server backend)..."
-    if ! serena init </dev/null; then
-      warn "serena init failed — run manually with: serena init"
+    if ! with_timeout 120 serena init </dev/null; then
+      warn "serena init failed or timed out — run manually with: serena init"
     fi
   fi
 fi
@@ -165,6 +172,19 @@ else
   fi
 fi
 
+# ── defuddle (clean web page extraction) ──
+info "Checking defuddle..."
+if $DRY_RUN; then
+  info "[dry-run] npm install -g defuddle"
+else
+  if ! command -v defuddle &>/dev/null; then
+    info "Installing defuddle (global)"
+    npm install -g defuddle 2>/dev/null || info "⚠️  defuddle install failed — check manually"
+  else
+    info "defuddle already installed"
+  fi
+fi
+
 # ── ccusage (Claude Code usage dashboard) ──
 info "Checking ccusage..."
 if $DRY_RUN; then
@@ -179,8 +199,9 @@ else
 fi
 
 # ── rtk (Claude Code hook for LLM token savings) ──
-# rtk ≥0.40 registers the hook in-place (settings.json calls `rtk hook claude`)
-# instead of writing a wrapper script. claude-settings.json reflects that.
+# `rtk init --global` registers the in-place hook (settings.json calls
+# `rtk hook claude` directly instead of a wrapper script under
+# ~/.claude/hooks/). claude-settings.json reflects that.
 info "Checking rtk hook setup..."
 if $DRY_RUN; then
   info "[dry-run] Skipping rtk init --global"
@@ -199,7 +220,11 @@ info "Checking agent-browser..."
 if $DRY_RUN; then
   info "[dry-run] Skipping agent-browser install"
 else
-  if ! command -v agent-browser &>/dev/null; then
+  # Check both PATH and the install location (~/.local/bin may not be on
+  # PATH yet during install.sh execution).
+  if command -v agent-browser &>/dev/null || [ -x "$HOME/.local/bin/agent-browser" ]; then
+    info "agent-browser already installed"
+  else
     info "Installing agent-browser..."
     mkdir -p "$HOME/.local/bin"
     ARCH="$(uname -m)"
@@ -208,13 +233,16 @@ else
     else
       ASSET="agent-browser-darwin-x64"
     fi
-    LATEST_URL="$(curl -s https://api.github.com/repos/vercel-labs/agent-browser/releases/latest \
+    LATEST_URL="$(curl -fsSL https://api.github.com/repos/vercel-labs/agent-browser/releases/latest 2>/dev/null \
       | grep "browser_download_url" | grep "$ASSET\"" | head -1 | cut -d'"' -f4)"
-    curl -fsSL "$LATEST_URL" -o "$HOME/.local/bin/agent-browser"
-    chmod +x "$HOME/.local/bin/agent-browser"
-    info "agent-browser installed"
-  else
-    info "agent-browser already installed"
+    if [ -z "$LATEST_URL" ]; then
+      warn "agent-browser: failed to resolve release URL (GitHub API rate-limit or asset rename?) — install manually"
+    elif curl -fsSL "$LATEST_URL" -o "$HOME/.local/bin/agent-browser" && chmod +x "$HOME/.local/bin/agent-browser"; then
+      info "agent-browser installed ($LATEST_URL)"
+    else
+      warn "agent-browser: download failed from $LATEST_URL — install manually"
+      rm -f "$HOME/.local/bin/agent-browser"
+    fi
   fi
 fi
 
@@ -241,16 +269,16 @@ else
   pip install --user feedparser 2>/dev/null || warn "feedparser install failed — try: pip install --user feedparser"
 fi
 
-# ── Social-platform read tools (subset of what agent-reach bundles) ──
+# ── Social-platform read tools (Agent-Reach upstream tools) ──
 # Install the upstream CLIs directly. See configs/AGENTS.md for the one-liners
 # agents should call.
 # - yt-dlp: YouTube/Bilibili/1800+ sites — installed via Brewfile (no auth)
-# - bird (twitter-cli): X/Twitter via cookie auth — `bird search/read/user-tweets`
-# - rdt-cli: Reddit via cookie auth — `rdt search/read`
+# - twitter-cli (public-clis/twitter-cli): X/Twitter via cookie auth — `twitter search/read/tweet`
+# - rdt-cli (public-clis/rdt-cli): Reddit via cookie auth — `rdt search/read`
 for tool_pkg in "twitter-cli" "rdt-cli"; do
   case "$tool_pkg" in
-    twitter-cli) cli="bird" ;;
-    rdt-cli)     cli="rdt"  ;;
+    twitter-cli) cli="twitter" ;;
+    rdt-cli)     cli="rdt"     ;;
   esac
   info "Checking $cli ($tool_pkg)..."
   if $DRY_RUN; then
@@ -267,8 +295,8 @@ done
 # Initial cookie-login flow — interactive, must be run by the user manually.
 # We surface a clear reminder rather than blocking install.sh.
 if ! $DRY_RUN; then
-  if command -v bird &>/dev/null && [ ! -f "$HOME/.config/twitter-cli/cookies.json" ] && [ ! -f "$HOME/.twitter-cli/cookies.json" ]; then
-    warn "bird (twitter-cli) installed but not logged in — run: bird login   (opens browser to capture x.com cookie)"
+  if command -v twitter &>/dev/null && [ ! -f "$HOME/.config/twitter-cli/cookies.json" ] && [ ! -f "$HOME/.twitter-cli/cookies.json" ]; then
+    warn "twitter (twitter-cli) installed — uses browser cookie automatically; ensure you're logged in to x.com in Chrome/Firefox"
   fi
   if command -v rdt &>/dev/null && [ ! -f "$HOME/.config/rdt-cli/cookies.json" ] && [ ! -f "$HOME/.rdt-cli/cookies.json" ]; then
     warn "rdt (rdt-cli) installed but not logged in — run: rdt login   (opens browser to capture reddit cookie)"

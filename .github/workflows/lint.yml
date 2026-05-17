@@ -5,16 +5,20 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   shellcheck:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Run shellcheck
-        uses: ludeeus/action-shellcheck@master
+        uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38
         env:
           SHELLCHECK_OPTS: -e SC1091 -x
         with:
+          version: v0.11.0
           severity: warning
           scandir: '.'
           ignore_names: .zshrc
@@ -30,6 +34,32 @@ jobs:
             -not -path './.git/*' \
             -not -path './node_modules/*' \
             -print0 | xargs -0 -I{} bash -n {}
+
+  json-config-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate JSON configs
+        run: |
+          set -euo pipefail
+          python -m json.tool configs/claude-settings.json > /dev/null
+          python -m json.tool configs/mcp.json > /dev/null
+          python -m json.tool configs/opencode/opencode.json > /dev/null
+          python -m json.tool configs/opencode/oh-my-openagent.json > /dev/null
+
+  toml-config-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate TOML configs
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import tomllib
+          from pathlib import Path
+
+          tomllib.loads(Path('configs/codex/config.toml').read_text())
+          PY
 
   brewfile-check:
     runs-on: macos-latest

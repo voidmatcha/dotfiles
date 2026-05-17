@@ -1,4 +1,5 @@
 .DS_Store
+configs/.gitconfig-*.backup*
 .sisyphus/
 # Serena MCP runtime state (project.local.yml, memories/, cache/) — machine-local.
 .serena/
@@ -6,3 +7,4 @@
 # Per-machine git overrides (signingkey paths etc.) — never commit.
 .gitconfig.local
 .gitconfig.local-work
+.claude/settings.local.json

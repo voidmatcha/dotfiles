@@ -6,9 +6,14 @@ source "$(cd "$(dirname "$0")" && pwd)/lib/common.sh"
 
 # ── Check Tailscale is installed ──
 if ! [ -d "/Applications/Tailscale.app" ]; then
-  error "Tailscale.app not found at /Applications/Tailscale.app"
-  error "Run 'brew bundle --file=$DOTFILES_DIR/Brewfile' first, then re-run this script."
-  exit 1
+  if $DRY_RUN; then
+    warn "[dry-run] Tailscale.app not found at /Applications/Tailscale.app"
+    warn "[dry-run] real setup requires Brewfile install first."
+  else
+    error "Tailscale.app not found at /Applications/Tailscale.app"
+    error "Run 'brew bundle --file=$DOTFILES_DIR/Brewfile' first, then re-run this script."
+    exit 1
+  fi
 fi
 
 # CLI is bundled inside the app on macOS
@@ -20,7 +25,7 @@ if ! command -v tailscale &>/dev/null; then
   if $DRY_RUN; then
     info "[dry-run] ln -sf $TAILSCALE_CLI ~/.local/bin/tailscale"
   else
-    mkdir -p "$HOME/.local/bin"
+    ensure_dir "$HOME/.local/bin"
     ln -sf "$TAILSCALE_CLI" "$HOME/.local/bin/tailscale"
     info "Linked: tailscale → $TAILSCALE_CLI"
   fi
@@ -43,7 +48,11 @@ if $DRY_RUN; then
   info "[dry-run] Skipping Tailscale status check"
   info "[dry-run] tailscale set --ssh"
 else
-  read -rp "Press Enter once you've signed in to Tailscale..."
+  if $NON_INTERACTIVE; then
+    warn "Non-interactive mode: checking current Tailscale status without waiting for sign-in."
+  else
+    read -rp "Press Enter once you've signed in to Tailscale..."
+  fi
 
   if "$TAILSCALE_CLI" status &>/dev/null; then
     info "Tailscale connected"

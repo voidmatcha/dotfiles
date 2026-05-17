@@ -160,19 +160,26 @@ fi
 # ── Touch ID for sudo ──
 info "Configuring Touch ID for sudo..."
 TOUCHID_CONF="/etc/pam.d/sudo_local"
+TOUCHID_TEMPLATE="/etc/pam.d/sudo_local.template"
 if $DRY_RUN; then
-  info "[dry-run] Would create $TOUCHID_CONF with pam_tid.so"
+  info "[dry-run] Would enable pam_tid.so in $TOUCHID_CONF"
 else
-  if [ -f "$TOUCHID_CONF" ] && grep -q "pam_tid.so" "$TOUCHID_CONF" 2>/dev/null; then
+  if [ -f "$TOUCHID_CONF" ] && grep -Eq '^[[:space:]]*auth[[:space:]]+sufficient[[:space:]]+pam_tid\.so' "$TOUCHID_CONF" 2>/dev/null; then
     info "Touch ID for sudo already enabled"
   else
-    if [ ! -f /etc/pam.d/sudo_local.template ]; then
+    if [ ! -f "$TOUCHID_CONF" ] && [ ! -f "$TOUCHID_TEMPLATE" ]; then
       warn "/etc/pam.d/sudo_local.template missing — your macOS may not support sudo_local; skipping"
     else
-      info "Creating $TOUCHID_CONF (will require sudo)"
-      sudo tee "$TOUCHID_CONF" > /dev/null <<'PAM'
-auth       sufficient     pam_tid.so
-PAM
+      if [ -f "$TOUCHID_CONF" ]; then
+        backup_dst="$(next_backup_path "$TOUCHID_CONF")"
+        info "Backing up $TOUCHID_CONF -> $backup_dst (will require sudo)"
+        sudo cp -p "$TOUCHID_CONF" "$backup_dst"
+      else
+        info "Creating $TOUCHID_CONF from template (will require sudo)"
+        sudo cp -p "$TOUCHID_TEMPLATE" "$TOUCHID_CONF"
+      fi
+      printf '\n%s\n' 'auth       sufficient     pam_tid.so' | sudo tee -a "$TOUCHID_CONF" > /dev/null
+      sudo chmod 644 "$TOUCHID_CONF"
       info "Touch ID for sudo enabled — try 'sudo -k && sudo true' to verify"
     fi
   fi

@@ -23,7 +23,7 @@ Pick the tool that matches the task. Each row lists trade-offs; obey them.
 | Platform | Tool | Setup | Notes |
 |----------|------|-------|-------|
 | YouTube / Bilibili / 1800+ video sites | `yt-dlp --dump-json <URL>` (meta), `yt-dlp --write-sub --skip-download <URL>` (subs) | None | No auth needed |
-| Twitter / X | `bird search/read/user-tweets/thread` | `bird login` once (browser → cookie) | Don't bulk-scrape (account flag risk) |
+| Twitter / X | `twitter search "query"`, `twitter read <URL>`, `twitter user <handle>` | Logged in to x.com in Chrome/Firefox (cookie auto-extracted) | Don't bulk-scrape (account flag risk) |
 | Reddit | `rdt search "query"`, `rdt read <POST_ID>` | `rdt login` once (Reddit requires auth since 2024) | Returns post + comments |
 | LinkedIn | `linkedin` MCP tool — Claude calls it directly | Browser auth on first MCP tool call | Low-volume only; ToS prohibits automated tools |
 | RSS / Atom | `python3 -c 'import feedparser; d=feedparser.parse("<URL>"); ...'` | None (feedparser installed via dev.sh) | Blogs, YouTube channel feeds, GitHub releases, HN, Hada News |
@@ -37,7 +37,7 @@ Pick the tool that matches the task. Each row lists trade-offs; obey them.
 | Grep across files, list dir, simple Bash | Claude's built-in `Grep`/`LS`/`Bash` tools | serena's basic equivalents are auto-disabled to avoid duplication |
 | Understand structure of an unfamiliar codebase / docs / papers folder | **graphify** (`/graphify <dir>`) | Builds a queryable knowledge graph; 71× fewer tokens per query than re-reading raw files |
 | Audit `CLAUDE.md` files vs current code | `claude-md-improver` skill (auto-triggered by "audit CLAUDE.md") | Plugin from `claude-md-management@claude-plugins-official` |
-| Capture session learnings into `CLAUDE.md` | `/revise-claude-md` slash command | Same plugin |
+| Capture session learnings into `CLAUDE.md` | `/claude-md-management:revise-claude-md` slash command | Same plugin |
 
 ### "I need to interact with a browser"
 
@@ -53,13 +53,23 @@ These are installed by this dotfiles setup. Prefer them over reinventing or
 asking the user to install something new. Sources of truth for installation
 are `scripts/dev.sh`, `Brewfile`, and `configs/mcp.json`.
 
-- **serena** (MCP) — see "code" section above. The `claude` shell wrapper in
-  `.zshrc` injects serena's system-prompt-override automatically to counter
-  Opus 4.7's strong bias toward built-in tools. https://github.com/oraios/serena
-- **graphify** (`/graphify`) — see "code" section. https://github.com/safishamsi/graphify
-- **defuddle** (invoked via `npx`, no pre-install), **Jina Reader** (hosted, no install), **Exa MCP**, **agent-browser**,
-  **chrome-devtools MCP** — see routing tables above.
-- **yt-dlp**, **bird** (twitter-cli), **rdt** (rdt-cli), **feedparser**,
+- **serena** (MCP) — semantic code navigation and editing backed by LSP. Use
+  for cross-file renames, symbol lookups, reference searches, and refactors
+  where text-level edits would be fragile. Semantic tools are active by
+  default; serena's redundant basic utilities (read/grep/ls/bash equivalents)
+  are auto-disabled because Claude Code already covers them. The shell
+  wrapper in `.zshrc` injects serena's system-prompt-override automatically
+  to counter Opus 4.7's strong bias toward built-in tools. https://github.com/oraios/serena
+- **graphify** (Claude Code skill, `/graphify`) — build a queryable knowledge
+  graph from any folder (code, docs, PDFs, images). Use when you need to
+  understand structure of a large unfamiliar codebase or document set before
+  diving in. 71x fewer tokens per query than re-reading raw files. https://github.com/safishamsi/graphify
+- **defuddle** (npm CLI) — extract main content from a web page as Markdown.
+  Use ad-hoc via `npx defuddle parse <url> --markdown` when summarizing or
+  quoting articles; prefer this over scraping raw HTML. https://github.com/kepano/defuddle
+- **Jina Reader**, **Exa MCP**, **agent-browser**, and **chrome-devtools MCP** —
+  see routing tables above.
+- **yt-dlp**, **twitter** ([public-clis/twitter-cli](https://github.com/public-clis/twitter-cli)), **rdt** ([public-clis/rdt-cli](https://github.com/public-clis/rdt-cli)), **feedparser**, and
   **linkedin MCP** — see platform table above.
 - **rtk** — CLI output compressor that auto-applies to most Bash commands via
   hook. Saves 60–90% tokens. Compressed output is what you see by default;

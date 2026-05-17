@@ -1,5 +1,6 @@
 # ── Taps ──
 tap "anomalyco/tap"
+tap "oven-sh/bun"
 
 # ── CLI tools ──
 brew "git"
@@ -31,6 +32,7 @@ brew "postgresql"               # PostgreSQL database
 brew "mole"
 brew "bats-core"                # Bash Automated Testing System
 brew "pipx"                     # isolated Python CLI installer (used for twitter-cli, rdt-cli)
+brew "oven-sh/bun/bun"          # Bun JS runtime — required by claude-mem@thedotmack hooks (scripts/bun-runner.js)
 brew "yt-dlp"                   # YouTube/Bilibili/1800+ sites — metadata + subtitle extraction
 brew "anomalyco/tap/opencode"   # AI coding agent (third-party tap; tracks latest)
 brew "code-server"              # VS Code in browser (auto-launched via LaunchAgent)
@@ -95,5 +97,3 @@ vscode "vscode-icons-team.vscode-icons"
 
 # ── Mac App Store apps (managed via mas) ──
 # Re-generate with: mas list | awk '{id=$1; $1=""; sub(/^ /,""); name=$0; sub(/ +\([^)]+\) *$/,"",name); printf "mas \"%s\", id: %s\n", name, id}'
-
-

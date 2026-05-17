@@ -4,13 +4,13 @@ TAG="services"
 # shellcheck source=scripts/lib/common.sh
 source "$(cd "$(dirname "$0")" && pwd)/lib/common.sh"
 
-# Installs LaunchAgents for purplemux and code-server. Each runs at login and
-# is auto-restarted (KeepAlive=true). code-server binds to 127.0.0.1 (kernel-
-# level isolation). purplemux binds to *:8022 (no --bind flag upstream) but
-# enforces `networkAccess: "tailscale"` at the app layer — non-tailnet/non-
-# loopback IPs get HTTP 403 before auth. Both are exposed via `tailscale serve`
-# so the public-facing transport is HTTPS over the tailnet (cert from Tailscale,
-# not from the app).
+# Installs LaunchAgents for purplemux and code-server, but skips loading LaunchAgents when dependencies are missing.
+# Each installed service runs at
+# login and is auto-restarted (KeepAlive=true). code-server binds to 127.0.0.1 (kernel-
+# level isolation). purplemux binds to *:8022 (no --bind flag upstream), so this
+# repo relies on Tailscale Serve plus the macOS firewall rather than an app-level
+# tailnet filter. Both are exposed via `tailscale serve` so the public-facing
+# transport is HTTPS over the tailnet (cert from Tailscale, not from the app).
 
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
 
@@ -49,26 +49,40 @@ install_agent() {
 }
 
 # ── purplemux: ensure global npm install ──
+purplemux_ready=false
 if command -v purplemux >/dev/null 2>&1; then
   info "Found purplemux ($(purplemux --version 2>/dev/null || echo unknown))"
+  purplemux_ready=true
 elif command -v npm >/dev/null 2>&1; then
   if $DRY_RUN; then
     info "[dry-run] would run: npm install -g purplemux"
+    purplemux_ready=true
   else
     info "Installing purplemux via npm..."
-    npm install -g purplemux
+    if npm install -g purplemux; then
+      purplemux_ready=true
+    fi
   fi
 else
   warn "npm not found — install Node first (scripts/dev.sh), then run this script again."
 fi
 
-install_agent "com.user.purplemux" \
-              "$DOTFILES_DIR/configs/com.user.purplemux.plist" \
-              "$DOTFILES_DIR/scripts/purplemux-launch.sh"
+if $purplemux_ready; then
+  install_agent "com.user.purplemux" \
+                "$DOTFILES_DIR/configs/com.user.purplemux.plist" \
+                "$DOTFILES_DIR/scripts/purplemux-launch.sh"
+else
+  warn "Skipping purplemux LaunchAgent because purplemux is not available."
+fi
 
 # ── code-server: brew-managed, scaffold config if missing ──
+code_server_ready=false
 if ! command -v code-server >/dev/null 2>&1; then
   warn "code-server not in PATH. Run 'brew bundle --file=$DOTFILES_DIR/Brewfile' first."
+elif $DRY_RUN; then
+  code_server_ready=true
+else
+  code_server_ready=true
 fi
 
 CODE_SERVER_CONFIG="$HOME/.config/code-server/config.yaml"
@@ -78,7 +92,7 @@ if [ ! -f "$CODE_SERVER_CONFIG" ]; then
   else
     mkdir -p "$(dirname "$CODE_SERVER_CONFIG")"
     # Generate a random password so the default install is not unauthenticated.
-    pw=$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24)
+    pw=$(openssl rand -hex 12)
     cat > "$CODE_SERVER_CONFIG" <<EOF
 bind-addr: 127.0.0.1:8088
 auth: password
@@ -97,9 +111,13 @@ if [ -f "$CODE_SERVER_CONFIG" ] && ! $DRY_RUN; then
   chmod 600 "$CODE_SERVER_CONFIG"
 fi
 
-install_agent "com.user.code-server" \
-              "$DOTFILES_DIR/configs/com.user.code-server.plist" \
-              "$DOTFILES_DIR/scripts/code-server-launch.sh"
+if $code_server_ready; then
+  install_agent "com.user.code-server" \
+                "$DOTFILES_DIR/configs/com.user.code-server.plist" \
+                "$DOTFILES_DIR/scripts/code-server-launch.sh"
+else
+  warn "Skipping code-server LaunchAgent because code-server is not available."
+fi
 
 info "services setup done"
 
@@ -124,4 +142,4 @@ else
   warn "  tailscale serve --bg --https=443  --set-path=/ http://localhost:8022   # purplemux"
   warn "  tailscale serve --bg --https=8443 --set-path=/ http://localhost:8088   # code-server"
 fi
-warn "Restrict access via Tailscale ACL — both endpoints are tailnet-only."
+warn "Restrict Tailscale Serve access via ACL; do not expose purplemux's local :8022 listener directly."

@@ -4,8 +4,33 @@
   },
   "includeGitInstructions": false,
   "permissions": {
+    "deny": [
+      "Read(**/.env*)",
+      "Read(**/secrets/**)",
+      "WebFetch",
+      "mcp__filesystem"
+    ],
     "defaultMode": "auto"
   },
+  "enableAllProjectMcpServers": false,
+  "enabledMcpjsonServers": [
+    "chrome-devtools",
+    "serena"
+  ],
+  "disabledMcpjsonServers": [],
+  "allowedMcpServers": [
+    {
+      "serverName": "chrome-devtools"
+    },
+    {
+      "serverName": "serena"
+    }
+  ],
+  "deniedMcpServers": [
+    {
+      "serverName": "filesystem"
+    }
+  ],
   "hooks": {
     "PreToolUse": [
       {
@@ -14,6 +39,21 @@
           {
             "type": "command",
             "command": "rtk hook claude"
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/pretool-guard.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/skill-md-edit-warn.sh"
           }
         ]
       }
@@ -30,8 +70,11 @@
       }
     ]
   },
+  "allowManagedMcpServersOnly": true,
   "enabledPlugins": {
     "ralph-loop@claude-plugins-official": true,
+    "codex@openai-codex": true,
+    "session-wrap": true,
     "superpowers@claude-plugins-official": true,
     "rust-analyzer-lsp@claude-plugins-official": true,
     "fakechat@claude-plugins-official": true,
@@ -40,8 +83,22 @@
     "claude-md-management@claude-plugins-official": true,
     "hookify@claude-plugins-official": true,
     "comprehensive-review@claude-code-workflows": true,
+    "javascript-typescript@claude-code-workflows": true,
+    "python-development@claude-code-workflows": true,
+    "frontend-mobile-development@claude-code-workflows": true,
+    "security-scanning@claude-code-workflows": true,
+    "documentation-generation@claude-code-workflows": true,
+    "unit-testing@claude-code-workflows": true,
+    "git-pr-workflows@claude-code-workflows": true,
     "tdd-workflows@claude-code-workflows": true,
-    "error-debugging@claude-code-workflows": true
+    "error-debugging@claude-code-workflows": true,
+    "ui-design@claude-code-workflows": true,
+    "accessibility-compliance@claude-code-workflows": true,
+    "content-marketing@claude-code-workflows": true,
+    "seo-content-creation@claude-code-workflows": true,
+    "seo-technical-optimization@claude-code-workflows": true,
+    "seo-analysis-monitoring@claude-code-workflows": true,
+    "claude-mem@thedotmack": true
   },
   "extraKnownMarketplaces": {
     "claude-code-workflows": {
@@ -54,6 +111,9 @@
   "alwaysThinkingEnabled": true,
   "autoUpdatesChannel": "latest",
   "skipDangerousModePermissionPrompt": true,
+  "preferredNotifChannel": "ghostty",
+  "remoteControlAtStartup": true,
+  "agentPushNotifEnabled": true,
   "skipAutoPermissionPrompt": true,
   "voiceEnabled": true,
   "autoInstallIdeExtension": false

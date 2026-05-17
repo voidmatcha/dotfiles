@@ -13,6 +13,7 @@ _DOTFILES_COMMON_LOADED=1
 # common.sh lives at scripts/lib/common.sh, so the repo root is two levels up.
 DOTFILES_DIR="${DOTFILES_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 DRY_RUN="${DRY_RUN:-false}"
+NON_INTERACTIVE="${NON_INTERACTIVE:-false}"
 TAG="${TAG:-dotfiles}"
 
 # Colors (no-op when stdout is not a TTY)
@@ -40,11 +41,38 @@ run_or_dry() {
   fi
 }
 
+# ensure_dir <path> [path...]
+# Creates directories, or only reports them in dry-run mode.
+ensure_dir() {
+  local dir
+  for dir in "$@"; do
+    if $DRY_RUN; then
+      info "[dry-run] mkdir -p $dir"
+    else
+      mkdir -p "$dir"
+    fi
+  done
+}
+
+next_backup_path() {
+  local dst="$1"
+  local candidate="${dst}.backup"
+  local index=1
+
+  while [ -e "$candidate" ] || [ -L "$candidate" ]; do
+    candidate="${dst}.backup.${index}"
+    index=$((index + 1))
+  done
+
+  printf '%s\n' "$candidate"
+}
+
 # link_file "<source>" "<destination>"
 # Backs up an existing real file (not symlink) before linking. Honors DRY_RUN.
 link_file() {
   local src="$1"
   local dst="$2"
+  local backup_dst
 
   if $DRY_RUN; then
     info "[dry-run] ln -sf $src -> $dst"
@@ -52,8 +80,9 @@ link_file() {
   fi
 
   if [ -e "$dst" ] && [ ! -L "$dst" ]; then
-    warn "Backing up $dst -> ${dst}.backup"
-    mv "$dst" "${dst}.backup"
+    backup_dst="$(next_backup_path "$dst")"
+    warn "Backing up $dst -> $backup_dst"
+    mv "$dst" "$backup_dst"
   fi
 
   if [ -L "$dst" ]; then
@@ -65,4 +94,23 @@ link_file() {
   info "Linked: $src -> $dst"
 }
 
-export DOTFILES_DIR DRY_RUN
+# with_timeout <secs> <cmd> [args...]
+# macOS has no `timeout`; perl's alarm sends SIGALRM after N seconds (exit 142).
+# Use to bound third-party CLIs that may hang on first-run downloads, network
+# stalls, or unexpected interactive prompts — without blocking install.sh.
+with_timeout() {
+  local secs="$1"; shift
+  perl -e 'alarm shift; exec @ARGV' "$secs" "$@"
+}
+
+# json_entry_exists <file> <jq-filter> [extra jq args, e.g. --arg n "val"]
+# Used to skip already-applied idempotent operations whose CLI hangs on re-apply.
+# Pass shell-controlled values via `--arg` to avoid jq filter injection.
+json_entry_exists() {
+  local file="$1" filter="$2"; shift 2
+  [ -f "$file" ] || return 1
+  command -v jq &>/dev/null || return 1
+  jq -e "$@" "$filter" "$file" >/dev/null 2>&1
+}
+
+export DOTFILES_DIR DRY_RUN NON_INTERACTIVE

@@ -66,10 +66,85 @@ teardown() {
   [ "$(cat "${dst}.backup")" = "old" ]
 }
 
+@test "link_file does not overwrite an existing backup" {
+  src="$TMPDIR_TEST/src"; dst="$TMPDIR_TEST/dst"
+  echo new > "$src"
+  echo old > "$dst"
+  echo previous > "${dst}.backup"
+
+  run bash -c "DRY_RUN=false; source '$COMMON'; link_file '$src' '$dst'"
+
+  [ "$status" -eq 0 ]
+  [ -L "$dst" ]
+  [ "$(cat "${dst}.backup")" = "previous" ]
+  [ -f "${dst}.backup.1" ]
+  [ "$(cat "${dst}.backup.1")" = "old" ]
+}
+
 @test "link_file is a no-op in dry-run" {
   src="$TMPDIR_TEST/src"; dst="$TMPDIR_TEST/dst"
   echo hi > "$src"
   run bash -c "DRY_RUN=true; source '$COMMON'; link_file '$src' '$dst'"
   [ "$status" -eq 0 ]
   [ ! -e "$dst" ]
+}
+
+@test "ensure_dir creates a directory" {
+  dir="$TMPDIR_TEST/new-dir"
+  run bash -c "DRY_RUN=false; source '$COMMON'; ensure_dir '$dir'"
+  [ "$status" -eq 0 ]
+  [ -d "$dir" ]
+}
+
+@test "ensure_dir is a no-op in dry-run" {
+  dir="$TMPDIR_TEST/dry-dir"
+  run bash -c "DRY_RUN=true; source '$COMMON'; ensure_dir '$dir'"
+  [ "$status" -eq 0 ]
+  [ ! -e "$dir" ]
+  [[ "$output" == *"[dry-run] mkdir -p"* ]]
+}
+
+@test "with_timeout passes through exit code on success" {
+  run bash -c "source '$COMMON'; with_timeout 5 true"
+  [ "$status" -eq 0 ]
+  run bash -c "source '$COMMON'; with_timeout 5 false"
+  [ "$status" -ne 0 ]
+}
+
+@test "with_timeout kills slow command (exit 142 on SIGALRM)" {
+  run bash -c "source '$COMMON'; with_timeout 1 sleep 5"
+  # SIGALRM (perl alarm) terminates the process; exit code is 128+14=142.
+  [ "$status" -eq 142 ]
+}
+
+@test "json_entry_exists returns true when filter matches" {
+  cat > "$TMPDIR_TEST/state.json" <<'JSON'
+{ "plugins": { "alpha@market": {}, "beta@market": {} } }
+JSON
+  run bash -c "source '$COMMON'; json_entry_exists '$TMPDIR_TEST/state.json' '.plugins | has(\$p)' --arg p 'alpha@market'"
+  [ "$status" -eq 0 ]
+}
+
+@test "json_entry_exists returns false when filter does not match" {
+  cat > "$TMPDIR_TEST/state.json" <<'JSON'
+{ "plugins": { "alpha@market": {} } }
+JSON
+  run bash -c "source '$COMMON'; json_entry_exists '$TMPDIR_TEST/state.json' '.plugins | has(\$p)' --arg p 'missing@market'"
+  [ "$status" -ne 0 ]
+}
+
+@test "json_entry_exists is injection-safe via --arg" {
+  cat > "$TMPDIR_TEST/state.json" <<'JSON'
+{ "plugins": { "real": {} } }
+JSON
+  # Hostile value with double-quote + jq operator. Without --arg this would
+  # break the filter; with --arg it's treated as a literal string -> no match.
+  evil='evil"; "any string here"'
+  run bash -c "source '$COMMON'; json_entry_exists '$TMPDIR_TEST/state.json' '.plugins | has(\$p)' --arg p '$evil'"
+  [ "$status" -ne 0 ]
+}
+
+@test "json_entry_exists returns false when file is missing" {
+  run bash -c "source '$COMMON'; json_entry_exists '$TMPDIR_TEST/nope.json' '.'"
+  [ "$status" -ne 0 ]
 }

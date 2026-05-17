@@ -6,7 +6,7 @@ set -euo pipefail
 # installed version at runtime so this keeps working across Node upgrades.
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 if [ -d "$HOME/.nvm/versions/node" ]; then
-  latest_node="$(ls -1 "$HOME/.nvm/versions/node" 2>/dev/null | sort -V | tail -n1 || true)"
+  latest_node="$(find "$HOME/.nvm/versions/node" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2>/dev/null | sort -V | tail -n1 || true)"
   if [ -n "$latest_node" ] && [ -d "$HOME/.nvm/versions/node/$latest_node/bin" ]; then
     export PATH="$HOME/.nvm/versions/node/$latest_node/bin:$PATH"
   fi
@@ -17,6 +17,6 @@ if ! command -v purplemux >/dev/null 2>&1; then
   exit 78
 fi
 
-# purplemux binds to localhost:8022 by default. For remote access on the
-# tailnet, run once: tailscale serve --bg 8022
+# purplemux listens on :8022. services.sh exposes it through Tailscale Serve:
+# tailscale serve --bg --https=443 --set-path=/ http://localhost:8022
 exec purplemux
