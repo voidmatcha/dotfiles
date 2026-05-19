@@ -270,26 +270,32 @@ else
 fi
 warn ""
 
-# 2. Public key registration on git hosts
-warn "2) Register the PUBLIC keys on each git host as BOTH Auth + Signing keys."
-warn "   (Signing is a separate dropdown on GitHub — needed for 'Verified' badge.)"
-warn ""
-warn "   Personal (github.com):"
-warn "     pbcopy < ~/.ssh/id_ed25519_personal.pub"
-warn "     # then open: https://github.com/settings/keys → New SSH key"
-warn ""
-warn "   Work — public GitHub repos you contribute to as your work identity:"
-warn "     pbcopy < ~/.ssh/id_ed25519_work.pub"
-warn "     # then open: https://github.com/settings/keys (separate account)"
-warn ""
-warn "   Work — corporate GitHub Enterprise (if any):"
-warn "     pbcopy < ~/.ssh/id_ed25519_work.pub"
-warn "     # paste at: https://<your-internal-git-host>/settings/keys"
-warn "     # e.g. https://oss.navercorp.com/settings/keys"
+# 2. gh CLI authentication — needed for HTTPS git ops on each host you push to,
+#    and lets step 3 register public keys via CLI instead of pbcopy/browser.
+warn "2) Authenticate gh CLI on each git host:"
+warn "     gh auth login -h github.com -p https -w \\"
+warn "       -s admin:public_key,admin:ssh_signing_key,gist,read:org,repo,workflow"
+warn "     # Corporate GHE: swap host, e.g. -h oss.navercorp.com (drop 'workflow' scope)."
+warn "     # Stale account on a host?  gh auth logout -h <host> -u <old-handle>   first."
 warn ""
 
-# 3. Sanity check
-warn "3) Verify auth works on each host:"
+# 3. Public key registration on git hosts (Auth + Signing — two separate slots)
+warn "3) Register PUBLIC keys on each host as BOTH Auth + Signing."
+warn "   (Signing is a separate dropdown — needed for the 'Verified' badge.)"
+warn ""
+warn "   CLI path (uses gh from step 2):"
+warn "     gh ssh-key add ~/.ssh/id_ed25519_personal.pub --type authentication --title \"\$(hostname -s)-personal\""
+warn "     gh ssh-key add ~/.ssh/id_ed25519_personal.pub --type signing        --title \"\$(hostname -s)-personal-sig\""
+warn "     # Add --hostname <host> for non-github.com (e.g. oss.navercorp.com)."
+warn "     # Repeat for ~/.ssh/id_ed25519_work.pub against each host you use the work identity on."
+warn ""
+warn "   Manual fallback (no gh on that host):"
+warn "     pbcopy < ~/.ssh/id_ed25519_personal.pub   # paste at github.com/settings/keys"
+warn "     pbcopy < ~/.ssh/id_ed25519_work.pub       # paste at work-host/settings/keys"
+warn ""
+
+# 4. Sanity check
+warn "4) Verify auth works on each host:"
 warn "     ssh -T git@github.com                    # 'Hi <user>!'"
 warn "     ssh -T git@<your-internal-git-host>      # 'Hi <user>!'"
 warn ""

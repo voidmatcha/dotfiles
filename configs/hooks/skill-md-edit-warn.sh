@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # PostToolUse hook: warn when any skills/<name>/SKILL.md is edited mid-session.
 #
 # Why: the main agent's in-memory copy of SKILL.md is loaded at session start.
@@ -12,7 +12,18 @@
 
 set -euo pipefail
 
-input=$(cat)
+# Bounded stdin read via bash builtin (timeout(1) isn't on stock macOS).
+# Fail open — this hook is advisory only and never blocks tool calls.
+input=""
+if ! IFS= read -rd '' -t 5 input; then
+  rc=$?
+  if [ "$rc" -gt 128 ]; then
+    exit 0  # timeout
+  fi
+fi
+if [ -z "$input" ]; then
+  exit 0
+fi
 file_path=$(printf '%s' "$input" | jq -r '.tool_input.file_path // empty' 2>/dev/null || echo "")
 session_id=$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null || echo "")
 

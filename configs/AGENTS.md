@@ -88,3 +88,37 @@ are `scripts/dev.sh`, `Brewfile`, and `configs/mcp.json`.
   Exa). Use the "local" alternative (defuddle, agent-browser).
 - Don't bulk-scrape any platform — account-flag risk on X / Reddit /
   LinkedIn, and rate-limit risk on Jina / Exa.
+- Keep enabled MCPs lean per project — aim for <10 enabled and <80 total
+  active tools at any time. Past that, the model loses the ability to pick
+  the right tool. Disable per-project via `/mcp` rather than uninstalling.
+- Don't create stray top-level `*.md` files (NOTES.md, SUMMARY.md,
+  FINDINGS.md, etc.). Named-policy files (README, CLAUDE, AGENTS,
+  CONTRIBUTING, LICENSE, CHANGELOG, SKILL, SECURITY) and files under
+  `docs/`, `skills/`, `.claude/`, `agents/`, `commands/` are fine; anything
+  else needs explicit user approval. (Enforced by pretool-guard.sh.)
+
+## Commit message protocol
+
+For any non-trivial commit (more than a one-line fix), include the trailer
+block below. The trailers turn `git log` into a free decision log — future
+spelunkers can `git log --grep='Rejected:'` to see what was *not* taken.
+
+```
+<subject line — imperative, ≤72 chars>
+
+<body — what changed and why, wrap at 80>
+
+Constraint: <external limits you worked under — API shapes, compliance,
+  framework guarantees. Omit if there were none.>
+Rejected: <alternatives you considered but discarded + one-line reason.
+  Omit if no real alternatives existed.>
+Confidence: <high | medium | low>
+Scope-risk: <code outside this diff that could plausibly break. "none"
+  is a valid answer if you really checked.>
+Not-tested: <things you couldn't verify (env, integration, race). "none"
+  is valid.>
+```
+
+Trivial diffs (typo fix, dependency bump, formatting-only change) skip
+the trailer block. Use judgment — if the commit touched logic, write the
+trailers.

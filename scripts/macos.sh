@@ -48,7 +48,7 @@ if [ -d "$LAUNCH_AGENTS_DIR" ] && [ ! -w "$LAUNCH_AGENTS_DIR" ]; then
     info "[dry-run] sudo chown -R $(whoami):staff $LAUNCH_AGENTS_DIR"
   else
     warn "$LAUNCH_AGENTS_DIR is not writable — fixing ownership (sudo)"
-    sudo chown -R "$(whoami):staff" "$LAUNCH_AGENTS_DIR"
+    sudo chown -R "$(whoami):$(id -gn)" "$LAUNCH_AGENTS_DIR"
   fi
 fi
 if ! $DRY_RUN; then

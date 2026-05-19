@@ -113,12 +113,16 @@ link_file "$DOTFILES_DIR/configs/AGENTS.md" "$HOME/.agent/AGENTS.md"
 # user-scope MCP entries in ~/.claude.json (managed via `claude mcp add`), not in
 # ~/.claude/.mcp.json. Registration is handled by scripts/claude.sh which reads
 # configs/mcp.json (single source of truth) and runs `claude mcp add-json`.
-ensure_dir "$HOME/.claude/hooks" "$HOME/.claude/plugins"
+ensure_dir "$HOME/.claude/hooks" "$HOME/.claude/plugins" "$HOME/.claude/commands" "$HOME/.claude/agents"
 link_file "$DOTFILES_DIR/configs/claude-settings.json" "$HOME/.claude/settings.json"
 link_file "$DOTFILES_DIR/configs/CLAUDE.md"            "$HOME/.claude/CLAUDE.md"
 link_file "$DOTFILES_DIR/configs/hooks/skill-eval.sh"  "$HOME/.claude/hooks/skill-eval.sh"
 link_file "$DOTFILES_DIR/configs/hooks/pretool-guard.sh" "$HOME/.claude/hooks/pretool-guard.sh"
 link_file "$DOTFILES_DIR/configs/hooks/skill-md-edit-warn.sh" "$HOME/.claude/hooks/skill-md-edit-warn.sh"
+link_file "$DOTFILES_DIR/configs/hooks/suggest-compact.sh" "$HOME/.claude/hooks/suggest-compact.sh"
+link_file "$DOTFILES_DIR/configs/commands/orchestrate.md" "$HOME/.claude/commands/orchestrate.md"
+link_file "$DOTFILES_DIR/configs/agents/scout.md"     "$HOME/.claude/agents/scout.md"
+link_file "$DOTFILES_DIR/configs/agents/critic.md"    "$HOME/.claude/agents/critic.md"
 
 # Cursor
 ensure_dir "$HOME/.cursor/rules"
@@ -204,14 +208,10 @@ info "  with a header: claude mcp add --transport http -H 'x-api-key: ...' exa h
 info "  GitHub Operations on the public dotfiles use 'gh' CLI directly."
 info "  The company overlay (if active) adds GitHub MCP servers — see company/AGENTS-company.md."
 info ""
-info "=== gh CLI authentication (optional but needed for most gh commands) ==="
-if command -v gh &>/dev/null; then
-  if gh auth status &>/dev/null; then
-    info "  gh: github.com authenticated ✓"
-  else
-    warn "  gh auth login           # github.com (public)"
-  fi
-  if [ -f "$HOME/.company.secrets.env" ]; then
-    warn "  gh auth login --hostname <your-internal-git-host>   # internal GHE (if any)"
-  fi
+info "=== gh CLI authentication ==="
+if command -v gh &>/dev/null && gh auth status &>/dev/null; then
+  info "  gh: github.com authenticated ✓"
+else
+  info "  See step 2 in the 'REQUIRED MANUAL STEPS' block printed by scripts/git.sh"
+  info "  (includes correct scopes for ssh-key add + ssh signing key)."
 fi

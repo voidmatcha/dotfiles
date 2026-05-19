@@ -549,3 +549,142 @@ PY
   grep -q 'op run --env-file .env -- <command>' "$REPO_ROOT/README.md"
   grep -q "sops exec-env secrets.enc.env '<command>'" "$REPO_ROOT/README.md"
 }
+
+@test "Claude PreToolUse guard fails open on empty stdin (timeout safety)" {
+  output_file="$TMPDIR_TEST/pretool-empty-output.txt"
+  stderr_file="$TMPDIR_TEST/pretool-empty-stderr.txt"
+
+  run bash -c "'$REPO_ROOT/configs/hooks/pretool-guard.sh' </dev/null >'$output_file' 2>'$stderr_file'"
+
+  [ "$status" -eq 0 ]
+  [ ! -s "$output_file" ]
+  grep -qE 'empty stdin|stdin read timed out' "$stderr_file"
+}
+
+@test "Claude PreToolUse guard blocks stray .md creation via Write" {
+  input="$TMPDIR_TEST/pretool-md-stray.json"
+  output_file="$TMPDIR_TEST/pretool-md-stray-output.json"
+  cat > "$input" <<'JSON'
+{"hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{"file_path":"/tmp/SUMMARY.md","content":"oops"}}
+JSON
+
+  run bash -c "'$REPO_ROOT/configs/hooks/pretool-guard.sh' < '$input' > '$output_file'"
+
+  [ "$status" -eq 0 ]
+  python - <<PY
+import json
+from pathlib import Path
+
+payload = json.loads(Path('$output_file').read_text())
+hook = payload['hookSpecificOutput']
+assert hook['permissionDecision'] == 'deny'
+assert 'stray .md' in hook['permissionDecisionReason']
+PY
+}
+
+@test "Claude PreToolUse guard allows named-policy .md and doc-tree paths via Write" {
+  for path in \
+      /tmp/repo/README.md \
+      /tmp/repo/AGENTS.md \
+      /tmp/repo/docs/architecture.md \
+      /tmp/repo/skills/foo/SKILL.md \
+      /tmp/repo/.claude/agents/scout.md; do
+    input="$TMPDIR_TEST/pretool-md-ok-$(basename "$path").json"
+    python - "$input" "$path" <<'PY'
+import json, sys
+from pathlib import Path
+Path(sys.argv[1]).write_text(json.dumps({
+    'hook_event_name': 'PreToolUse',
+    'tool_name': 'Write',
+    'tool_input': {'file_path': sys.argv[2], 'content': 'ok'},
+}))
+PY
+
+    run bash -c "'$REPO_ROOT/configs/hooks/pretool-guard.sh' < '$input'"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+  done
+}
+
+@test "Claude PreToolUse guard ignores non-Bash non-Write tools silently" {
+  input="$TMPDIR_TEST/pretool-other-tool.json"
+  cat > "$input" <<'JSON'
+{"hook_event_name":"PreToolUse","tool_name":"Read","tool_input":{"file_path":"/etc/passwd"}}
+JSON
+
+  run bash -c "'$REPO_ROOT/configs/hooks/pretool-guard.sh' < '$input'"
+
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "suggest-compact hook is wired, executable, and never blocks" {
+  [ -x "$REPO_ROOT/configs/hooks/suggest-compact.sh" ]
+
+  python - <<PY
+import json
+from pathlib import Path
+
+cfg = json.loads((Path('$REPO_ROOT') / 'configs/claude-settings.json').read_text())
+commands = []
+for event in cfg['hooks']['PreToolUse']:
+    for hook in event['hooks']:
+        commands.append(hook['command'])
+assert '~/.claude/hooks/suggest-compact.sh' in commands
+PY
+
+  # Hook never blocks: exit 0, no stdout, regardless of input.
+  run bash -c "echo '{}' | '$REPO_ROOT/configs/hooks/suggest-compact.sh'"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "suggest-compact emits a stderr hint at threshold tool-count" {
+  count_file="${TMPDIR:-/tmp}/claude-tool-count-bats-test"
+  rm -f "$count_file"
+  echo 49 > "$count_file"
+
+  CLAUDE_SESSION_ID=bats-test run bash -c "echo '{}' | '$REPO_ROOT/configs/hooks/suggest-compact.sh' 2>&1"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"~50 tool calls"* ]]
+
+  rm -f "$count_file"
+}
+
+@test "install links new commands, agents, and suggest-compact" {
+  grep -q 'configs/hooks/suggest-compact.sh' "$REPO_ROOT/install.sh"
+  grep -q '\$HOME/.claude/hooks/suggest-compact.sh' "$REPO_ROOT/install.sh"
+  grep -q 'configs/commands/orchestrate.md' "$REPO_ROOT/install.sh"
+  grep -q '\$HOME/.claude/commands/orchestrate.md' "$REPO_ROOT/install.sh"
+  grep -q 'configs/agents/scout.md' "$REPO_ROOT/install.sh"
+  grep -q 'configs/agents/critic.md' "$REPO_ROOT/install.sh"
+}
+
+@test "AGENTS.md documents MCP budget and commit-trailer protocol" {
+  grep -q '<10 enabled' "$REPO_ROOT/configs/AGENTS.md"
+  grep -q 'Commit message protocol' "$REPO_ROOT/configs/AGENTS.md"
+  grep -q 'Confidence:' "$REPO_ROOT/configs/AGENTS.md"
+  grep -q 'Rejected:' "$REPO_ROOT/configs/AGENTS.md"
+}
+
+@test "codex.sh installs oh-my-codex (omx) alongside the Codex CLI" {
+  grep -q 'npm install -g @openai/codex oh-my-codex' "$REPO_ROOT/scripts/codex.sh"
+  grep -q 'omx setup' "$REPO_ROOT/scripts/codex.sh"
+  grep -q 'omx doctor' "$REPO_ROOT/scripts/codex.sh"
+  # No stale cherry-pick: our local Codex pre-tool-use hook reference was
+  # removed when we switched to using omx for orchestration.
+  [ ! -e "$REPO_ROOT/configs/codex/hooks" ]
+  run grep -F 'CODEX_SMOKE_TEST' "$REPO_ROOT/scripts/codex.sh"
+  [ "$status" -ne 0 ]
+}
+
+@test "claude.sh installs ui-clone-skills via upstream installer (not skills CLI)" {
+  # The `skills add` path skips required system tooling and the ui_clone/
+  # Python package — README upstream explicitly warns against it.
+  run grep -E '^\s*"voidmatcha/ui-clone-skills"' "$REPO_ROOT/scripts/claude.sh"
+  [ "$status" -ne 0 ]
+  grep -q 'github.com/voidmatcha/ui-clone-skills.git' "$REPO_ROOT/scripts/claude.sh"
+  grep -q 'UI_CLONE_DIR' "$REPO_ROOT/scripts/claude.sh"
+  grep -q 'install.sh' "$REPO_ROOT/scripts/claude.sh"
+}

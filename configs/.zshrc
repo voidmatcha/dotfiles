@@ -15,6 +15,9 @@ fpath+=${ZSH_CUSTOM:-${ZSH:-~/.oh-my-zsh}/custom}/plugins/zsh-completions/src
 
 source "$ZSH/oh-my-zsh.sh"
 
+# ── Local bin (early — uv tool installs go here, serena check below needs it) ──
+export PATH="$HOME/.local/bin:$PATH"
+
 # ── Rancher Desktop (optional, Docker CLI replacement) ──
 [ -d "$HOME/.rd/bin" ] && export PATH="$HOME/.rd/bin:$PATH"
 
@@ -26,7 +29,7 @@ export NVM_DIR="$HOME/.nvm"
 # ── pyenv ──
 export PYENV_ROOT="$HOME/.pyenv"
 [[ -d "$PYENV_ROOT/bin" ]] && export PATH="$PYENV_ROOT/bin:$PATH"
-command -v pyenv &>/dev/null && eval "$(pyenv init -)"
+command -v pyenv &>/dev/null && eval "$(pyenv init - --no-rehash)"
 
 # ── SDKMAN ──
 export SDKMAN_DIR="$HOME/.sdkman"
@@ -133,9 +136,6 @@ alias gd="git diff"
 alias gl="git log --oneline --graph"
 alias gp="git push"
 alias gc="git commit"
-
-# ── Local bin ──
-export PATH="$HOME/.local/bin:$PATH"
 
 # Enable 1h prompt-cache TTL (vs 5min default) for Anthropic API
 export ENABLE_PROMPT_CACHING_1H=1

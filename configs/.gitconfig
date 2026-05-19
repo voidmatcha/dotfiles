@@ -2,7 +2,7 @@
     editor = code --wait
     autocrlf = input
     pager = delta
-	excludesfile = ~/.gitignore_global
+    excludesfile = ~/.gitignore_global
 
 [interactive]
     diffFilter = delta --color-only

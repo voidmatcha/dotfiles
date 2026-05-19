@@ -21,7 +21,7 @@ if [ -d "$LAUNCH_AGENTS_DIR" ] && [ ! -w "$LAUNCH_AGENTS_DIR" ]; then
     info "[dry-run] sudo chown -R $(whoami):staff $LAUNCH_AGENTS_DIR"
   else
     warn "$LAUNCH_AGENTS_DIR is not writable — fixing ownership (sudo)"
-    sudo chown -R "$(whoami):staff" "$LAUNCH_AGENTS_DIR"
+    sudo chown -R "$(whoami):$(id -gn)" "$LAUNCH_AGENTS_DIR"
   fi
 fi
 
@@ -43,8 +43,8 @@ install_agent() {
   sed -e "s|__WRAPPER_PATH__|$wrapper_dst|g" \
       -e "s|__HOME__|$HOME|g" \
       "$plist_src" > "$plist_dst"
-  launchctl unload "$plist_dst" 2>/dev/null || true
-  launchctl load "$plist_dst"
+  launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
+  launchctl bootstrap "gui/$(id -u)" "$plist_dst"
   info "LaunchAgent installed: $label"
 }
 

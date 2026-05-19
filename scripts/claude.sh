@@ -31,7 +31,10 @@ fi
 
 SKILL_REPOS=(
   "voidmatcha/e2e-skills"
-  "voidmatcha/ui-clone-skills"
+  # voidmatcha/ui-clone-skills: handled separately below via the upstream
+  # install.sh — the `skills add` path skips required system tooling
+  # (uv, ffmpeg, imagemagick, dssim, agent-browser) and the ui_clone/
+  # Python package, both of which the skill's preflight checks expect.
   "blader/humanizer"
   "epoko77-ai/im-not-ai"
   "forrestchang/andrej-karpathy-skills@karpathy-guidelines"
@@ -81,6 +84,41 @@ for url_args in "${SKILL_URLS[@]}"; do
     fi
   fi
 done
+
+# ── ui-clone-skills — install via upstream installer ──
+# The `skills add voidmatcha/ui-clone-skills` path skips required system
+# tooling (uv, ffmpeg, imagemagick, dssim, agent-browser) and the ui_clone/
+# Python package. The repo's own install.sh provisions all of that and
+# registers the local checkout as a Claude Code marketplace. Clone first
+# (curl-pipe-bash is denied by our pretool-guard for good reason), then run
+# the on-disk installer.
+UI_CLONE_DIR="${UI_CLONE_INSTALL_DIR:-$HOME/.local/share/ui-clone-skills}"
+if $DRY_RUN; then
+  info "[dry-run] would clone voidmatcha/ui-clone-skills to $UI_CLONE_DIR and run install.sh"
+else
+  if [ -d "$UI_CLONE_DIR/.claude-plugin" ]; then
+    info "ui-clone-skills: updating $UI_CLONE_DIR"
+    git -C "$UI_CLONE_DIR" pull --ff-only --quiet 2>/dev/null \
+      || warn "  ui-clone-skills: local changes prevent fast-forward (leaving as-is)"
+  else
+    info "ui-clone-skills: cloning to $UI_CLONE_DIR"
+    ensure_dir "$(dirname "$UI_CLONE_DIR")"
+    if ! git clone --quiet https://github.com/voidmatcha/ui-clone-skills.git "$UI_CLONE_DIR"; then
+      warn "ui-clone-skills: clone failed, skipping installer"
+      UI_CLONE_DIR=""
+    fi
+  fi
+
+  if [ -n "$UI_CLONE_DIR" ] && [ -x "$UI_CLONE_DIR/install.sh" ]; then
+    ui_clone_flags=()
+    $NON_INTERACTIVE && ui_clone_flags+=(--yes)
+    if "$UI_CLONE_DIR/install.sh" "${ui_clone_flags[@]}"; then
+      info "ui-clone-skills: install.sh OK — run '/plugin install ui-clone-skills@voidmatcha' inside Claude Code to activate"
+    else
+      warn "ui-clone-skills: install.sh exited non-zero"
+    fi
+  fi
+fi
 
 PLUGIN_MARKETPLACES=(
   "openai/codex-plugin-cc"
@@ -236,15 +274,18 @@ register_mcp_from_file() {
 info "Registering user-scope MCP servers from configs/mcp.json..."
 register_mcp_from_file "$DOTFILES_DIR/configs/mcp.json"
 
-# session-wrap plugin
-if ! [ -d ~/.claude/plugins/session-wrap ]; then
+# session-wrap plugin — pinned SHA prevents silent main-branch breakage
+SESSION_WRAP_SHA="fd9c20754dba0b0ab040f3f2cd2cb533fc43347d"  # 2026-05-20, checked via gh api
+SESSION_WRAP_DIR="$HOME/.claude/plugins/session-wrap"
+if ! [ -d "$SESSION_WRAP_DIR" ]; then
   if $DRY_RUN; then
-    info "[dry-run] install session-wrap plugin"
+    info "[dry-run] install session-wrap plugin (SHA: $SESSION_WRAP_SHA)"
   else
     TMPDIR=$(mktemp -d)
     if git clone https://github.com/team-attention/plugins-for-claude-natives "$TMPDIR" \
-      && cp -r "$TMPDIR/plugins/session-wrap" ~/.claude/plugins/; then
-      info "Installed plugin: session-wrap"
+      && git -C "$TMPDIR" checkout "$SESSION_WRAP_SHA" \
+      && cp -r "$TMPDIR/plugins/session-wrap" "$SESSION_WRAP_DIR"; then
+      info "Installed plugin: session-wrap ($SESSION_WRAP_SHA)"
     else
       info "⚠️  Failed plugin: session-wrap"
     fi
