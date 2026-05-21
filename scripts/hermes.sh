@@ -9,13 +9,17 @@ source "$(cd "$(dirname "$0")" && pwd)/lib/common.sh"
 # https://github.com/NousResearch/hermes-agent
 INSTALLER_URL="https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh"
 
-if command -v hermes >/dev/null 2>&1; then
-  info "hermes already installed ($(hermes --version 2>/dev/null || echo unknown)) — skipping"
+if $DRY_RUN; then
+  if command -v hermes >/dev/null 2>&1; then
+    info "[dry-run] hermes already installed — would skip"
+  else
+    info "[dry-run] curl -fsSL $INSTALLER_URL | bash"
+  fi
   exit 0
 fi
 
-if $DRY_RUN; then
-  info "[dry-run] curl -fsSL $INSTALLER_URL | bash"
+if command -v hermes >/dev/null 2>&1; then
+  info "hermes already installed ($(hermes --version 2>/dev/null || echo unknown)) — skipping"
   exit 0
 fi
 

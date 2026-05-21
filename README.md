@@ -65,19 +65,20 @@ cd ~/dotfiles
 
 **Shell** — Oh My Zsh with zsh-autosuggestions, zsh-syntax-highlighting, zsh-completions.
 
-**Git** — separate personal/work accounts via `includeIf` with **remote-URL-based** routing (see "Separate Git accounts" below). Commits and tags are SSH-signed by default — register the public key as a Signing Key on GitHub to get a verified badge. A global `~/.gitignore_global` (symlink to `configs/.gitignore_global`) catches `.DS_Store`, editor leftovers, `.envrc`, `.env*`, etc., so individual repos don't have to.
+**Git** — separate personal/work accounts via `includeIf` with **remote-URL-based** routing (see "Separate Git accounts" below). Commits and tags are SSH-signed by default — register the public key as a Signing Key on GitHub to get a verified badge. A global `~/.gitignore_global` (symlink to `configs/.gitignore_global`) catches `.DS_Store`, editor leftovers, and local `.env*` files while leaving shared `.envrc` files trackable for direnv.
 
 **Claude Code:**
 - Skills — agent-skills, ai-slop-cleaner, clarify, code-review, doc-coauthoring, e2e-skills, frontend-design, humanizer, im-not-ai, internal-comms, karpathy-guidelines, mcp-builder, obsidian-skills, project-session-manager (`/oh-my-claudecode:psm`), security-best-practices, skill-creator, ui-clone-skills, ultrawork, webapp-testing
 - Plugins — ralph-loop (iterative autonomous dev loops; `/ralph-loop:ralph-loop`), [codex@openai-codex](https://github.com/openai/codex-plugin-cc) (delegate to / review with the local Codex CLI from inside Claude Code), superpowers, rust-analyzer-lsp, fakechat, vercel, session-report, claude-md-management (`/claude-md-management:revise-claude-md` + `claude-md-improver` audit skill), hookify, session-wrap, [claude-mem@thedotmack](https://github.com/thedotmack/claude-mem) (persistent memory + cross-session search), plus role-focused plugins from [wshobson/agents](https://github.com/wshobson/agents) marketplace (comprehensive-review, javascript-typescript, python-development, frontend-mobile-development, security-scanning, documentation-generation, unit-testing, tdd-workflows, git-pr-workflows, error-debugging, ui-design, accessibility-compliance, content-marketing, seo-*). Plugin slash commands use `/<plugin-name>:<command>` (e.g. `/ralph-loop:ralph-loop`, not bare `/ralph-loop`). Standalone skills (`/graphify`, etc.) don't take the prefix.
 - Hooks — skill-eval (forced-eval prompt injection per Scott Spence pattern, ~84% activation rate), `rtk hook claude` (in-place PreToolUse hook registered via `rtk init --global`; compresses Bash output 60–90%), pretool-guard (structured PreToolUse deny for risky Bash), skill-md-edit-warn (PostToolUse reminder after editing `SKILL.md`)
 - MCP — chrome-devtools (browser control via Chrome DevTools Protocol), serena (semantic code intelligence). Defined in `configs/mcp.json`; `scripts/claude.sh` registers each entry via `claude mcp add-json --scope user` (writes to `~/.claude.json`, not the older `.mcp.json` symlink path), while Claude settings pin the approved managed servers.
-- Codex CLI — first-class `scripts/codex.sh` setup owns `@openai/codex` install/auth and symlinks `configs/codex/config.toml` to `~/.codex/config.toml`.
+- Codex CLI — first-class `scripts/codex.sh` setup owns `@openai/codex` install/auth, installs the official cmux Codex skill into `~/.codex/skills/cmux`, and copies the portable `configs/codex/config.toml` template to `~/.codex/config.toml` so Codex's machine-local trust/runtime entries don't dirty the repo.
 - Token saving — settings calibrated against [spilist's checklist gist](https://gist.github.com/spilist/c468cbf1ed0ffc91100f813aabdcd520) (verified against official docs). Claude Code: `includeGitInstructions: false` drops the built-in git workflow instructions + git status snapshot from the system prompt. `autoInstallIdeExtension: false` keeps Claude Code as a pure terminal tool — no auto-install of VS Code/JetBrains extensions. Codex: `web_search = "disabled"` drops the web_search tool definition (re-enable per-invocation with `codex --search`). `[features].apps = false` drops ChatGPT-connector tool definitions.
 
 **Codex CLI:**
 - CLI — `scripts/codex.sh` installs `@openai/codex` with npm when `codex` is missing; upstream also supports `brew install --cask codex`
-- Config — `configs/codex/config.toml` is symlinked to `~/.codex/config.toml`; it sets OpenAI `gpt-5.5`, `approval_policy = "on-request"`, `sandbox_mode = "workspace-write"`, `web_search = "disabled"`, `[features] apps = false`, `[features] goals = true`, and `[mcp_servers.chrome-devtools]`
+- Config — `configs/codex/config.toml` is copied to `~/.codex/config.toml`; it sets OpenAI `gpt-5.5`, `approval_policy = "on-request"`, `sandbox_mode = "workspace-write"`, `web_search = "disabled"`, `[features] apps = false`, `[features] goals = true`, and `[mcp_servers.chrome-devtools]`
+- Skills — `scripts/codex.sh` installs the cmux skill from `manaflow-ai/cmux` (`skills/cmux`) into `~/.codex/skills/cmux` for workspace/pane/surface automation.
 - Profile — `codex --profile yolo` is available as an explicit opt-in profile (`approval_policy = "never"`, `sandbox_mode = "danger-full-access"`); don't use it outside an isolated environment
 - Auth — `codex.sh` checks `codex login status`; run `codex login` for ChatGPT sign-in, `codex login --device-auth` for a headless device-code flow, or `printenv OPENAI_API_KEY | codex login --with-api-key` for API-key auth
 
@@ -111,7 +112,7 @@ Installed services run at every login with `KeepAlive=true` (throttle 60s); `ser
 
 **Shared agent config** — canonical `~/.agent/AGENTS.md` with shared rules, also symlinked to `~/.cursor/rules/AGENTS.md` and `~/.config/opencode/AGENTS.md` before Claude Code/opencode setup. `~/.claude/CLAUDE.md` imports it via `@AGENTS.md`.
 
-**Dotfiles symlinks** — zshrc, tmux.conf, gitconfig, gitignore_global, Claude Code settings, Codex config, skill-eval hook, pretool-guard hook, skill-md-edit-warn hook. `configs/mcp.json` is read by `scripts/claude.sh` for user-scope MCP registration.
+**Dotfiles symlinks** — zshrc, tmux.conf, gitconfig, gitignore_global, Claude Code settings, skill-eval hook, pretool-guard hook, skill-md-edit-warn hook. Codex config is copied as a mutable local file. `configs/mcp.json` is read by `scripts/claude.sh` for user-scope MCP registration.
 
 **Web extraction** — use `defuddle parse <url> --markdown` for article-style extraction (local, LLM-friendly Markdown). For JS-heavy or auth-gated pages, use `agent-browser` to reuse your logged-in Chrome session.
 
@@ -136,7 +137,7 @@ dotfiles/
 │   ├── shell.sh            # Oh My Zsh + plugins
 │   ├── git.sh              # Git config + SSH keys
 │   ├── claude.sh           # Claude Code skills, plugins, tools
-│   ├── codex.sh            # Codex CLI config + auth prompt
+│   ├── codex.sh            # Codex CLI config + cmux skill + auth prompt
 │   ├── lib/
 │   │   └── common.sh       # shared helpers (info/warn/error/run_or_dry/link_file)
 │   ├── opencode.sh         # opencode config + auth prompt
@@ -249,9 +250,12 @@ started inside `~/work/<repo>/`. So:
 
 - **Keep company repos under `~/work/`** → company MCP servers
   (e.g. `github-enterprise`) auto-load on top of the personal set, and the
-  overlay provides `CONTEXT7_API_KEY` to lift `context7` rate limits.
-- Any other location → personal MCP only (`exa`, `linkedin`, `context7` — anon).
-  Git author/signing still routes correctly via remote URL.
+  overlay provides company MCP secrets such as `CONTEXT7_API_KEY` for
+  `context7` rate limits.
+- Any other location → company project MCPs are absent. On company overlay
+  machines, unreviewed hosted MCPs such as `exa`/`linkedin` are pruned; use a
+  personal machine if you need those. Git author/signing still routes correctly
+  via remote URL.
 
 `git.sh` creates `~/work/` and `~/personal/` for you.
 

@@ -42,10 +42,10 @@ jobs:
       - name: Validate JSON configs
         run: |
           set -euo pipefail
-          python -m json.tool configs/claude-settings.json > /dev/null
-          python -m json.tool configs/mcp.json > /dev/null
-          python -m json.tool configs/opencode/opencode.json > /dev/null
-          python -m json.tool configs/opencode/oh-my-openagent.json > /dev/null
+          python3 -m json.tool configs/claude-settings.json > /dev/null
+          python3 -m json.tool configs/mcp.json > /dev/null
+          python3 -m json.tool configs/opencode/opencode.json > /dev/null
+          python3 -m json.tool configs/opencode/oh-my-openagent.json > /dev/null
 
   toml-config-check:
     runs-on: ubuntu-latest
@@ -54,7 +54,7 @@ jobs:
       - name: Validate TOML configs
         run: |
           set -euo pipefail
-          python - <<'PY'
+          python3 - <<'PY'
           import tomllib
           from pathlib import Path
 

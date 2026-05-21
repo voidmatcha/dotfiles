@@ -93,6 +93,47 @@ done
 # (curl-pipe-bash is denied by our pretool-guard for good reason), then run
 # the on-disk installer.
 UI_CLONE_DIR="${UI_CLONE_INSTALL_DIR:-$HOME/.local/share/ui-clone-skills}"
+
+remove_tracked_claude_local_marketplace() {
+  local settings_file="$DOTFILES_DIR/configs/claude-settings.json"
+  [ -f "$settings_file" ] || return 0
+
+  if ! command -v python3 &>/dev/null; then
+    warn "python3 not found — cannot clean machine-local Claude marketplace entry"
+    return 0
+  fi
+
+  local changed
+  changed=$(python3 - "$settings_file" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+cfg = json.loads(path.read_text())
+marketplaces = cfg.get("extraKnownMarketplaces")
+if not isinstance(marketplaces, dict):
+    raise SystemExit(0)
+
+entry = marketplaces.get("voidmatcha")
+source = entry.get("source") if isinstance(entry, dict) else None
+local_path = source.get("path", "") if isinstance(source, dict) else ""
+home_prefixes = ("/" + "Users" + "/", "/" + "home" + "/")
+
+if source and source.get("source") == "directory" and local_path.startswith(home_prefixes):
+    del marketplaces["voidmatcha"]
+    if not marketplaces:
+        del cfg["extraKnownMarketplaces"]
+    path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False) + "\n")
+    print("changed")
+PY
+)
+
+  if [ "$changed" = "changed" ]; then
+    info "Removed machine-local Claude marketplace path from shared settings"
+  fi
+}
+
 if $DRY_RUN; then
   info "[dry-run] would clone voidmatcha/ui-clone-skills to $UI_CLONE_DIR and run install.sh"
 else
@@ -118,6 +159,7 @@ else
       warn "ui-clone-skills: install.sh exited non-zero"
     fi
   fi
+  remove_tracked_claude_local_marketplace
 fi
 
 PLUGIN_MARKETPLACES=(

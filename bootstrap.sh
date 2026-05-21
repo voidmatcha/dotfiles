@@ -62,8 +62,10 @@ else
       # `ssh -T` returns 1 on success for GitHub-style hosts (the greeting
       # message), so we accept both 0 and 1 as "authenticated". 255 == real
       # auth/network failure.
+      set +e
       ssh -o BatchMode=yes -T "git@$submodule_host" >/dev/null 2>&1
       ssh_rc=$?
+      set -e
       if [ $ssh_rc -eq 0 ] || [ $ssh_rc -eq 1 ]; then
         info "SSH auth OK — initializing company/ submodule"
         git -C "$DOTFILES_DIR" submodule update --init --recursive || \

@@ -112,6 +112,27 @@ teardown() {
   [ ! -e "$home/.config/opencode" ]
 }
 
+@test "opencode dry-run does not execute version probe" {
+  home="$TMPDIR_TEST/opencode-home"
+  bin="$TMPDIR_TEST/bin"
+  mkdir -p "$home" "$bin"
+  cat > "$bin/opencode" <<'SH'
+#!/bin/sh
+if [ "$1" = "--version" ]; then
+  printf 'opencode --version should not run in dry-run\n' >&2
+  exit 42
+fi
+exit 0
+SH
+  chmod +x "$bin/opencode"
+
+  run env HOME="$home" DOTFILES_DIR="$REPO_ROOT" DRY_RUN=true PATH="$bin:/usr/bin:/bin" bash "$REPO_ROOT/scripts/opencode.sh"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"would check version"* ]]
+  [[ "$output" != *"opencode --version should not run"* ]]
+}
+
 @test "codex dry-run does not require codex or create config dir" {
   home="$TMPDIR_TEST/codex-home"
   mkdir -p "$home"
@@ -120,12 +141,122 @@ teardown() {
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"[dry-run]"* ]]
+  [[ "$output" == *"install Codex cmux skill"* ]]
   [ ! -e "$home/.codex" ]
+}
+
+@test "codex dry-run does not execute codex or omx probes" {
+  home="$TMPDIR_TEST/codex-home"
+  bin="$TMPDIR_TEST/bin"
+  mkdir -p "$home" "$bin"
+  for cmd in codex omx; do
+    cat > "$bin/$cmd" <<'SH'
+#!/bin/sh
+printf 'codex/omx probe should not run in dry-run\n' >&2
+exit 42
+SH
+    chmod +x "$bin/$cmd"
+  done
+
+  run env HOME="$home" DOTFILES_DIR="$REPO_ROOT" DRY_RUN=true PATH="$bin:/usr/bin:/bin" bash "$REPO_ROOT/scripts/codex.sh"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"codex --version"* ]]
+  [[ "$output" == *"omx --version"* ]]
+  [[ "$output" == *"install Codex cmux skill"* ]]
+  [[ "$output" == *"codex login status"* ]]
+  [[ "$output" != *"codex/omx probe should not run"* ]]
+  [ ! -e "$home/.codex" ]
+}
+
+@test "hermes dry-run does not execute version probe" {
+  home="$TMPDIR_TEST/hermes-home"
+  bin="$TMPDIR_TEST/bin"
+  mkdir -p "$home" "$bin"
+  cat > "$bin/hermes" <<'SH'
+#!/bin/sh
+if [ "$1" = "--version" ]; then
+  printf 'hermes --version should not run in dry-run\n' >&2
+  exit 42
+fi
+exit 0
+SH
+  chmod +x "$bin/hermes"
+
+  run env HOME="$home" DOTFILES_DIR="$REPO_ROOT" DRY_RUN=true PATH="$bin:/usr/bin:/bin" bash "$REPO_ROOT/scripts/hermes.sh"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"would skip"* ]]
+  [[ "$output" != *"hermes --version should not run"* ]]
+}
+
+@test "services dry-run does not execute purplemux or tailscale probes" {
+  home="$TMPDIR_TEST/services-home"
+  bin="$TMPDIR_TEST/bin"
+  mkdir -p "$home" "$bin"
+  for cmd in purplemux tailscale; do
+    cat > "$bin/$cmd" <<'SH'
+#!/bin/sh
+printf 'service probe should not run in dry-run\n' >&2
+exit 42
+SH
+    chmod +x "$bin/$cmd"
+  done
+
+  run env HOME="$home" DOTFILES_DIR="$REPO_ROOT" DRY_RUN=true PATH="$bin:/usr/bin:/bin" bash "$REPO_ROOT/scripts/services.sh"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"would check purplemux"* ]]
+  [[ "$output" == *"tailscale serve --bg"* ]]
+  [[ "$output" != *"service probe should not run"* ]]
+}
+
+@test "services does not abort when launchctl bootstrap fails" {
+  home="$TMPDIR_TEST/services-home"
+  bin="$TMPDIR_TEST/bin"
+  mkdir -p "$home" "$bin"
+  cat > "$bin/purplemux" <<'SH'
+#!/bin/sh
+if [ "$1" = "--version" ]; then
+  printf 'purplemux-test\n'
+fi
+exit 0
+SH
+  cat > "$bin/launchctl" <<'SH'
+#!/bin/sh
+if [ "$1" = "bootstrap" ]; then
+  printf 'Bootstrap failed: 5: Input/output error\n' >&2
+  exit 5
+fi
+exit 0
+SH
+  chmod +x "$bin/purplemux" "$bin/launchctl"
+
+  run env HOME="$home" DOTFILES_DIR="$REPO_ROOT" DRY_RUN=false PATH="$bin:/usr/bin:/bin" bash "$REPO_ROOT/scripts/services.sh"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"LaunchAgent bootstrap failed for com.user.purplemux"* ]]
+  [[ "$output" == *"Bootstrap failed: 5: Input/output error"* ]]
+  [ -f "$home/Library/LaunchAgents/com.user.purplemux.plist" ]
 }
 
 @test "tailscale dry-run does not exit before missing-app handling" {
   run bash -c "awk 'NR>=8 && NR<=14 { print }' '$REPO_ROOT/scripts/tailscale.sh' | grep -q '\$DRY_RUN'"
   [ "$status" -eq 0 ]
+}
+
+@test "bootstrap ssh probe is isolated from set -e" {
+  python3 - <<PY
+from pathlib import Path
+
+lines = (Path('$REPO_ROOT') / 'bootstrap.sh').read_text().splitlines()
+ssh_line = next(i for i, line in enumerate(lines) if 'ssh -o BatchMode=yes -T' in line)
+window_before = lines[max(0, ssh_line - 3):ssh_line]
+window_after = lines[ssh_line + 1:ssh_line + 4]
+
+assert any(line.strip() == 'set +e' for line in window_before)
+assert any(line.strip() == 'set -e' for line in window_after)
+PY
 }
 
 @test "git dry-run non-interactive does not prompt on closed stdin" {
@@ -144,6 +275,13 @@ teardown() {
 
   grep -q 'config.d/dotfiles.conf' "$REPO_ROOT/scripts/git.sh"
   grep -q 'Include ~/.ssh/config.d/\*.conf' "$REPO_ROOT/scripts/git.sh"
+}
+
+@test "zshrc drops invalid C.UTF-8 locale on macOS" {
+  grep -q 'LC_ALL:-.*C.UTF-8' "$REPO_ROOT/configs/.zshrc"
+  grep -q 'LC_CTYPE:-.*C.UTF-8' "$REPO_ROOT/configs/.zshrc"
+  grep -q 'unset LC_ALL' "$REPO_ROOT/configs/.zshrc"
+  grep -q 'unset LC_CTYPE' "$REPO_ROOT/configs/.zshrc"
 }
 
 @test "macos Touch ID sudo preserves existing sudo_local" {
@@ -169,6 +307,10 @@ teardown() {
   grep -qxF 'configs/.gitconfig-*.backup*' "$REPO_ROOT/.gitignore"
 }
 
+@test "repo ignores generated omx runtime state" {
+  grep -qxF '.omx/' "$REPO_ROOT/.gitignore"
+}
+
 @test "install one-time social CLI guidance uses twitter-cli command" {
   run grep -F 'command -v bird' "$REPO_ROOT/install.sh"
   [ "$status" -eq 1 ]
@@ -181,10 +323,32 @@ teardown() {
 }
 
 @test "shared configs avoid maintainer-specific absolute paths" {
-  run grep -R -n '/Users/yongjae' \
-    "$REPO_ROOT/configs/.gitconfig" \
-    "$REPO_ROOT/configs/codex/config.toml"
-  [ "$status" -eq 1 ]
+  python3 - <<PY
+from pathlib import Path
+
+repo = Path('$REPO_ROOT')
+home_prefixes = ('/' + 'Users' + '/', '/' + 'home' + '/')
+absolute_string_markers = ('"/', " = \"/", ": \"/")
+checked = [
+    repo / 'configs/.gitconfig',
+    repo / 'configs/codex/config.toml',
+    repo / 'configs/claude-settings.json',
+    repo / 'configs/opencode/opencode.json',
+]
+company_settings = repo / 'company/configs/claude-settings.json'
+if company_settings.exists():
+    checked.append(company_settings)
+
+violations = []
+for path in checked:
+    for line_no, line in enumerate(path.read_text().splitlines(), 1):
+        if any(prefix in line for prefix in home_prefixes):
+            violations.append(f'{path}:{line_no}:{line}')
+        if any(marker in line for marker in absolute_string_markers):
+            violations.append(f'{path}:{line_no}:{line}')
+
+assert not violations, '\\n'.join(violations)
+PY
 
   grep -q 'excludesfile = ~/.gitignore_global' "$REPO_ROOT/configs/.gitconfig"
 }
@@ -225,6 +389,11 @@ if [ "$1" = "--version" ]; then
   exit 0
 fi
 if [ "$1" = "login" ] && [ "$2" = "status" ]; then
+  cat >> "$HOME/.codex/config.toml" <<'TOML'
+
+[projects."/"]
+trust_level = "trusted"
+TOML
   exit 1
 fi
 if [ "$1" = "login" ]; then
@@ -240,7 +409,11 @@ SH
   [ "$status" -eq 0 ]
   [[ "$output" == *"Non-interactive mode"* ]]
   [[ "$output" != *"interactive codex login should not run"* ]]
-  [ -L "$home/.codex/config.toml" ]
+  [ -f "$home/.codex/config.toml" ]
+  [ ! -L "$home/.codex/config.toml" ]
+  grep -q '\[projects."/"]' "$home/.codex/config.toml"
+  run grep -q '\[projects."/"]' "$REPO_ROOT/configs/codex/config.toml"
+  [ "$status" -eq 1 ]
 }
 
 @test "tailscale non-interactive does not prompt before status check" {
@@ -256,7 +429,7 @@ SH
 
 @test "CI validates JSON config files" {
   grep -q 'json-config-check' "$REPO_ROOT/.github/workflows/lint.yml"
-  grep -q 'python -m json.tool' "$REPO_ROOT/.github/workflows/lint.yml"
+  grep -q 'python3 -m json.tool' "$REPO_ROOT/.github/workflows/lint.yml"
   grep -q 'configs/opencode' "$REPO_ROOT/.github/workflows/lint.yml"
 }
 
@@ -275,7 +448,7 @@ SH
 }
 
 @test "OpenCode config declares explicit permission policy" {
-  python - <<PY
+  python3 - <<PY
 import json
 from pathlib import Path
 cfg = json.loads((Path('$REPO_ROOT') / 'configs/opencode/opencode.json').read_text())
@@ -303,12 +476,17 @@ PY
 }
 
 @test "OpenCode config avoids personal external directory allowlists" {
-  run grep -E '/Users/[^/]+|/home/[^/]+' "$REPO_ROOT/configs/opencode/opencode.json"
-  [ "$status" -eq 1 ]
+  python3 - <<PY
+from pathlib import Path
+
+text = (Path('$REPO_ROOT') / 'configs/opencode/opencode.json').read_text()
+assert '/' + 'Users' + '/' not in text
+assert '/' + 'home' + '/' not in text
+PY
 }
 
 @test "Codex config declares first-class defaults and MCP" {
-  python - <<PY
+  python3 - <<PY
 import tomllib
 from pathlib import Path
 
@@ -317,11 +495,22 @@ assert cfg['model'] == 'gpt-5.5'
 assert cfg['model_provider'] == 'openai'
 assert cfg['approval_policy'] == 'on-request'
 assert cfg['sandbox_mode'] == 'workspace-write'
+assert cfg['suppress_unstable_features_warning'] is True
+assert cfg['notify'][0:6] == ['env', '-u', 'LC_ALL', '-u', 'LC_CTYPE', 'bash']
+assert cfg['notify'][6] == '-lc'
+assert 'npm root -g' in cfg['notify'][7]
+assert cfg['notify'][8] == 'omx-notify'
 assert cfg['features']['goals'] is True
+assert cfg['features']['child_agents_md'] is True
 yolo = cfg['profiles']['yolo']
 assert yolo['approval_policy'] == 'never'
 assert yolo['sandbox_mode'] == 'danger-full-access'
 assert 'yolo' not in cfg
+assert 'projects' not in cfg
+assert 'openai-primary-runtime' not in cfg.get('marketplaces', {})
+assert 'documents@openai-primary-runtime' not in cfg.get('plugins', {})
+assert 'spreadsheets@openai-primary-runtime' not in cfg.get('plugins', {})
+assert 'presentations@openai-primary-runtime' not in cfg.get('plugins', {})
 mcp = cfg['mcp_servers']['chrome-devtools']
 assert mcp['command'] == 'npx'
 assert mcp['args'] == ['-y', 'chrome-devtools-mcp@0.23.0']
@@ -375,13 +564,65 @@ PY
   grep -q 'obsidian-skills' "$REPO_ROOT/README.md"
 }
 
+@test "Claude setup removes machine-local ui-clone marketplace from tracked settings" {
+  home="$TMPDIR_TEST/claude-home"
+  dotfiles="$TMPDIR_TEST/claude-dotfiles"
+  bin="$TMPDIR_TEST/bin"
+  ui_clone="$TMPDIR_TEST/ui-clone-skills"
+  mkdir -p "$home/.claude/plugins/session-wrap" "$dotfiles/configs" "$bin" "$ui_clone/.claude-plugin"
+  cat > "$dotfiles/configs/claude-settings.json" <<'JSON'
+{
+  "extraKnownMarketplaces": {
+    "claude-code-workflows": {
+      "source": {
+        "source": "github",
+        "repo": "wshobson/agents"
+      }
+    },
+    "voidmatcha": {
+      "source": {
+        "source": "directory",
+        "path": "/Users/test/.local/share/ui-clone-skills"
+      }
+    }
+  }
+}
+JSON
+  printf '{"mcpServers":{}}\n' > "$dotfiles/configs/mcp.json"
+  cat > "$ui_clone/install.sh" <<'SH'
+#!/bin/sh
+exit 0
+SH
+  chmod +x "$ui_clone/install.sh"
+  for cmd in ralph skills npx git claude npm; do
+    cat > "$bin/$cmd" <<'SH'
+#!/bin/sh
+exit 0
+SH
+    chmod +x "$bin/$cmd"
+  done
+
+  run bash -c "env HOME='$home' DOTFILES_DIR='$dotfiles' DRY_RUN=false NON_INTERACTIVE=true UI_CLONE_INSTALL_DIR='$ui_clone' PATH='$bin:/usr/bin:/bin' bash '$REPO_ROOT/scripts/claude.sh'"
+
+  [ "$status" -eq 0 ]
+  python3 - "$dotfiles/configs/claude-settings.json" <<'PY'
+import json
+import sys
+
+cfg = json.load(open(sys.argv[1]))
+marketplaces = cfg["extraKnownMarketplaces"]
+assert "claude-code-workflows" in marketplaces
+assert "voidmatcha" not in marketplaces
+PY
+}
+
 @test "crawler tooling is installed and documented" {
   grep -q 'npm install -g defuddle' "$REPO_ROOT/scripts/dev.sh"
   grep -q 'defuddle parse <url> --markdown' "$REPO_ROOT/README.md"
 }
 
 @test "Claude settings deny secret reads and risky remote surfaces" {
-  python - <<PY
+  python3 - <<PY
 import json
 from pathlib import Path
 
@@ -409,7 +650,7 @@ PY
 }
 
 @test "Claude settings pin approved MCP servers" {
-  python - <<PY
+  python3 - <<PY
 import json
 from pathlib import Path
 
@@ -446,7 +687,7 @@ JSON
   run bash -c "'$REPO_ROOT/configs/hooks/pretool-guard.sh' < '$input' > '$output_file'"
 
   [ "$status" -eq 0 ]
-  python - <<PY
+  python3 - <<PY
 import json
 from pathlib import Path
 
@@ -484,7 +725,7 @@ JSON
   for command in "${commands[@]}"; do
     input="$TMPDIR_TEST/pretool-variant-$index.json"
     output_file="$TMPDIR_TEST/pretool-variant-$index-output.json"
-    python - "$input" "$command" <<'PY'
+    python3 - "$input" "$command" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -499,7 +740,7 @@ PY
     run bash -c "'$REPO_ROOT/configs/hooks/pretool-guard.sh' < '$input' > '$output_file'"
 
     [ "$status" -eq 0 ]
-    python - "$output_file" <<'PY'
+    python3 - "$output_file" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -517,7 +758,7 @@ PY
   run bash -c "printf '{not json' | '$REPO_ROOT/configs/hooks/pretool-guard.sh' > '$output_file'"
 
   [ "$status" -eq 0 ]
-  python - <<PY
+  python3 - <<PY
 import json
 from pathlib import Path
 
@@ -530,7 +771,7 @@ PY
   run bash -c "printf '[]' | '$REPO_ROOT/configs/hooks/pretool-guard.sh' > '$output_file'"
 
   [ "$status" -eq 0 ]
-  python - <<PY
+  python3 - <<PY
 import json
 from pathlib import Path
 
@@ -571,7 +812,7 @@ JSON
   run bash -c "'$REPO_ROOT/configs/hooks/pretool-guard.sh' < '$input' > '$output_file'"
 
   [ "$status" -eq 0 ]
-  python - <<PY
+  python3 - <<PY
 import json
 from pathlib import Path
 
@@ -590,7 +831,7 @@ PY
       /tmp/repo/skills/foo/SKILL.md \
       /tmp/repo/.claude/agents/scout.md; do
     input="$TMPDIR_TEST/pretool-md-ok-$(basename "$path").json"
-    python - "$input" "$path" <<'PY'
+    python3 - "$input" "$path" <<'PY'
 import json, sys
 from pathlib import Path
 Path(sys.argv[1]).write_text(json.dumps({
@@ -621,7 +862,7 @@ JSON
 @test "suggest-compact hook is wired, executable, and never blocks" {
   [ -x "$REPO_ROOT/configs/hooks/suggest-compact.sh" ]
 
-  python - <<PY
+  python3 - <<PY
 import json
 from pathlib import Path
 
@@ -633,18 +874,21 @@ for event in cfg['hooks']['PreToolUse']:
 assert '~/.claude/hooks/suggest-compact.sh' in commands
 PY
 
-  # Hook never blocks: exit 0, no stdout, regardless of input.
-  run bash -c "echo '{}' | '$REPO_ROOT/configs/hooks/suggest-compact.sh'"
+  # Hook never blocks: exit 0, no stdout, regardless of input. Keep its
+  # counter in this test's temp dir so repeated local test runs are stable.
+  run env TMPDIR="$TMPDIR_TEST" CLAUDE_SESSION_ID=never-blocks \
+    bash -c "echo '{}' | '$REPO_ROOT/configs/hooks/suggest-compact.sh'"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
 
 @test "suggest-compact emits a stderr hint at threshold tool-count" {
-  count_file="${TMPDIR:-/tmp}/claude-tool-count-bats-test"
+  count_file="$TMPDIR_TEST/claude-tool-count-bats-test"
   rm -f "$count_file"
   echo 49 > "$count_file"
 
-  CLAUDE_SESSION_ID=bats-test run bash -c "echo '{}' | '$REPO_ROOT/configs/hooks/suggest-compact.sh' 2>&1"
+  TMPDIR="$TMPDIR_TEST" CLAUDE_SESSION_ID=bats-test \
+    run bash -c "echo '{}' | '$REPO_ROOT/configs/hooks/suggest-compact.sh' 2>&1"
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"~50 tool calls"* ]]

@@ -1,4 +1,14 @@
 # ── Oh My Zsh ──
+# macOS does not ship the Linux-style C.UTF-8 locale. Some tools inherit it
+# from remote/container sessions, which makes every bash child print locale
+# warnings. Drop only that invalid value and let LANG drive the locale.
+if [[ "$(uname -s)" == "Darwin" && "${LC_ALL:-}" == "C.UTF-8" ]]; then
+  unset LC_ALL
+fi
+if [[ "$(uname -s)" == "Darwin" && "${LC_CTYPE:-}" == "C.UTF-8" ]]; then
+  unset LC_CTYPE
+fi
+
 export ZSH="$HOME/.oh-my-zsh"
 ZSH_THEME="robbyrussell"
 

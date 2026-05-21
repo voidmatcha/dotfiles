@@ -5,11 +5,15 @@ TAG="opencode"
 source "$(cd "$(dirname "$0")" && pwd)/lib/common.sh"
 
 # ── Verify opencode is installed ──
-if command -v opencode &>/dev/null; then
+if $DRY_RUN; then
+  if command -v opencode &>/dev/null; then
+    info "[dry-run] opencode present — would check version"
+  else
+    warn "[dry-run] opencode not found in PATH; real setup requires Brewfile install first."
+  fi
+elif command -v opencode &>/dev/null; then
   OPENCODE_VERSION=$(opencode --version 2>/dev/null || echo "unknown")
   info "Found opencode ${OPENCODE_VERSION}"
-elif $DRY_RUN; then
-  warn "[dry-run] opencode not found in PATH; real setup requires Brewfile install first."
 else
   warn "opencode not found in PATH"
   warn "Run 'brew bundle --file=$DOTFILES_DIR/Brewfile' first."

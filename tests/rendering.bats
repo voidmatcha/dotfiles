@@ -63,13 +63,128 @@ EOF
   done
 }
 
+@test "company mcp template renders all declared secrets" {
+  template="$REPO_ROOT/company/configs/mcp.json.template"
+  [ -f "$template" ] || skip "company overlay not present"
+  if ! command -v envsubst >/dev/null 2>&1; then
+    skip "envsubst not installed (brew install gettext)"
+  fi
+
+  rendered="$TMPDIR_TEST/company-mcp.json"
+  CONTEXT7_API_KEY=context7-test OSS_NAVER_PAT=oss-test FIGMA_API_KEY=figma-test \
+    envsubst '${CONTEXT7_API_KEY} ${OSS_NAVER_PAT} ${FIGMA_API_KEY}' \
+    < "$template" > "$rendered"
+
+  python3 - "$rendered" <<'PY'
+import json
+import sys
+
+cfg = json.load(open(sys.argv[1]))
+servers = cfg["mcpServers"]
+assert servers["github-enterprise"]["env"]["GITHUB_TOKEN"] == "oss-test"
+assert servers["context7"]["args"][-1] == "context7-test"
+assert servers["figma-developer-mcp"]["env"]["FIGMA_API_KEY"] == "figma-test"
+PY
+}
+
 @test "company install.sh writes ~/work/.mcp.json (project scope), not user scope" {
   [ -f "$REPO_ROOT/company/install.sh" ] || skip "company overlay not present"
   grep -q '~/work/.mcp.json\|"$HOME/work/.mcp.json"' "$REPO_ROOT/company/install.sh" \
     || { echo "company install.sh should target ~/work/.mcp.json"; return 1; }
+  grep -q '\${CONTEXT7_API_KEY} \${OSS_NAVER_PAT} \${FIGMA_API_KEY}' "$REPO_ROOT/company/install.sh" \
+    || { echo "company envsubst allowlist must include every mcp.json.template secret"; return 1; }
+  grep -q 'UNAPPROVED_MCP' "$REPO_ROOT/company/install.sh" \
+    || { echo "company install.sh should remove unapproved public MCPs"; return 1; }
+  grep -q '"exa"' "$REPO_ROOT/company/install.sh" \
+    || { echo "company install.sh should remove exa on internal machines"; return 1; }
+  grep -q '"linkedin"' "$REPO_ROOT/company/install.sh" \
+    || { echo "company install.sh should remove linkedin on internal machines"; return 1; }
   # Negative assertion: we should NOT see a `claude mcp add-json --scope user`
   # for company servers anymore (those leak company tools into personal sessions).
   ! grep -q 'claude mcp add-json --scope user' "$REPO_ROOT/company/install.sh"
+}
+
+@test "company install renders project MCP and cleans user-scope leftovers" {
+  [ -f "$REPO_ROOT/company/install.sh" ] || skip "company overlay not present"
+  if ! command -v jq >/dev/null 2>&1; then
+    skip "jq not installed"
+  fi
+  if ! command -v envsubst >/dev/null 2>&1; then
+    skip "envsubst not installed (brew install gettext)"
+  fi
+
+  home="$TMPDIR_TEST/company-home"
+  bin="$TMPDIR_TEST/bin"
+  mkdir -p "$home/.claude" "$home/owl" "$bin"
+  printf '{"legacy":true}\n' > "$home/.claude/.mcp.json"
+  cat > "$home/.company.secrets.env" <<'EOF'
+export CONTEXT7_API_KEY=context7-live
+export OSS_NAVER_PAT=oss-live
+export FIGMA_API_KEY=figma-live
+EOF
+  cat > "$home/owl/setup.sh" <<'SH'
+#!/bin/sh
+exit 0
+SH
+  chmod +x "$home/owl/setup.sh"
+  cat > "$bin/claude" <<'SH'
+#!/bin/sh
+printf '%s\n' "$*" >> "$HOME/claude-calls.log"
+exit 0
+SH
+  cat > "$bin/brew" <<'SH'
+#!/bin/sh
+printf '%s\n' "$*" >> "$HOME/brew-calls.log"
+exit 0
+SH
+  chmod +x "$bin/claude" "$bin/brew"
+
+  run env HOME="$home" DOTFILES_DIR="$REPO_ROOT" DRY_RUN=false NON_INTERACTIVE=true PATH="$bin:$PATH" bash "$REPO_ROOT/company/install.sh"
+
+  [ "$status" -eq 0 ]
+  [ -f "$home/work/.mcp.json" ]
+  [ ! -e "$home/.claude/.mcp.json" ]
+  ! grep -q 'mcp add-json --scope user' "$home/claude-calls.log"
+  grep -q 'mcp remove --scope user github-enterprise' "$home/claude-calls.log"
+  grep -q 'mcp remove --scope user exa' "$home/claude-calls.log"
+  grep -q 'mcp remove --scope user linkedin' "$home/claude-calls.log"
+
+  python3 - "$home/work/.mcp.json" <<'PY'
+import json
+import sys
+
+cfg = json.load(open(sys.argv[1]))
+servers = cfg["mcpServers"]
+assert servers["github-enterprise"]["env"]["GITHUB_TOKEN"] == "oss-live"
+assert servers["context7"]["args"][-1] == "context7-live"
+assert servers["figma-developer-mcp"]["env"]["FIGMA_API_KEY"] == "figma-live"
+PY
+}
+
+@test "company Claude settings pin approved MCP servers" {
+  settings="$REPO_ROOT/company/configs/claude-settings.json"
+  [ -f "$settings" ] || skip "company overlay not present"
+
+  python3 - "$settings" <<'PY'
+import json
+import sys
+
+cfg = json.load(open(sys.argv[1]))
+approved = [
+    "chrome-devtools",
+    "playwright",
+    "serena",
+    "github-enterprise",
+    "context7",
+    "figma-developer-mcp",
+]
+assert cfg["enableAllProjectMcpServers"] is False
+assert cfg["enabledMcpjsonServers"] == approved
+assert cfg["allowManagedMcpServersOnly"] is True
+assert cfg["allowedMcpServers"] == [{"serverName": name} for name in approved]
+denied = {entry["serverName"] for entry in cfg["deniedMcpServers"]}
+assert {"filesystem", "exa", "linkedin"} <= denied
+PY
 }
 
 @test "tracked .gitconfig-personal/.gitconfig-work do not contain signingkey" {

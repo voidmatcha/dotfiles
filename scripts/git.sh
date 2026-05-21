@@ -245,7 +245,9 @@ fi
 if $DRY_RUN; then
   info "[dry-run] git config --global core.excludesfile ~/.gitignore_global"
 else
-  git config --global core.excludesfile "$HOME/.gitignore_global"
+  # shellcheck disable=SC2088 # Git expands a literal leading ~ in config values.
+  git_excludesfile='~/.gitignore_global'
+  git config --global core.excludesfile "$git_excludesfile"
 fi
 
 echo ""

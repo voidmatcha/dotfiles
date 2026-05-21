@@ -78,5 +78,6 @@ fi
 echo ""
 info "Tailscale setup done"
 warn "Remember: install Tailscale on your phone too (App Store / Play Store)"
-warn "If macOS Remote Login is still on from a previous setup, turn it off:"
+warn "OpenSSH Remote Login is intentionally left available as a fallback by macos.sh."
+warn "If you only want Tailscale SSH, turn it off manually:"
 warn "  System Settings → General → Sharing → Remote Login"

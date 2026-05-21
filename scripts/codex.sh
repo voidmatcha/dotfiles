@@ -7,9 +7,139 @@ source "$(cd "$(dirname "$0")" && pwd)/lib/common.sh"
 info "Setting up Codex CLI + oh-my-codex (omx)..."
 
 CODEX_CONFIG_DIR="${CODEX_HOME:-$HOME/.codex}"
-ensure_dir "$CODEX_CONFIG_DIR"
-link_file "$DOTFILES_DIR/configs/codex/config.toml" \
-          "$CODEX_CONFIG_DIR/config.toml"
+CODEX_SHARED_CONFIG="$DOTFILES_DIR/configs/codex/config.toml"
+CODEX_CMUX_SKILL_REPO="https://github.com/manaflow-ai/cmux.git"
+CODEX_CMUX_SKILL_PATH="skills/cmux"
+
+sanitize_codex_shared_config() {
+  local config_file="$CODEX_SHARED_CONFIG"
+  [ -f "$config_file" ] || return 0
+
+  local tmp_file
+  tmp_file=$(mktemp)
+  awk '
+    BEGIN {
+      dynamic_notify = "notify = [\"env\", \"-u\", \"LC_ALL\", \"-u\", \"LC_CTYPE\", \"bash\", \"-lc\", \"exec node \\\"$(npm root -g)/oh-my-codex/dist/scripts/notify-hook.js\\\" \\\"$@\\\"\", \"omx-notify\"]"
+    }
+    /^notify = .*oh-my-codex.*notify-(hook|dispatcher)\.js/ {
+      print dynamic_notify
+      next
+    }
+    /^\[/ {
+      drop = 0
+      if ($0 ~ /^\[projects\."/ ||
+          $0 == "[marketplaces.openai-primary-runtime]" ||
+          $0 == "[plugins.\"documents@openai-primary-runtime\"]" ||
+          $0 == "[plugins.\"spreadsheets@openai-primary-runtime\"]" ||
+          $0 == "[plugins.\"presentations@openai-primary-runtime\"]") {
+        drop = 1
+      }
+    }
+    !drop { print }
+  ' "$config_file" > "$tmp_file"
+
+  if cmp -s "$tmp_file" "$config_file"; then
+    rm -f "$tmp_file"
+  else
+    mv "$tmp_file" "$config_file"
+    info "Removed machine-local Codex entries from shared config"
+  fi
+}
+
+install_codex_config() {
+  local dst="$CODEX_CONFIG_DIR/config.toml"
+  local backup_dst
+
+  ensure_dir "$CODEX_CONFIG_DIR"
+
+  if $DRY_RUN; then
+    info "[dry-run] cp $CODEX_SHARED_CONFIG -> $dst"
+    return 0
+  fi
+
+  if [ -L "$dst" ]; then
+    rm "$dst"
+  elif [ -e "$dst" ] && ! cmp -s "$CODEX_SHARED_CONFIG" "$dst"; then
+    if grep -q "portable template" "$dst"; then
+      warn "Refreshing managed Codex config at $dst"
+    else
+      backup_dst="$(next_backup_path "$dst")"
+      warn "Backing up $dst -> $backup_dst"
+      mv "$dst" "$backup_dst"
+    fi
+  fi
+
+  cp "$CODEX_SHARED_CONFIG" "$dst"
+  info "Copied: $CODEX_SHARED_CONFIG -> $dst"
+}
+
+install_codex_cmux_skill() {
+  local skills_dir="$CODEX_CONFIG_DIR/skills"
+  local dest="$skills_dir/cmux"
+  local tmp_dir
+
+  if $DRY_RUN; then
+    info "[dry-run] install Codex cmux skill from $CODEX_CMUX_SKILL_REPO:$CODEX_CMUX_SKILL_PATH -> $dest"
+    return 0
+  fi
+
+  if ! command -v git &>/dev/null; then
+    warn "git not found; skipping Codex cmux skill install"
+    return 0
+  fi
+
+  ensure_dir "$skills_dir"
+  tmp_dir="$(mktemp -d)"
+
+  if ! git clone --quiet --depth 1 --filter=blob:none --sparse "$CODEX_CMUX_SKILL_REPO" "$tmp_dir"; then
+    rm -rf "$tmp_dir"
+    warn "Failed to clone cmux repo; skipping Codex cmux skill install"
+    return 0
+  fi
+
+  if ! git -C "$tmp_dir" sparse-checkout set "$CODEX_CMUX_SKILL_PATH" >/dev/null 2>&1; then
+    rm -rf "$tmp_dir"
+    warn "Failed to check out $CODEX_CMUX_SKILL_PATH; skipping Codex cmux skill install"
+    return 0
+  fi
+
+  if [ ! -f "$tmp_dir/$CODEX_CMUX_SKILL_PATH/SKILL.md" ]; then
+    rm -rf "$tmp_dir"
+    warn "cmux skill missing SKILL.md upstream; skipping Codex cmux skill install"
+    return 0
+  fi
+
+  if [ -e "$dest" ]; then
+    rm -rf "$dest"
+  fi
+
+  cp -R "$tmp_dir/$CODEX_CMUX_SKILL_PATH" "$dest"
+  rm -rf "$tmp_dir"
+  info "Installed Codex cmux skill -> $dest"
+}
+
+if ! $DRY_RUN; then
+  sanitize_codex_shared_config
+fi
+install_codex_config
+
+if $DRY_RUN; then
+  if command -v codex &>/dev/null; then
+    info "[dry-run] codex --version"
+  else
+    info "[dry-run] npm install -g @openai/codex oh-my-codex"
+  fi
+  if command -v omx &>/dev/null; then
+    info "[dry-run] omx --version"
+  else
+    info "[dry-run] omx not installed — would install with oh-my-codex"
+  fi
+  install_codex_cmux_skill
+  info "[dry-run] codex login status"
+  info "[dry-run] omx setup / omx doctor are manual post-install checks"
+  info "Codex CLI + oh-my-codex setup done"
+  exit 0
+fi
 
 # ── Install Codex CLI + omx ──
 # `omx` is Yeachan-Heo/oh-my-codex — a multi-agent orchestration runtime on
@@ -43,6 +173,8 @@ else
   fi
 fi
 
+install_codex_cmux_skill
+
 # ── Codex auth check ──
 if command -v codex &>/dev/null; then
   if codex login status >/dev/null 2>&1; then
@@ -75,6 +207,8 @@ else
   warn "codex is still not available on PATH. Run 'codex login' after installing it."
 fi
 
+sanitize_codex_shared_config
+
 # ── omx setup / doctor (manual — interactive on first run) ──
 # `omx setup` provisions native agents/prompts/hooks; `omx doctor` reports
 # install shape. Both are interactive in the upstream, so we surface them
@@ -86,6 +220,7 @@ if command -v omx &>/dev/null && ! $DRY_RUN; then
   warn "═════════════════════════════════════════════════════════════════"
   warn "  1) Provision native agents/prompts/hooks:"
   warn "       omx setup"
+  warn "       bash $DOTFILES_DIR/scripts/codex.sh  # normalize machine-local paths afterwards"
   warn "     (re-run after each \`oh-my-codex\` npm version bump, or use \`omx update\`)"
   warn ""
   warn "  2) Verify install shape + runtime prerequisites:"

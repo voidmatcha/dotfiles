@@ -43,25 +43,38 @@ install_agent() {
   sed -e "s|__WRAPPER_PATH__|$wrapper_dst|g" \
       -e "s|__HOME__|$HOME|g" \
       "$plist_src" > "$plist_dst"
+  if ! plutil -lint "$plist_dst" >/dev/null; then
+    warn "Rendered LaunchAgent plist is invalid: $plist_dst"
+    return 0
+  fi
+
   launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
-  launchctl bootstrap "gui/$(id -u)" "$plist_dst"
+  local bootstrap_output
+  if ! bootstrap_output=$(launchctl bootstrap "gui/$(id -u)" "$plist_dst" 2>&1); then
+    warn "LaunchAgent bootstrap failed for $label; leaving plist installed but continuing."
+    while IFS= read -r line; do
+      [ -n "$line" ] && warn "  $line"
+    done <<< "$bootstrap_output"
+    warn "Debug manually with: launchctl bootstrap gui/$(id -u) $plist_dst"
+    warn "Then check logs: tail -n 80 $HOME/Library/Logs/${label#com.user.}.err.log"
+    return 0
+  fi
+
   info "LaunchAgent installed: $label"
 }
 
 # ── purplemux: ensure global npm install ──
 purplemux_ready=false
-if command -v purplemux >/dev/null 2>&1; then
+if $DRY_RUN; then
+  info "[dry-run] would check purplemux and install with npm if missing"
+  purplemux_ready=true
+elif command -v purplemux >/dev/null 2>&1; then
   info "Found purplemux ($(purplemux --version 2>/dev/null || echo unknown))"
   purplemux_ready=true
 elif command -v npm >/dev/null 2>&1; then
-  if $DRY_RUN; then
-    info "[dry-run] would run: npm install -g purplemux"
+  info "Installing purplemux via npm..."
+  if npm install -g purplemux; then
     purplemux_ready=true
-  else
-    info "Installing purplemux via npm..."
-    if npm install -g purplemux; then
-      purplemux_ready=true
-    fi
   fi
 else
   warn "npm not found — install Node first (scripts/dev.sh), then run this script again."
@@ -102,6 +115,9 @@ EOF
     warn "Scaffolded $CODE_SERVER_CONFIG with a random password."
     warn "View it with: cat $CODE_SERVER_CONFIG"
   fi
+elif ! grep -Eq '^[[:space:]]*bind-addr:[[:space:]]*127\.0\.0\.1:8088[[:space:]]*$' "$CODE_SERVER_CONFIG"; then
+  warn "$CODE_SERVER_CONFIG does not bind to 127.0.0.1:8088."
+  warn "For tailnet-only access, set: bind-addr: 127.0.0.1:8088"
 fi
 
 # Always lock the password file down — the chmod inside the scaffold branch
@@ -125,17 +141,15 @@ info "services setup done"
 # `tailscale serve` config is persisted by tailscaled, so this is idempotent —
 # re-running with the same args is a no-op. We only attempt this if tailscale
 # is installed AND the daemon is logged in (status is non-error).
-if command -v tailscale >/dev/null 2>&1 && tailscale status >/dev/null 2>&1; then
-  if $DRY_RUN; then
-    info "[dry-run] tailscale serve --bg --https=443  --set-path=/ http://localhost:8022"
-    info "[dry-run] tailscale serve --bg --https=8443 --set-path=/ http://localhost:8088"
-  else
-    tailscale serve --bg --https=443  --set-path=/ http://localhost:8022 \
-      || warn "tailscale serve (purplemux) failed — run manually after login"
-    tailscale serve --bg --https=8443 --set-path=/ http://localhost:8088 \
-      || warn "tailscale serve (code-server) failed — run manually after login"
-    info "Tailnet exposure: purplemux on :443, code-server on :8443 (HTTPS via *.ts.net cert)"
-  fi
+if $DRY_RUN; then
+  info "[dry-run] tailscale serve --bg --https=443  --set-path=/ http://localhost:8022"
+  info "[dry-run] tailscale serve --bg --https=8443 --set-path=/ http://localhost:8088"
+elif command -v tailscale >/dev/null 2>&1 && tailscale status >/dev/null 2>&1; then
+  tailscale serve --bg --https=443  --set-path=/ http://localhost:8022 \
+    || warn "tailscale serve (purplemux) failed — run manually after login"
+  tailscale serve --bg --https=8443 --set-path=/ http://localhost:8088 \
+    || warn "tailscale serve (code-server) failed — run manually after login"
+  info "Tailnet exposure: purplemux on :443, code-server on :8443 (HTTPS via *.ts.net cert)"
 else
   warn "Tailscale not installed or not logged in — skipping serve config."
   warn "After 'tailscale up', re-run this script or invoke manually:"

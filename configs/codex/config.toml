@@ -1,5 +1,19 @@
+# oh-my-codex top-level settings (must be before any [table])
+# Resolve the global oh-my-codex install at runtime instead of pinning an
+# npm/Homebrew absolute path into this shared dotfiles repo.
+notify = ["env", "-u", "LC_ALL", "-u", "LC_CTYPE", "bash", "-lc", "exec node \"$(npm root -g)/oh-my-codex/dist/scripts/notify-hook.js\" \"$@\"", "omx-notify"]
+model_reasoning_effort = "xhigh"
+suppress_unstable_features_warning = true
+developer_instructions = "You have oh-my-codex installed. AGENTS.md is the orchestration brain and main control surface. Follow AGENTS.md for skill/keyword routing, $name workflow invocation, and role-specialized subagents. Use outcome-first, concise progress updates: state the target result, constraints, validation evidence, and stop condition before adding process detail. Native subagents live in .codex/agents and may handle independent parallel subtasks within one Codex session or team pane. Skills load from .codex/skills, not native-agent TOMLs. Treat installed prompts as narrower execution surfaces under AGENTS.md authority."
+# oh-my-codex seeded behavioral defaults (uninstall removes unchanged defaults)
+model_context_window = 250000
+model_auto_compact_token_limit = 200000
+# End oh-my-codex seeded behavioral defaults
+
 # Codex CLI configuration (~/.codex/config.toml).
-# Symlinked here by install.sh.
+# Copied to ~/.codex/config.toml by scripts/codex.sh; Codex mutates its live
+# config with machine-local trust/runtime entries, so this tracked file stays
+# a portable template instead of a symlink target.
 # Reference for token-saving checklist:
 # https://gist.github.com/spilist/c468cbf1ed0ffc91100f813aabdcd520
 # (each setting below is verified against the official Codex docs linked inline.)
@@ -30,6 +44,9 @@ apps = false
 # Source: https://developers.openai.com/codex/use-cases/follow-goals
 goals = true
 
+multi_agent = true
+child_agents_md = true
+hooks = true
 [profiles.yolo]
 approval_policy = "never"
 sandbox_mode = "danger-full-access"
@@ -37,3 +54,27 @@ sandbox_mode = "danger-full-access"
 [mcp_servers.chrome-devtools]
 command = "npx"
 args = ["-y", "chrome-devtools-mcp@0.23.0"]
+startup_timeout_sec = 15
+
+[tui.model_availability_nux]
+"gpt-5.5" = 4
+
+[shell_environment_policy.set]
+USE_OMX_EXPLORE_CMD = "1"
+
+[agents]
+max_threads = 6
+max_depth = 2
+
+# ============================================================
+# oh-my-codex (OMX) Configuration
+# Managed by omx setup - manual edits preserved on next setup
+# ============================================================
+
+# OMX TUI StatusLine (Codex CLI v0.101.0+)
+[tui]
+# omx:managed-status-line
+status_line = ["model-with-reasoning", "git-branch", "context-remaining", "total-input-tokens", "total-output-tokens", "five-hour-limit", "weekly-limit"]
+
+# ============================================================
+# End oh-my-codex

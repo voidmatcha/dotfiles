@@ -1,6 +1,7 @@
 .DS_Store
 configs/.gitconfig-*.backup*
 .sisyphus/
+.omx/
 # Serena MCP runtime state (project.local.yml, memories/, cache/) — machine-local.
 .serena/
 *.secrets.env
