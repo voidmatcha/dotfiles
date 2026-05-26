@@ -153,7 +153,9 @@ else
   if [ -n "$UI_CLONE_DIR" ] && [ -x "$UI_CLONE_DIR/install.sh" ]; then
     ui_clone_flags=()
     $NON_INTERACTIVE && ui_clone_flags+=(--yes)
-    if "$UI_CLONE_DIR/install.sh" "${ui_clone_flags[@]}"; then
+    # ${arr[@]+...} avoids "unbound variable" under `set -u` when the array
+    # is empty (bash 3.2 on macOS still trips on a bare "${arr[@]}" here).
+    if "$UI_CLONE_DIR/install.sh" ${ui_clone_flags[@]+"${ui_clone_flags[@]}"}; then
       info "ui-clone-skills: install.sh OK — run '/plugin install ui-clone-skills@voidmatcha' inside Claude Code to activate"
     else
       warn "ui-clone-skills: install.sh exited non-zero"
