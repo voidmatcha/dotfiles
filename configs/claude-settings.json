@@ -15,7 +15,8 @@
   "enableAllProjectMcpServers": false,
   "enabledMcpjsonServers": [
     "chrome-devtools",
-    "serena"
+    "serena",
+    "codegraph"
   ],
   "disabledMcpjsonServers": [],
   "allowedMcpServers": [
@@ -24,6 +25,9 @@
     },
     {
       "serverName": "serena"
+    },
+    {
+      "serverName": "codegraph"
     }
   ],
   "deniedMcpServers": [

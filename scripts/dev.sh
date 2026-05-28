@@ -186,6 +186,22 @@ else
   fi
 fi
 
+# ── codegraph (pre-indexed code knowledge graph MCP for Claude/Codex) ──
+# Read-only complement to serena. Per-project SQLite index built by tree-sitter;
+# zero-config, watcher auto-syncs on save. Personal user-scope only — not in
+# NAVER MCP catalog, so excluded from ~/work/.mcp.json (company project scope).
+info "Checking codegraph..."
+if $DRY_RUN; then
+  info "[dry-run] npm install -g @colbymchenry/codegraph"
+else
+  if ! command -v codegraph &>/dev/null; then
+    info "Installing codegraph (global)"
+    npm install -g @colbymchenry/codegraph 2>/dev/null || info "⚠️  codegraph install failed — check manually"
+  else
+    info "codegraph already installed ($(codegraph --version 2>/dev/null || echo unknown))"
+  fi
+fi
+
 # ── ccusage (Claude Code usage dashboard) ──
 info "Checking ccusage..."
 if $DRY_RUN; then

@@ -82,7 +82,7 @@ import sys
 cfg = json.load(open(sys.argv[1]))
 servers = cfg["mcpServers"]
 assert servers["github-enterprise"]["env"]["GITHUB_TOKEN"] == "oss-test"
-assert servers["context7"]["args"][-1] == "context7-test"
+assert servers["context7-naver"]["args"][-1] == "context7-test"
 assert servers["figma-developer-mcp"]["env"]["FIGMA_API_KEY"] == "figma-test"
 PY
 }
@@ -156,7 +156,7 @@ import sys
 cfg = json.load(open(sys.argv[1]))
 servers = cfg["mcpServers"]
 assert servers["github-enterprise"]["env"]["GITHUB_TOKEN"] == "oss-live"
-assert servers["context7"]["args"][-1] == "context7-live"
+assert servers["context7-naver"]["args"][-1] == "context7-live"
 assert servers["figma-developer-mcp"]["env"]["FIGMA_API_KEY"] == "figma-live"
 PY
 }
@@ -170,20 +170,36 @@ import json
 import sys
 
 cfg = json.load(open(sys.argv[1]))
-approved = [
-    "chrome-devtools",
+# Project-scope MCP servers (loaded from ~/work/.mcp.json) — must all be in
+# the NAVER catalog at oss.navercorp.com/naver-common-mcp. The two NAVER
+# variants of public tools are explicitly suffixed with "-naver" so the
+# public-npm versions registered at user scope can coexist without
+# "Conflicting scopes" warnings when working in ~/work/.
+project_scope = [
+    "chrome-devtools-naver",
     "playwright",
-    "serena",
     "github-enterprise",
-    "context7",
+    "context7-naver",
     "figma-developer-mcp",
 ]
+# User-scope MCPs that the company settings still permits (so the same tools
+# available outside ~/work/ also work inside it). serena + codegraph are
+# personal productivity tools (per AGENTS.md "Approved tooling only").
+# chrome-devtools + context7 are the public-npm twins of the -naver variants
+# — kept allowed so the user can fall back to them inside ~/work/ if the
+# artifactory/docker variant is unreachable.
+user_scope_allowed = ["chrome-devtools", "context7", "serena", "codegraph"]
 assert cfg["enableAllProjectMcpServers"] is False
-assert cfg["enabledMcpjsonServers"] == approved
+assert cfg["enabledMcpjsonServers"] == project_scope
 assert cfg["allowManagedMcpServersOnly"] is True
-assert cfg["allowedMcpServers"] == [{"serverName": name} for name in approved]
+assert cfg["allowedMcpServers"] == [
+    {"serverName": name} for name in project_scope + user_scope_allowed
+]
 denied = {entry["serverName"] for entry in cfg["deniedMcpServers"]}
 assert {"filesystem", "exa", "linkedin"} <= denied
+assert not ({"serena", "codegraph"} & denied), (
+    "serena/codegraph must NOT be on the company denylist — they are user-scope tools"
+)
 PY
 }
 

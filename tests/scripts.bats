@@ -538,7 +538,13 @@ PY
   grep -q 'codex login --device-auth' "$REPO_ROOT/README.md"
   grep -q '\[features\] goals = true' "$REPO_ROOT/README.md"
   grep -q 'codex --profile yolo' "$REPO_ROOT/README.md"
-  grep -q '\[mcp_servers.chrome-devtools\]' "$REPO_ROOT/README.md"
+  # README describes the three Codex MCP entries by name (chrome-devtools,
+  # serena, codegraph) without hardcoding the exact [mcp_servers.*] token —
+  # the prose moved when we added the second + third entries.
+  grep -q 'mcp_servers' "$REPO_ROOT/README.md"
+  grep -q 'chrome-devtools' "$REPO_ROOT/README.md"
+  grep -q 'serena' "$REPO_ROOT/README.md"
+  grep -q 'codegraph' "$REPO_ROOT/README.md"
 }
 
 @test "opencode docs mention both primary and fallback provider auth" {
@@ -657,16 +663,18 @@ from pathlib import Path
 cfg = json.loads((Path('$REPO_ROOT') / 'configs/claude-settings.json').read_text())
 mcp = json.loads((Path('$REPO_ROOT') / 'configs/mcp.json').read_text())
 assert cfg['enableAllProjectMcpServers'] is False
-assert cfg['enabledMcpjsonServers'] == ['chrome-devtools', 'serena']
+assert cfg['enabledMcpjsonServers'] == ['chrome-devtools', 'serena', 'codegraph']
 assert cfg['disabledMcpjsonServers'] == []
 assert cfg['allowManagedMcpServersOnly'] is True
 assert cfg['allowedMcpServers'] == [
     {'serverName': 'chrome-devtools'},
     {'serverName': 'serena'},
+    {'serverName': 'codegraph'},
 ]
 assert {'serverName': 'filesystem'} in cfg['deniedMcpServers']
 assert 'chrome-devtools' in mcp['mcpServers']
 assert 'serena' in mcp['mcpServers']
+assert 'codegraph' in mcp['mcpServers']
 PY
 }
 

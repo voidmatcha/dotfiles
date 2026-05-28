@@ -56,6 +56,28 @@ command = "npx"
 args = ["-y", "chrome-devtools-mcp@0.23.0"]
 startup_timeout_sec = 15
 
+# serena — LSP-backed semantic code navigation + editing (cross-file rename,
+# symbol-aware edits). Personal/user scope; not in NAVER MCP catalog.
+# `--open-web-dashboard false` keeps the dashboard server reachable at
+# http://localhost:24282/dashboard/ but prevents auto-launch in browser.
+[mcp_servers.serena]
+command = "serena"
+args = [
+  "start-mcp-server",
+  "--context", "codex",
+  "--project-from-cwd",
+  "--open-web-dashboard", "false",
+]
+startup_timeout_sec = 20
+
+# codegraph — pre-indexed code knowledge graph for exploration / trace /
+# architecture questions on large repos. Read-only; complements serena.
+# Run `codegraph init -i` once per project.
+[mcp_servers.codegraph]
+command = "codegraph"
+args = ["serve", "--mcp"]
+startup_timeout_sec = 15
+
 [tui.model_availability_nux]
 "gpt-5.5" = 4
 

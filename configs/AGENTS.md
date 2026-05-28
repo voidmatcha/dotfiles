@@ -31,13 +31,29 @@ Pick the tool that matches the task. Each row lists trade-offs; obey them.
 
 ### "I need to understand or change code"
 
+Three indexers cover this space — pick by intent, not by familiarity. They overlap on
+symbol lookup but each wins on a different axis. **codegraph and serena are
+complementary, not competing**: codegraph answers breadth ("how does X reach Y across
+the whole repo?") in one call; serena answers depth ("show me this exact symbol and
+let me edit it") with LSP-grade accuracy. Use codegraph FIRST for exploration, then
+serena for the precise edit.
+
 | Task | Tool | Why |
 |------|------|-----|
-| Cross-file rename, symbol lookup, find references, refactor | **serena MCP** (semantic, LSP-backed) | Type-aware; safer than text-level Edit |
+| "How does X reach Y" / "where does this flow go" / architecture / trace across files | **codegraph MCP** (`codegraph_context`, `codegraph_trace`, `codegraph_explore`) | Pre-indexed graph answers in 3–10 tool calls vs. 30+ for grep+Read fan-out. ~35% cheaper / ~70% fewer tool calls on large repos. Read-only. Run `codegraph init -i` in a new project once. |
+| Cross-file rename, refactor, **edit by symbol** | **serena MCP** (`replace_symbol_body`, `rename`, `insert_before_symbol`, …) | Type-aware via LSP, edits safely. codegraph can't edit. |
+| Find a specific symbol + read its body to edit | **serena** `find_symbol` (include_body=true) | LSP-accurate, real-time. codegraph's `codegraph_node` works too but its watcher debounces 2s — serena is fresher for just-written code. |
+| "Who calls / references this symbol?" | **serena** `find_referencing_symbols` if you trust LSP and the lookup is single-language; **codegraph** `codegraph_callers` if you need cross-language hops (RN bridge, JNI, ObjC↔Swift) or LSP is unavailable | LSP gives exact type-aware refs; codegraph gives broader graph reach. Prefer LSP when both work. |
+| iOS / React Native cross-language bridges (Swift↔ObjC, RN bridge/Turbo/Fabric, Expo Modules) | **codegraph** | LSP stops at language boundaries; codegraph synthesizes the hops |
+| Find URL → handler mappings (Django/Flask/FastAPI/Express/NestJS/Rails/Spring/Gin/Axum/…) | **codegraph** | Recognizes framework route files and emits explicit edges |
 | Grep across files, list dir, simple Bash | Claude's built-in `Grep`/`LS`/`Bash` tools | serena's basic equivalents are auto-disabled to avoid duplication |
-| Understand structure of an unfamiliar codebase / docs / papers folder | **graphify** (`/graphify <dir>`) | Builds a queryable knowledge graph; 71× fewer tokens per query than re-reading raw files |
+| Understand structure of unfamiliar **non-code** content (docs, PDFs, papers folder) | **graphify** (`/graphify <dir>`) | Same idea as codegraph but for arbitrary content. For pure code, codegraph wins (specialized). |
 | Audit `CLAUDE.md` files vs current code | `claude-md-improver` skill (auto-triggered by "audit CLAUDE.md") | Plugin from `claude-md-management@claude-plugins-official` |
 | Capture session learnings into `CLAUDE.md` | `/claude-md-management:revise-claude-md` slash command | Same plugin |
+
+**Decision shortcut.** Faced with "explain / understand / trace": reach for **codegraph** first.
+Faced with "rename / edit / refactor": reach for **serena**. Faced with "I just need 5 lines from
+a file I already know": Read.
 
 ### "I need to interact with a browser"
 
@@ -53,17 +69,28 @@ These are installed by this dotfiles setup. Prefer them over reinventing or
 asking the user to install something new. Sources of truth for installation
 are `scripts/dev.sh`, `Brewfile`, and `configs/mcp.json`.
 
-- **serena** (MCP) — semantic code navigation and editing backed by LSP. Use
+- **serena** (MCP) — semantic code navigation and **editing** backed by LSP. Use
   for cross-file renames, symbol lookups, reference searches, and refactors
   where text-level edits would be fragile. Semantic tools are active by
   default; serena's redundant basic utilities (read/grep/ls/bash equivalents)
   are auto-disabled because Claude Code already covers them. The shell
   wrapper in `.zshrc` injects serena's system-prompt-override automatically
   to counter Opus 4.7's strong bias toward built-in tools. https://github.com/oraios/serena
+- **codegraph** (MCP) — pre-indexed knowledge graph (tree-sitter + SQLite) for
+  **exploration** of large or cross-language codebases. Read-only;
+  complements serena. Run `codegraph init -i` in each project once; the
+  watcher auto-syncs on save (~2s debounce). Strong on framework route
+  mapping (Django/Flask/FastAPI/Express/NestJS/Rails/Spring/…) and iOS/RN
+  cross-language bridges that LSP can't follow. ~35% cheaper / ~70% fewer
+  tool calls than grep+Read on architecture questions over big repos.
+  https://github.com/colbymchenry/codegraph
 - **graphify** (Claude Code skill, `/graphify`) — build a queryable knowledge
-  graph from any folder (code, docs, PDFs, images). Use when you need to
-  understand structure of a large unfamiliar codebase or document set before
-  diving in. 71x fewer tokens per query than re-reading raw files. https://github.com/safishamsi/graphify
+  graph from any folder (code, docs, PDFs, images). Use for **mixed-content**
+  folders (docs + papers + small code samples) where codegraph's
+  code-specialized indexer doesn't fit. For pure code, reach for codegraph
+  first — it has framework awareness and cross-language bridging that
+  graphify lacks. 71x fewer tokens per query than re-reading raw files.
+  https://github.com/safishamsi/graphify
 - **defuddle** (npm CLI) — extract main content from a web page as Markdown.
   Use ad-hoc via `npx defuddle parse <url> --markdown` when summarizing or
   quoting articles; prefer this over scraping raw HTML. https://github.com/kepano/defuddle

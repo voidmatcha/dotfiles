@@ -25,6 +25,9 @@
 # Claude Code / agent scratch
 .claude/settings.local.json
 
+# codegraph per-project knowledge graph (SQLite, large; rebuilds from source)
+.codegraph/
+
 # Logs
 *.log
 npm-debug.log*
