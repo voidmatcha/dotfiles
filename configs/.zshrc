@@ -84,6 +84,11 @@ fi
 # Loaded if present; managed by the company overlay (see dotfiles/company/).
 [ -f "$HOME/.company.secrets.env" ] && . "$HOME/.company.secrets.env"
 
+# ── Company-local shell overlay (optional) ──
+# Symlinked from dotfiles/company/configs/zshrc-overlay.sh by company/install.sh.
+# Used for shell hooks that should only run on company machines (e.g. Codex HUD).
+[ -f "$HOME/.company.zshrc.sh" ] && . "$HOME/.company.zshrc.sh"
+
 # ── Tailscale dev-server bind helpers ──
 # Returns Tailscale IPv4 address, or empty string if not connected.
 ts_ip() {
