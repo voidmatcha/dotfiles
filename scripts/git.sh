@@ -186,6 +186,14 @@ else
   fi
 
   cat > "$DOTFILES_SSH_CONFIG" <<EOF
+# Global defaults — persist passphrases in macOS Keychain so ssh-agent
+# auto-loads keys after reboot. \`IgnoreUnknown UseKeychain\` lets the same
+# config work on Linux (where UseKeychain isn't a thing) without errors.
+Host *
+    IgnoreUnknown UseKeychain
+    UseKeychain yes
+    AddKeysToAgent yes
+
 # Personal GitHub
 Host github.com-personal
     HostName github.com
