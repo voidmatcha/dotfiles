@@ -75,7 +75,7 @@ are `scripts/dev.sh`, `Brewfile`, and `configs/mcp.json`.
   default; serena's redundant basic utilities (read/grep/ls/bash equivalents)
   are auto-disabled because Claude Code already covers them. The shell
   wrapper in `.zshrc` injects serena's system-prompt-override automatically
-  to counter Opus 4.7's strong bias toward built-in tools. https://github.com/oraios/serena
+  to counter Opus's strong bias toward built-in tools. https://github.com/oraios/serena
 - **codegraph** (MCP) — pre-indexed knowledge graph (tree-sitter + SQLite) for
   **exploration** of large or cross-language codebases. Read-only;
   complements serena. Run `codegraph init -i` in each project once; the

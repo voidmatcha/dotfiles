@@ -44,8 +44,6 @@ jobs:
           set -euo pipefail
           python3 -m json.tool configs/claude-settings.json > /dev/null
           python3 -m json.tool configs/mcp.json > /dev/null
-          python3 -m json.tool configs/opencode/opencode.json > /dev/null
-          python3 -m json.tool configs/opencode/oh-my-openagent.json > /dev/null
 
   toml-config-check:
     runs-on: ubuntu-latest

@@ -55,82 +55,33 @@ teardown() {
   grep -q -- '--https=443 --set-path=/ http://localhost:8022' "$REPO_ROOT/scripts/purplemux-launch.sh"
 }
 
-@test "install links Claude and OpenCode configs before setup scripts" {
+@test "install links Claude config before setup scripts" {
   settings_line=$(grep -n 'configs/claude-settings.json' "$REPO_ROOT/install.sh" | cut -d: -f1)
-  opencode_agents_line=$(grep -n 'configs/AGENTS.md" "\$HOME/.config/opencode/AGENTS.md' "$REPO_ROOT/install.sh" | cut -d: -f1)
-  openagent_line=$(grep -n 'configs/opencode/oh-my-openagent.json' "$REPO_ROOT/scripts/opencode.sh" | cut -d: -f1)
-  auth_line=$(grep -n 'Auth check' "$REPO_ROOT/scripts/opencode.sh" | cut -d: -f1)
   claude_line=$(grep -n 'bash "\$DOTFILES_DIR/scripts/claude.sh"' "$REPO_ROOT/install.sh" | cut -d: -f1)
-  opencode_line=$(grep -n 'bash "\$DOTFILES_DIR/scripts/opencode.sh"' "$REPO_ROOT/install.sh" | cut -d: -f1)
 
   [ -n "$settings_line" ]
-  [ -n "$opencode_agents_line" ]
-  [ -n "$openagent_line" ]
-  [ -n "$auth_line" ]
+  [ -n "$claude_line" ]
   [ "$settings_line" -lt "$claude_line" ]
-  [ "$opencode_agents_line" -lt "$opencode_line" ]
-  [ "$settings_line" -lt "$opencode_line" ]
-  [ "$openagent_line" -lt "$auth_line" ]
 }
 
-@test "install runs Codex as first-class setup between Claude and opencode" {
+@test "install runs Codex as first-class setup after Claude" {
   claude_line=$(grep -n 'bash "\$DOTFILES_DIR/scripts/claude.sh"' "$REPO_ROOT/install.sh" | cut -d: -f1)
   codex_line=$(grep -n 'bash "\$DOTFILES_DIR/scripts/codex.sh"' "$REPO_ROOT/install.sh" | cut -d: -f1)
-  opencode_line=$(grep -n 'bash "\$DOTFILES_DIR/scripts/opencode.sh"' "$REPO_ROOT/install.sh" | cut -d: -f1)
 
   [ -n "$claude_line" ]
   [ -n "$codex_line" ]
-  [ -n "$opencode_line" ]
   [ "$claude_line" -lt "$codex_line" ]
-  [ "$codex_line" -lt "$opencode_line" ]
   grep -q 'Codex CLI setup (codex.sh)' "$REPO_ROOT/install.sh"
 }
 
-@test "install progress labels match thirteen setup steps" {
-  run grep -E '[0-9]+/12' "$REPO_ROOT/install.sh"
+@test "install progress labels match twelve setup steps" {
+  run grep -E '[0-9]+/13' "$REPO_ROOT/install.sh"
   [ "$status" -eq 1 ]
 
-  grep -q '1/13 Installing Homebrew' "$REPO_ROOT/install.sh"
-  grep -q '8/13 Setting up Codex CLI' "$REPO_ROOT/install.sh"
-  grep -q '12/13 Configuring purplemux' "$REPO_ROOT/install.sh"
-  grep -q '13/13 Applying company overlay' "$REPO_ROOT/install.sh"
-}
-
-@test "README shared agent config ordering matches install order" {
-  run grep -F 'after opencode setup' "$REPO_ROOT/README.md"
-  [ "$status" -eq 1 ]
-}
-
-@test "opencode dry-run does not require opencode or create config dir" {
-  home="$TMPDIR_TEST/home"
-  mkdir -p "$home"
-
-  run env HOME="$home" DOTFILES_DIR="$REPO_ROOT" DRY_RUN=true PATH="/usr/bin:/bin" bash "$REPO_ROOT/scripts/opencode.sh"
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"[dry-run]"* ]]
-  [ ! -e "$home/.config/opencode" ]
-}
-
-@test "opencode dry-run does not execute version probe" {
-  home="$TMPDIR_TEST/opencode-home"
-  bin="$TMPDIR_TEST/bin"
-  mkdir -p "$home" "$bin"
-  cat > "$bin/opencode" <<'SH'
-#!/bin/sh
-if [ "$1" = "--version" ]; then
-  printf 'opencode --version should not run in dry-run\n' >&2
-  exit 42
-fi
-exit 0
-SH
-  chmod +x "$bin/opencode"
-
-  run env HOME="$home" DOTFILES_DIR="$REPO_ROOT" DRY_RUN=true PATH="$bin:/usr/bin:/bin" bash "$REPO_ROOT/scripts/opencode.sh"
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"would check version"* ]]
-  [[ "$output" != *"opencode --version should not run"* ]]
+  grep -q '1/12 Installing Homebrew' "$REPO_ROOT/install.sh"
+  grep -q '8/12 Setting up Codex CLI' "$REPO_ROOT/install.sh"
+  grep -q '11/12 Configuring purplemux' "$REPO_ROOT/install.sh"
+  grep -q '12/12 Applying company overlay' "$REPO_ROOT/install.sh"
 }
 
 @test "codex dry-run does not require codex or create config dir" {
@@ -333,7 +284,6 @@ checked = [
     repo / 'configs/.gitconfig',
     repo / 'configs/codex/config.toml',
     repo / 'configs/claude-settings.json',
-    repo / 'configs/opencode/opencode.json',
 ]
 company_settings = repo / 'company/configs/claude-settings.json'
 if company_settings.exists():
@@ -351,31 +301,6 @@ assert not violations, '\\n'.join(violations)
 PY
 
   grep -q 'excludesfile = ~/.gitignore_global' "$REPO_ROOT/configs/.gitconfig"
-}
-
-@test "opencode non-interactive does not prompt on closed stdin" {
-  home="$TMPDIR_TEST/opencode-home"
-  bin="$TMPDIR_TEST/bin"
-  mkdir -p "$home" "$bin"
-  cat > "$bin/opencode" <<'SH'
-#!/bin/sh
-if [ "$1" = "--version" ]; then
-  printf 'opencode-test\n'
-  exit 0
-fi
-if [ "$1" = "auth" ] && [ "$2" = "login" ]; then
-  printf 'auth login should not run in non-interactive mode\n' >&2
-  exit 42
-fi
-exit 0
-SH
-  chmod +x "$bin/opencode"
-
-  run bash -c "env HOME='$home' DOTFILES_DIR='$REPO_ROOT' DRY_RUN=false NON_INTERACTIVE=true PATH='$bin:/usr/bin:/bin' bash '$REPO_ROOT/scripts/opencode.sh' < /dev/null"
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"Non-interactive mode"* ]]
-  [[ "$output" != *"auth login should not run"* ]]
 }
 
 @test "codex non-interactive does not prompt on closed stdin" {
@@ -430,7 +355,7 @@ SH
 @test "CI validates JSON config files" {
   grep -q 'json-config-check' "$REPO_ROOT/.github/workflows/lint.yml"
   grep -q 'python3 -m json.tool' "$REPO_ROOT/.github/workflows/lint.yml"
-  grep -q 'configs/opencode' "$REPO_ROOT/.github/workflows/lint.yml"
+  grep -q 'configs/mcp.json' "$REPO_ROOT/.github/workflows/lint.yml"
 }
 
 @test "GitHub Actions are read-only and pinned" {
@@ -445,44 +370,6 @@ SH
   # but 3rd-party actions must be SHA-pinned.
   run bash -c "grep -E 'uses: [^[:space:]]+@v[0-9]+' '$REPO_ROOT/.github/workflows/lint.yml' | grep -v 'uses: actions/'"
   [ "$status" -eq 1 ]
-}
-
-@test "OpenCode config declares explicit permission policy" {
-  python3 - <<PY
-import json
-from pathlib import Path
-cfg = json.loads((Path('$REPO_ROOT') / 'configs/opencode/opencode.json').read_text())
-perm = cfg['permission']
-for tool in ['read', 'edit', 'glob', 'grep', 'list', 'lsp', 'todoread', 'todowrite', 'skill', 'task', 'webfetch', 'websearch', 'codesearch']:
-    assert perm[tool] == 'allow'
-
-assert perm['external_directory'] == 'ask'
-
-bash = perm['bash']
-assert bash['*'] == 'allow'
-assert bash['rm *'] == 'ask'
-assert bash['rmdir *'] == 'ask'
-assert bash['chmod *'] == 'ask'
-assert bash['chown *'] == 'deny'
-assert bash['sudo *'] == 'deny'
-assert bash['git push*'] == 'deny'
-assert bash['git reset --hard*'] == 'deny'
-assert bash['git reset *'] == 'ask'
-assert bash['git clean*'] == 'deny'
-assert bash['npm publish*'] == 'ask'
-assert bash['pnpm publish*'] == 'ask'
-assert perm['doom_loop'] == 'ask'
-PY
-}
-
-@test "OpenCode config avoids personal external directory allowlists" {
-  python3 - <<PY
-from pathlib import Path
-
-text = (Path('$REPO_ROOT') / 'configs/opencode/opencode.json').read_text()
-assert '/' + 'Users' + '/' not in text
-assert '/' + 'home' + '/' not in text
-PY
 }
 
 @test "Codex config declares first-class defaults and MCP" {
@@ -545,13 +432,6 @@ PY
   grep -q 'chrome-devtools' "$REPO_ROOT/README.md"
   grep -q 'serena' "$REPO_ROOT/README.md"
   grep -q 'codegraph' "$REPO_ROOT/README.md"
-}
-
-@test "opencode docs mention both primary and fallback provider auth" {
-  grep -q 'OpenAI primary' "$REPO_ROOT/README.md"
-  grep -q 'Anthropic fallback' "$REPO_ROOT/README.md"
-  grep -q 'OpenAI primary' "$REPO_ROOT/scripts/opencode.sh"
-  grep -q 'Anthropic fallback' "$REPO_ROOT/scripts/opencode.sh"
 }
 
 @test "Claude plugin install settings and docs stay aligned" {
@@ -939,4 +819,19 @@ PY
   grep -q 'github.com/voidmatcha/ui-clone-skills.git' "$REPO_ROOT/scripts/claude.sh"
   grep -q 'UI_CLONE_DIR' "$REPO_ROOT/scripts/claude.sh"
   grep -q 'install.sh' "$REPO_ROOT/scripts/claude.sh"
+}
+
+@test "claude.sh installs Claude Code via native installer, not Homebrew cask" {
+  # Native build (~/.local) self-updates via `claude update`; the Homebrew cask
+  # lags upstream and is shadowed by ~/.local/bin on PATH.
+  grep -q 'claude.ai/install.sh' "$REPO_ROOT/scripts/claude.sh"
+  grep -q 'claude update' "$REPO_ROOT/scripts/claude.sh"
+
+  # Provision is download-then-run, never curl-pipe-bash (pretool-guard denies it).
+  run grep -E 'curl.*\|.*bash' "$REPO_ROOT/scripts/claude.sh"
+  [ "$status" -ne 0 ]
+
+  # Homebrew no longer manages the Claude Code CLI.
+  run grep -E '^[[:space:]]*cask "claude-code"' "$REPO_ROOT/Brewfile"
+  [ "$status" -ne 0 ]
 }

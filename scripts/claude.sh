@@ -6,6 +6,47 @@ source "$(cd "$(dirname "$0")" && pwd)/lib/common.sh"
 
 info "Setting up Claude Code..."
 
+# ── Claude Code binary (native install) ──
+# Install the native build into ~/.local instead of via Homebrew. The cask
+# lags upstream and is shadowed by ~/.local/bin on PATH anyway, while the
+# native build self-manages versions through `claude update`. Provision by
+# downloading the official installer and running it from disk — curl-pipe-bash
+# is denied by our pretool-guard, and download-then-run lets the script be
+# inspected first. Idempotent: if claude already exists we just check for an
+# update; otherwise we run the installer (defaults to the stable channel).
+install_claude_code() {
+  if command -v claude &>/dev/null; then
+    info "claude present ($(claude --version 2>/dev/null | awk '{print $1}')) — checking for updates"
+    if $DRY_RUN; then
+      info "[dry-run] claude update"
+    else
+      with_timeout 120 claude update </dev/null \
+        || warn "claude update failed/timed out (continuing with the installed build)"
+    fi
+    return 0
+  fi
+
+  if $DRY_RUN; then
+    info "[dry-run] download https://claude.ai/install.sh and run it (native build, stable channel)"
+    return 0
+  fi
+
+  local installer
+  installer=$(mktemp)
+  if curl -fsSL https://claude.ai/install.sh -o "$installer" && bash "$installer"; then
+    info "Installed Claude Code native build to ~/.local"
+  else
+    warn "Claude Code native install failed — install manually: https://docs.claude.com/en/docs/claude-code/setup"
+  fi
+  rm -f "$installer"
+
+  # The native installer drops the binary in ~/.local/bin; make it visible to
+  # the rest of this script (claude plugin / mcp …) even if PATH wasn't
+  # refreshed in this shell.
+  command -v claude &>/dev/null || export PATH="$HOME/.local/bin:$PATH"
+}
+install_claude_code
+
 if $DRY_RUN; then
   info "[dry-run] ralph install-skills"
 else

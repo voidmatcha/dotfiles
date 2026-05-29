@@ -1,5 +1,4 @@
 # ── Taps ──
-tap "anomalyco/tap"
 tap "oven-sh/bun"
 
 # ── CLI tools ──
@@ -34,7 +33,6 @@ brew "bats-core"                # Bash Automated Testing System
 brew "pipx"                     # isolated Python CLI installer (used for twitter-cli, rdt-cli)
 brew "oven-sh/bun/bun"          # Bun JS runtime — required by claude-mem@thedotmack hooks (scripts/bun-runner.js)
 brew "yt-dlp"                   # YouTube/Bilibili/1800+ sites — metadata + subtitle extraction
-brew "anomalyco/tap/opencode"   # AI coding agent (third-party tap; tracks latest)
 brew "code-server"              # VS Code in browser (auto-launched via LaunchAgent)
 brew "docker"                   # docker CLI only (no Docker Desktop). Pair with Rancher Desktop or similar engine on hosts with licensing restrictions.
 brew "mas"                      # Mac App Store CLI
@@ -52,7 +50,6 @@ cask "figma"
 cask "raycast"
 cask "karabiner-elements"
 cask "rectangle"
-cask "claude-code"
 cask "cursor"
 cask "zoom"
 cask "keka"                     # file archiver

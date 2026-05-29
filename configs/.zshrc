@@ -57,8 +57,8 @@ command -v atuin &>/dev/null && eval "$(atuin init zsh --disable-up-arrow)"
 # ── direnv ──
 command -v direnv &>/dev/null && eval "$(direnv hook zsh)"
 
-# ── Claude Code: serena system-prompt override (Opus 4.7 bias workaround) ──
-# Opus 4.7 + CC's 16k-token built-in tool descriptions create strong bias
+# ── Claude Code: serena system-prompt override (Opus built-in-tool bias workaround) ──
+# Opus + CC's large built-in tool descriptions create strong bias
 # against external MCP tools. Serena's prompt-override counteracts this so
 # Serena's semantic tools actually get used. Falls back to plain `claude` if
 # serena is not installed. See https://github.com/oraios/serena
@@ -130,10 +130,6 @@ cannot reach these — only authenticated tailnet peers can):
     uvicorn app:app --host $ip --port 8000
     flask run --host $ip --port 5000
     node server.js          # set HOST=$ip in env
-
-  AI agents:
-    opencode serve --hostname $ip --port 4096
-    opencode web --hostname $ip
 
 Pro tip: set HOST=\$DEV_HOST in your shell to make most tools auto-bind:
   HOST=\$DEV_HOST npm start

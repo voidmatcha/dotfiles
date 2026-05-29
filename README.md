@@ -1,6 +1,6 @@
 # dotfiles
 
-My opinionated macOS dev setup. Three goals: AI-assisted by default (Claude Code, opencode, hermes-agent, codex CLI side-by-side), remote access via Tailscale (private mesh, no public ports) with both OpenSSH and Tailscale SSH enabled side-by-side, and reproducible (idempotent scripts, `--dry-run`, CI-checked with shellcheck + `bash -n` + Brewfile validation + bats).
+My opinionated macOS dev setup. Three goals: AI-assisted by default (Claude Code, hermes-agent, codex CLI side-by-side), remote access via Tailscale (private mesh, no public ports) with both OpenSSH and Tailscale SSH enabled side-by-side, and reproducible (idempotent scripts, `--dry-run`, CI-checked with shellcheck + `bash -n` + Brewfile validation + bats).
 
 Run `bootstrap.sh` (one curl line on a fresh Mac) or clone + `./install.sh`
 manually. Either way it asks for confirmation before doing anything, then
@@ -45,7 +45,7 @@ cd ~/dotfiles
 - whisper-cpp model (~1.5GB, large-v3-turbo)
 - ccusage, rtk, agent-browser
 - defuddle — free local web extraction tool for LLM-friendly Markdown
-- [serena](https://github.com/oraios/serena) — MCP server for semantic code navigation + **editing** (LSP-backed). Installed via `uv tool install`, registered in `configs/mcp.json` with `--context claude-code --project-from-cwd`. `.zshrc` wraps `claude` to inject serena's system-prompt-override (counters Opus 4.7 bias toward built-in tools)
+- [serena](https://github.com/oraios/serena) — MCP server for semantic code navigation + **editing** (LSP-backed). Installed via `uv tool install`, registered in `configs/mcp.json` with `--context claude-code --project-from-cwd`. `.zshrc` wraps `claude` to inject serena's system-prompt-override (counters Opus's bias toward built-in tools)
 - [codegraph](https://github.com/colbymchenry/codegraph) — read-only MCP server for **exploring** large codebases via a pre-indexed knowledge graph (tree-sitter + SQLite, watcher auto-syncs on save). Installed via `npm install -g @colbymchenry/codegraph`. Complementary to serena: codegraph wins on "how does X reach Y" / architecture / framework-route mapping / iOS+RN cross-language bridges; serena wins on symbol-level edits and refactors. Run `codegraph init -i` once per project. Personal user-scope only — not in the NAVER MCP catalog, so excluded from company project-scope (`~/work/.mcp.json`).
 - [graphify](https://github.com/safishamsi/graphify) — Claude Code skill (`/graphify`) that turns any folder into a queryable knowledge graph. For pure code, codegraph is more specialized; reach for graphify on mixed content (PDFs, docs, papers). Installed via `pip install --user graphifyy && graphify install`
 - [wrangler](https://developers.cloudflare.com/workers/wrangler/) — Cloudflare Workers/Pages/R2/D1 CLI
@@ -70,6 +70,7 @@ cd ~/dotfiles
 **Git** — separate personal/work accounts via `includeIf` with **remote-URL-based** routing (see "Separate Git accounts" below). Commits and tags are SSH-signed by default — register the public key as a Signing Key on GitHub to get a verified badge. A global `~/.gitignore_global` (symlink to `configs/.gitignore_global`) catches `.DS_Store`, editor leftovers, and local `.env*` files while leaving shared `.envrc` files trackable for direnv.
 
 **Claude Code:**
+- Install — native build via `scripts/claude.sh`, which downloads the official `claude.ai/install.sh` (to `~/.local`) and runs it from disk (no curl-pipe-bash); thereafter it self-updates with `claude update`. Deliberately **not** Homebrew — the cask lags upstream and gets shadowed by `~/.local/bin` on PATH, so a brew-installed `claude` is never the one that actually runs.
 - Skills — agent-skills, ai-slop-cleaner, clarify, code-review, doc-coauthoring, e2e-skills, frontend-design, humanizer, im-not-ai, internal-comms, karpathy-guidelines, mcp-builder, obsidian-skills, project-session-manager (`/oh-my-claudecode:psm`), security-best-practices, skill-creator, ui-clone-skills, ultrawork, webapp-testing
 - Plugins — ralph-loop (iterative autonomous dev loops; `/ralph-loop:ralph-loop`), [codex@openai-codex](https://github.com/openai/codex-plugin-cc) (delegate to / review with the local Codex CLI from inside Claude Code), superpowers, rust-analyzer-lsp, fakechat, vercel, session-report, claude-md-management (`/claude-md-management:revise-claude-md` + `claude-md-improver` audit skill), hookify, session-wrap, [claude-mem@thedotmack](https://github.com/thedotmack/claude-mem) (persistent memory + cross-session search), plus role-focused plugins from [wshobson/agents](https://github.com/wshobson/agents) marketplace (comprehensive-review, javascript-typescript, python-development, frontend-mobile-development, security-scanning, documentation-generation, unit-testing, tdd-workflows, git-pr-workflows, error-debugging, ui-design, accessibility-compliance, content-marketing, seo-*). Plugin slash commands use `/<plugin-name>:<command>` (e.g. `/ralph-loop:ralph-loop`, not bare `/ralph-loop`). Standalone skills (`/graphify`, etc.) don't take the prefix.
 - Hooks — skill-eval (forced-eval prompt injection per Scott Spence pattern, ~84% activation rate), `rtk hook claude` (in-place PreToolUse hook registered via `rtk init --global`; compresses Bash output 60–90%), pretool-guard (structured PreToolUse deny for risky Bash), skill-md-edit-warn (PostToolUse reminder after editing `SKILL.md`)
@@ -83,15 +84,6 @@ cd ~/dotfiles
 - Skills — `scripts/codex.sh` installs the cmux skill from `manaflow-ai/cmux` (`skills/cmux`) into `~/.codex/skills/cmux` for workspace/pane/surface automation.
 - Profile — `codex --profile yolo` is available as an explicit opt-in profile (`approval_policy = "never"`, `sandbox_mode = "danger-full-access"`); don't use it outside an isolated environment
 - Auth — `codex.sh` checks `codex login status`; run `codex login` for ChatGPT sign-in, `codex login --device-auth` for a headless device-code flow, or `printenv OPENAI_API_KEY | codex login --with-api-key` for API-key auth
-
-**opencode:**
-- Brew tap — `anomalyco/tap` (third-party tap with current versions; homebrew-core formula is stale)
-- npm plugins (auto-installed via Bun on first run from `opencode.json`):
-  - `oh-my-openagent@latest` — Sisyphus/Oracle/Librarian/Explore agents + category-based delegation
-  - `@ex-machina/opencode-anthropic-auth@1.8.0` — Anthropic OAuth refresh
-- Config — `configs/opencode/{opencode.json, oh-my-openagent.json}` symlinked to `~/.config/opencode/`
-- Auth — `opencode.sh` detects missing `~/.local/share/opencode/auth.json` and prompts to run `opencode auth login`; configure OpenAI primary auth and Anthropic fallback auth before relying on model fallback routing
-- AGENTS.md — same canonical file as Claude Code/Cursor (symlinked to `~/.config/opencode/AGENTS.md`)
 
 **[Hermes Agent](https://github.com/NousResearch/hermes-agent):** Nous Research's self-improving AI agent. `hermes.sh` runs the upstream one-shot installer (`curl … | bash`) — idempotent, skips if `hermes` is already on PATH. Configure with `hermes setup` after a shell reload.
 
@@ -112,7 +104,7 @@ Installed services run at every login with `KeepAlive=true` (throttle 60s); `ser
   - Tailnet exposure: `tailscale serve --bg --https=8443 --set-path=/ http://localhost:8088`
   - Restart: `launchctl kickstart -k gui/$(id -u)/com.user.code-server`
 
-**Shared agent config** — canonical `~/.agent/AGENTS.md` with shared rules, also symlinked to `~/.cursor/rules/AGENTS.md` and `~/.config/opencode/AGENTS.md` before Claude Code/opencode setup. `~/.claude/CLAUDE.md` imports it via `@AGENTS.md`.
+**Shared agent config** — canonical `~/.agent/AGENTS.md` with shared rules, also symlinked to `~/.cursor/rules/AGENTS.md` before Claude Code setup. `~/.claude/CLAUDE.md` imports it via `@AGENTS.md`.
 
 **Dotfiles symlinks** — zshrc, tmux.conf, gitconfig, gitignore_global, Claude Code settings, skill-eval hook, pretool-guard hook, skill-md-edit-warn hook. Codex config is copied as a mutable local file. `configs/mcp.json` is read by `scripts/claude.sh` for user-scope MCP registration.
 
@@ -142,7 +134,6 @@ dotfiles/
 │   ├── codex.sh            # Codex CLI config + cmux skill + auth prompt
 │   ├── lib/
 │   │   └── common.sh       # shared helpers (info/warn/error/run_or_dry/link_file)
-│   ├── opencode.sh         # opencode config + auth prompt
 │   ├── hermes.sh           # Hermes Agent (Nous Research) installer wrapper
 │   ├── services.sh         # purplemux + code-server LaunchAgent installer
 │   ├── purplemux-launch.sh # LaunchAgent wrapper for purplemux (PATH + node resolution)
@@ -155,7 +146,7 @@ dotfiles/
 │   ├── .gitconfig-personal
 │   ├── .gitconfig-work
 │   ├── .gitignore_global
-│   ├── AGENTS.md           # canonical agent rules (Claude + Cursor + opencode)
+│   ├── AGENTS.md           # canonical agent rules (Claude + Cursor)
 │   ├── CLAUDE.md           # Claude Code wrapper (imports AGENTS.md)
 │   ├── claude-settings.json
 │   ├── mcp.json            # shared Claude MCP servers
@@ -163,9 +154,6 @@ dotfiles/
 │   │   └── config.toml     # Codex CLI defaults + MCP servers
 │   ├── com.user.purplemux.plist     # LaunchAgent template (sed-substituted at install)
 │   ├── com.user.code-server.plist   # LaunchAgent template (sed-substituted at install)
-│   ├── opencode/
-│   │   ├── opencode.json           # opencode global config + plugin list
-│   │   └── oh-my-openagent.json    # agents/categories with model fallbacks
 │   ├── rtk-config.toml
 │   └── hooks/
 │       ├── pretool-guard.sh     # structured PreToolUse deny hook
