@@ -220,6 +220,63 @@ PY
   [[ "$output" == *"[dry-run]"* ]]
 }
 
+@test "git setup backs up dirty tracked account configs before regenerating" {
+  home="$TMPDIR_TEST/home"
+  dotfiles="$TMPDIR_TEST/dotfiles"
+  bin="$TMPDIR_TEST/bin"
+  mkdir -p "$home" "$dotfiles/configs" "$bin"
+
+  cat > "$dotfiles/configs/.gitconfig-personal" <<'EOF'
+[user]
+    name = Old Personal
+    email = old-personal@example.com
+EOF
+  cat > "$dotfiles/configs/.gitconfig-work" <<'EOF'
+[user]
+    name = Old Work
+    email = old-work@example.com
+EOF
+
+  git -C "$dotfiles" init -q
+  git -C "$dotfiles" add configs/.gitconfig-personal configs/.gitconfig-work
+  git -C "$dotfiles" -c user.name=test -c user.email=test@example.com commit -q -m init
+  printf '\n[alias]\n    keep = status\n' >> "$dotfiles/configs/.gitconfig-personal"
+
+  cat > "$bin/ssh-keygen" <<'SH'
+#!/bin/sh
+if [ "$1" = "-lf" ]; then
+  printf '256 SHA256:test fake-key (ED25519)\n'
+  exit 0
+fi
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-f" ]; then
+    key_file="$2"
+    break
+  fi
+  shift
+done
+printf 'private\n' > "$key_file"
+printf 'public\n' > "$key_file.pub"
+SH
+  cat > "$bin/ssh-agent" <<'SH'
+#!/bin/sh
+printf 'SSH_AUTH_SOCK=/tmp/fake-agent.sock; export SSH_AUTH_SOCK;\n'
+printf 'SSH_AGENT_PID=1; export SSH_AGENT_PID;\n'
+SH
+  cat > "$bin/ssh-add" <<'SH'
+#!/bin/sh
+exit 1
+SH
+  chmod +x "$bin/ssh-keygen" "$bin/ssh-agent" "$bin/ssh-add"
+
+  run env HOME="$home" DOTFILES_DIR="$dotfiles" DRY_RUN=false NON_INTERACTIVE=true PATH="$bin:$PATH" bash "$REPO_ROOT/scripts/git.sh"
+
+  [ "$status" -eq 0 ]
+  [ -f "$dotfiles/configs/.gitconfig-personal.backup" ]
+  grep -q 'keep = status' "$dotfiles/configs/.gitconfig-personal.backup"
+  [ ! -e "$dotfiles/configs/.gitconfig-work.backup" ]
+}
+
 @test "git setup preserves ssh config through include file" {
   run grep -F 'cat > "$SSH_CONFIG"' "$REPO_ROOT/scripts/git.sh"
   [ "$status" -eq 1 ]
@@ -500,6 +557,18 @@ marketplaces = cfg["extraKnownMarketplaces"]
 assert "claude-code-workflows" in marketplaces
 assert "voidmatcha" not in marketplaces
 PY
+}
+
+@test "company gp marketplace URL stays aligned" {
+  grep -q 'https://oss.navercorp.com/GP/claude-hud.git' "$REPO_ROOT/company/configs/claude-settings.json"
+  grep -q 'https://oss.navercorp.com/GP/claude-hud.git' "$REPO_ROOT/company/plugins.sh"
+  grep -q 'https://oss.navercorp.com/GP/claude-hud.git' "$REPO_ROOT/company/README.md"
+
+  run grep -R -F 'https://oss.navercorp.com/GP/ai-settings.git' \
+    "$REPO_ROOT/company/configs/claude-settings.json" \
+    "$REPO_ROOT/company/plugins.sh" \
+    "$REPO_ROOT/company/README.md"
+  [ "$status" -eq 1 ]
 }
 
 @test "crawler tooling is installed and documented" {

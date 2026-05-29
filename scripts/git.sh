@@ -36,6 +36,25 @@ backup_existing_file() {
   info "Backed up: $file -> $backup_dst"
 }
 
+backup_if_tracked_file_dirty() {
+  local file="$1"
+  local rel="${file#"$DOTFILES_DIR"/}"
+
+  if [ ! -e "$file" ]; then
+    return 0
+  fi
+
+  if ! git -C "$DOTFILES_DIR" ls-files --error-unmatch "$rel" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if ! git -C "$DOTFILES_DIR" diff --quiet -- "$rel" ||
+     ! git -C "$DOTFILES_DIR" diff --cached --quiet -- "$rel"; then
+    backup_existing_file "$file"
+    warn "Preserved uncommitted edits before regenerating tracked config: $rel"
+  fi
+}
+
 # Read current values as defaults
 _cur_personal_name=$(git config -f "$DOTFILES_DIR/configs/.gitconfig-personal" user.name 2>/dev/null || true)
 _cur_personal_email=$(git config -f "$DOTFILES_DIR/configs/.gitconfig-personal" user.email 2>/dev/null || true)
@@ -61,7 +80,12 @@ else
   # Write user.name/email to the (tracked) personal/work configs.
   # signingkey lives in ~/.gitconfig.local because the SSH key path is
   # machine-specific and shouldn't be committed.
-  backup_existing_file "$DOTFILES_DIR/configs/.gitconfig-personal"
+  # Avoid routine backup churn: clean tracked baselines are recoverable from git.
+  # If a tracked config has staged or unstaged local edits, preserve that dirty
+  # copy once before regenerating it.
+  backup_if_tracked_file_dirty "$DOTFILES_DIR/configs/.gitconfig-personal"
+  backup_if_tracked_file_dirty "$DOTFILES_DIR/configs/.gitconfig-work"
+
   cat > "$DOTFILES_DIR/configs/.gitconfig-personal" <<EOF
 [user]
     name = $personal_name
@@ -69,7 +93,6 @@ else
 # signingkey: machine-local — set in ~/.gitconfig.local
 EOF
 
-  backup_existing_file "$DOTFILES_DIR/configs/.gitconfig-work"
   cat > "$DOTFILES_DIR/configs/.gitconfig-work" <<EOF
 [user]
     name = $work_name
@@ -159,6 +182,11 @@ generate_ssh_key() {
     fi
   fi
 }
+
+if ! $DRY_RUN; then
+  ensure_dir "$HOME/.ssh"
+  chmod 700 "$HOME/.ssh"
+fi
 
 generate_ssh_key "personal" "$personal_email"
 generate_ssh_key "work" "$work_email"
