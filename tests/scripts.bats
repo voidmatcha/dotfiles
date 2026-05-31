@@ -4,6 +4,17 @@
 setup() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   TMPDIR_TEST="$(mktemp -d)"
+
+  # Keep local shell/git settings from leaking into hermetic smoke tests.
+  # macOS does not ship C.UTF-8, so inherited LC_ALL=C.UTF-8 makes quiet
+  # hook assertions fail with bash locale warnings. Some developer machines
+  # also force signed commits globally, which breaks throwaway test repos.
+  export LC_ALL=C
+  export LANG=C
+  export LC_CTYPE=C
+  export GIT_CONFIG_NOSYSTEM=1
+  export GIT_CONFIG_GLOBAL="$TMPDIR_TEST/gitconfig"
+  : > "$GIT_CONFIG_GLOBAL"
 }
 
 teardown() {
@@ -309,6 +320,8 @@ SH
 
 @test "repo ignores local Claude permissions" {
   grep -qxF '.claude/settings.local.json' "$REPO_ROOT/.gitignore"
+  grep -qxF '.claude/review-loop.local.md' "$REPO_ROOT/.gitignore"
+  grep -qxF 'reviews/' "$REPO_ROOT/.gitignore"
 }
 
 @test "repo ignores generated git config backups" {
@@ -446,6 +459,7 @@ assert 'npm root -g' in cfg['notify'][7]
 assert cfg['notify'][8] == 'omx-notify'
 assert cfg['features']['goals'] is True
 assert cfg['features']['child_agents_md'] is True
+assert cfg['features']['multi_agent'] is True
 yolo = cfg['profiles']['yolo']
 assert yolo['approval_policy'] == 'never'
 assert yolo['sandbox_mode'] == 'danger-full-access'
@@ -458,6 +472,7 @@ assert 'presentations@openai-primary-runtime' not in cfg.get('plugins', {})
 mcp = cfg['mcp_servers']['chrome-devtools']
 assert mcp['command'] == 'npx'
 assert mcp['args'] == ['-y', 'chrome-devtools-mcp@0.23.0']
+assert cfg['mcp_servers']['context7']['url'] == 'https://mcp.context7.com/mcp'
 PY
 }
 
@@ -482,22 +497,30 @@ PY
   grep -q 'codex login --device-auth' "$REPO_ROOT/README.md"
   grep -q '\[features\] goals = true' "$REPO_ROOT/README.md"
   grep -q 'codex --profile yolo' "$REPO_ROOT/README.md"
-  # README describes the three Codex MCP entries by name (chrome-devtools,
-  # serena, codegraph) without hardcoding the exact [mcp_servers.*] token —
-  # the prose moved when we added the second + third entries.
+  # README describes the Codex MCP entries by name without hardcoding the exact
+  # [mcp_servers.*] token — the prose moves when entries are added/removed.
   grep -q 'mcp_servers' "$REPO_ROOT/README.md"
   grep -q 'chrome-devtools' "$REPO_ROOT/README.md"
   grep -q 'serena' "$REPO_ROOT/README.md"
   grep -q 'codegraph' "$REPO_ROOT/README.md"
+  grep -q 'context7' "$REPO_ROOT/README.md"
 }
 
 @test "Claude plugin install settings and docs stay aligned" {
   grep -q 'codex@openai-codex' "$REPO_ROOT/configs/claude-settings.json"
+  grep -q 'claude-hud@claude-hud' "$REPO_ROOT/configs/claude-settings.json"
+  grep -q 'skills-janitor@skills-janitor' "$REPO_ROOT/configs/claude-settings.json"
+  grep -q 'security-guidance@claude-plugins-official' "$REPO_ROOT/configs/claude-settings.json"
+  grep -q 'review-loop@hamel-review' "$REPO_ROOT/configs/claude-settings.json"
   grep -q 'claude-mem@thedotmack' "$REPO_ROOT/configs/claude-settings.json"
   grep -q 'javascript-typescript@claude-code-workflows' "$REPO_ROOT/configs/claude-settings.json"
   grep -q 'seo-analysis-monitoring@claude-code-workflows' "$REPO_ROOT/configs/claude-settings.json"
+  grep -q 'REVIEW_LOOP_CODEX_FLAGS' "$REPO_ROOT/configs/claude-settings.json"
   run grep -F 'typescript-lsp@claude-plugins-official' "$REPO_ROOT/configs/claude-settings.json"
   [ "$status" -eq 1 ]
+  grep -q 'claude-hud@claude-hud' "$REPO_ROOT/README.md"
+  grep -q 'skills-janitor@skills-janitor' "$REPO_ROOT/README.md"
+  grep -q 'review-loop@hamel-review' "$REPO_ROOT/README.md"
   grep -q 'session-wrap' "$REPO_ROOT/README.md"
   grep -q 'claude plugin list' "$REPO_ROOT/scripts/claude.sh"
 }
@@ -612,18 +635,20 @@ from pathlib import Path
 cfg = json.loads((Path('$REPO_ROOT') / 'configs/claude-settings.json').read_text())
 mcp = json.loads((Path('$REPO_ROOT') / 'configs/mcp.json').read_text())
 assert cfg['enableAllProjectMcpServers'] is False
-assert cfg['enabledMcpjsonServers'] == ['chrome-devtools', 'serena', 'codegraph']
+assert cfg['enabledMcpjsonServers'] == ['chrome-devtools', 'serena', 'codegraph', 'context7']
 assert cfg['disabledMcpjsonServers'] == []
 assert cfg['allowManagedMcpServersOnly'] is True
 assert cfg['allowedMcpServers'] == [
     {'serverName': 'chrome-devtools'},
     {'serverName': 'serena'},
     {'serverName': 'codegraph'},
+    {'serverName': 'context7'},
 ]
 assert {'serverName': 'filesystem'} in cfg['deniedMcpServers']
 assert 'chrome-devtools' in mcp['mcpServers']
 assert 'serena' in mcp['mcpServers']
 assert 'codegraph' in mcp['mcpServers']
+assert 'context7' in mcp['mcpServers']
 PY
 }
 

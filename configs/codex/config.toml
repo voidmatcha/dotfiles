@@ -78,6 +78,12 @@ command = "codegraph"
 args = ["serve", "--mcp"]
 startup_timeout_sec = 15
 
+# context7 — version-aware library/framework docs lookup. HTTP MCP endpoint,
+# anonymous by default; use only when current official docs matter.
+[mcp_servers.context7]
+url = "https://mcp.context7.com/mcp"
+startup_timeout_sec = 15
+
 [tui.model_availability_nux]
 "gpt-5.5" = 4
 

@@ -95,10 +95,10 @@ PY
     || { echo "company envsubst allowlist must include every mcp.json.template secret"; return 1; }
   grep -q 'UNAPPROVED_MCP' "$REPO_ROOT/company/install.sh" \
     || { echo "company install.sh should remove unapproved public MCPs"; return 1; }
-  grep -q '"exa"' "$REPO_ROOT/company/install.sh" \
-    || { echo "company install.sh should remove exa on internal machines"; return 1; }
   grep -q '"linkedin"' "$REPO_ROOT/company/install.sh" \
     || { echo "company install.sh should remove linkedin on internal machines"; return 1; }
+  ! grep -q 'mcp remove --scope user exa' "$REPO_ROOT/company/install.sh" \
+    || { echo "company install.sh should not hard-prune provider-official exa"; return 1; }
   # Negative assertion: we should NOT see a `claude mcp add-json --scope user`
   # for company servers anymore (those leak company tools into personal sessions).
   ! grep -q 'claude mcp add-json --scope user' "$REPO_ROOT/company/install.sh"
@@ -146,7 +146,7 @@ SH
   [ ! -e "$home/.claude/.mcp.json" ]
   ! grep -q 'mcp add-json --scope user' "$home/claude-calls.log"
   grep -q 'mcp remove --scope user github-enterprise' "$home/claude-calls.log"
-  grep -q 'mcp remove --scope user exa' "$home/claude-calls.log"
+  ! grep -q 'mcp remove --scope user exa' "$home/claude-calls.log"
   grep -q 'mcp remove --scope user linkedin' "$home/claude-calls.log"
 
   python3 - "$home/work/.mcp.json" <<'PY'
@@ -183,12 +183,10 @@ project_scope = [
     "figma-developer-mcp",
 ]
 # User-scope MCPs that the company settings still permits (so the same tools
-# available outside ~/work/ also work inside it). serena + codegraph are
-# personal productivity tools (per AGENTS.md "Approved tooling only").
-# chrome-devtools + context7 are the public-npm twins of the -naver variants
-# — kept allowed so the user can fall back to them inside ~/work/ if the
-# artifactory/docker variant is unreachable.
-user_scope_allowed = ["chrome-devtools", "context7", "serena", "codegraph"]
+# available outside ~/work/ also work inside it). Provider-official hosted MCPs
+# such as exa are allowed to remain user-scope, but AGENTS-company.md forbids
+# sending internal data through them.
+user_scope_allowed = ["chrome-devtools", "context7", "exa", "serena", "codegraph"]
 assert cfg["enableAllProjectMcpServers"] is False
 assert cfg["enabledMcpjsonServers"] == project_scope
 assert cfg["allowManagedMcpServersOnly"] is True
@@ -196,11 +194,32 @@ assert cfg["allowedMcpServers"] == [
     {"serverName": name} for name in project_scope + user_scope_allowed
 ]
 denied = {entry["serverName"] for entry in cfg["deniedMcpServers"]}
-assert {"filesystem", "exa", "linkedin"} <= denied
-assert not ({"serena", "codegraph"} & denied), (
-    "serena/codegraph must NOT be on the company denylist — they are user-scope tools"
+assert {"filesystem", "linkedin"} <= denied
+assert not ({"exa", "serena", "codegraph"} & denied), (
+    "provider-official/user-scope tools must NOT be on the company denylist"
 )
 PY
+}
+
+@test "company guidance keeps agent-browser as local CLI, not MCP" {
+  agents="$REPO_ROOT/company/configs/AGENTS-company.md"
+  readme="$REPO_ROOT/company/README.md"
+  [ -f "$agents" ] || skip "company overlay not present"
+
+  grep -q 'agent-browser open <URL> --profile "Default"' "$agents"
+  grep -q 'agent-browser.*not an MCP server' "$agents"
+  grep -q 'agent-browser open <url> --profile "Default"' "$readme"
+}
+
+@test "company guidance permits provider-official MCPs without internal data" {
+  agents="$REPO_ROOT/company/configs/AGENTS-company.md"
+  readme="$REPO_ROOT/company/README.md"
+  [ -f "$agents" ] || skip "company overlay not present"
+
+  grep -q 'Provider-official hosted MCPs' "$agents"
+  grep -q 'Exa MCP may be available' "$agents"
+  grep -q 'does not hard-prune' "$readme"
+  grep -q 'provider-official MCPs such as Exa' "$readme"
 }
 
 @test "tracked .gitconfig-personal/.gitconfig-work do not contain signingkey" {

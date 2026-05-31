@@ -9,3 +9,9 @@ configs/.gitconfig-*.backup*
 .gitconfig.local
 .gitconfig.local-work
 .claude/settings.local.json
+# Claude review-loop plugin state/artifacts are per-session and generated.
+.claude/review-loop.local.md
+.claude/review-loop.log
+.claude/review-loop-run-codex.sh
+.claude/review-loop-codex-prompt.txt
+reviews/

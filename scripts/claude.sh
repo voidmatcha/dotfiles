@@ -207,6 +207,12 @@ fi
 
 PLUGIN_MARKETPLACES=(
   "openai/codex-plugin-cc"
+  # jarrodwatts/claude-hud — native statusline HUD for context/tool/agent/todo
+  # visibility. Requires one-time `/claude-hud:setup` to write statusLine.
+  "jarrodwatts/claude-hud"
+  # khendzel/skills-janitor — cross-scope skill hygiene report/fix/value tools
+  # for Claude Code + Codex skill installs.
+  "khendzel/skills-janitor"
   # wshobson/agents — 80+ focused plugins (185 agents, 153 skills, 100 commands)
   # registered under the marketplace id `claude-code-workflows`.
   # Catalog: https://github.com/wshobson/agents/blob/main/docs/plugins.md
@@ -215,10 +221,20 @@ PLUGIN_MARKETPLACES=(
   # Hooks SessionStart/End + 5 others, SQLite + Chroma vector DB, MCP search tools,
   # web viewer at localhost:37777, <private> tag for sensitive content.
   "thedotmack/claude-mem"
+  # uditgoenka/autoresearch — Claude-native autonomous metric loop
+  # (`/autoresearch`, `/autoresearch:debug`, `/autoresearch:fix`, etc.).
+  "uditgoenka/autoresearch"
+  # hamelsmu/claude-review-loop — Claude implements, Codex reviews, Claude fixes.
+  # We set REVIEW_LOOP_CODEX_FLAGS in settings to avoid the plugin's dangerous
+  # default `--dangerously-bypass-approvals-and-sandbox`.
+  "hamelsmu/claude-review-loop"
 )
 
 PLUGINS=(
   "ralph-loop@claude-plugins-official"
+  "autoresearch@autoresearch"                         # bounded metric loop + 13 Claude commands
+  "claude-hud@claude-hud"                             # statusline context/tool/agent/todo HUD
+  "skills-janitor@skills-janitor"                     # skill inventory, dupes, token value
   "codex@openai-codex"
   "superpowers@claude-plugins-official"
   "rust-analyzer-lsp@claude-plugins-official"
@@ -227,6 +243,8 @@ PLUGINS=(
   "session-report@claude-plugins-official"
   "claude-md-management@claude-plugins-official"
   "hookify@claude-plugins-official"
+  "security-guidance@claude-plugins-official"         # edit/stop security review hooks + agent
+  "review-loop@hamel-review"                          # explicit /review-loop Claude→Codex loop
 
   # wshobson/agents — one plugin per role. Each is isolated (own agents +
   # commands + skills); only what you install is loaded into context.
