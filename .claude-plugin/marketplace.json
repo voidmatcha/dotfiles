@@ -1,0 +1,30 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "dotfiles-local",
+  "description": "Local skills from this dotfiles repository.",
+  "owner": {
+    "name": "YONGJAE LEE",
+    "url": "https://github.com/voidmatcha"
+  },
+  "plugins": [
+    {
+      "name": "local-skills",
+      "description": "Local skills bundle for dotfiles verification, usage audits, code-intel readiness, work-scope safety, source provenance, and cmux diagnostics.",
+      "version": "0.1.0",
+      "author": {
+        "name": "YONGJAE LEE",
+        "url": "https://github.com/voidmatcha"
+      },
+      "source": "./plugins/local-skills",
+      "category": "productivity",
+      "homepage": "https://github.com/voidmatcha/dotfiles",
+      "license": "MIT",
+      "tags": [
+        "local-skills",
+        "dotfiles",
+        "skills",
+        "verification"
+      ]
+    }
+  ]
+}

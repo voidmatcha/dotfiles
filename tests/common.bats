@@ -5,6 +5,12 @@ setup() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   COMMON="$REPO_ROOT/scripts/lib/common.sh"
   TMPDIR_TEST="$(mktemp -d)"
+  export LC_ALL=C
+  export LANG=C
+  export LC_CTYPE=C
+  export GIT_CONFIG_NOSYSTEM=1
+  export GIT_CONFIG_GLOBAL="$TMPDIR_TEST/gitconfig"
+  : > "$GIT_CONFIG_GLOBAL"
 }
 
 teardown() {

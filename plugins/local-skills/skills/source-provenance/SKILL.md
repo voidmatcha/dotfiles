@@ -1,0 +1,22 @@
+---
+name: source-provenance
+description: Track provenance for imported, adapted, or vendored skills, agents, hooks, prompts, plugins, scripts, or third-party workflow assets. Use when adding external agent assets or auditing whether local files cite upstream source, license, and adaptation status.
+---
+
+# Source Provenance
+
+Before adding or modifying imported agent assets, record where they came from.
+
+## Workflow
+
+1. For a new external asset, capture upstream URL, license, and whether this repo is vendoring, adapting, or only inspired by it.
+2. Run `python3 scripts/source_provenance_audit.py` to find local assets that likely need provenance notes.
+3. Prefer a short comment/frontmatter note near the adapted file over a separate top-level document.
+4. If provenance is unknown, mark it as unknown and flag it as a risk instead of inventing attribution.
+
+## Required fields for adapted assets
+
+- Upstream: URL or package/repo identity
+- License: SPDX id or explicit unknown
+- Mode: vendored, adapted, inspired-by, or original
+- Local changes: one short sentence when adapted

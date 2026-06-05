@@ -1,7 +1,8 @@
 {
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
-    "REVIEW_LOOP_CODEX_FLAGS": "--sandbox workspace-write"
+    "REVIEW_LOOP_CODEX_FLAGS": "--sandbox workspace-write",
+    "ENABLE_CODE_SECURITY_REVIEW": "0"
   },
   "includeGitInstructions": false,
   "permissions": {
@@ -63,15 +64,6 @@
             "command": "~/.claude/hooks/pretool-guard.sh"
           }
         ]
-      },
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/suggest-compact.sh"
-          }
-        ]
       }
     ],
     "PostToolUse": [
@@ -85,13 +77,13 @@
         ]
       }
     ],
-    "UserPromptSubmit": [
+    "SessionStart": [
       {
         "matcher": "",
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/skill-eval.sh"
+            "command": "~/.claude/hooks/work-scope-guard.sh"
           }
         ]
       }
@@ -99,38 +91,39 @@
   },
   "allowManagedMcpServersOnly": true,
   "enabledPlugins": {
-    "ralph-loop@claude-plugins-official": true,
-    "autoresearch@autoresearch": true,
+    "ralph-loop@claude-plugins-official": false,
+    "autoresearch@autoresearch": false,
     "claude-hud@claude-hud": true,
     "skills-janitor@skills-janitor": true,
     "codex@openai-codex": true,
     "session-wrap": true,
     "superpowers@claude-plugins-official": true,
-    "rust-analyzer-lsp@claude-plugins-official": true,
-    "fakechat@claude-plugins-official": true,
-    "vercel@claude-plugins-official": true,
-    "session-report@claude-plugins-official": true,
+    "rust-analyzer-lsp@claude-plugins-official": false,
+    "fakechat@claude-plugins-official": false,
+    "vercel@claude-plugins-official": false,
+    "session-report@claude-plugins-official": false,
     "claude-md-management@claude-plugins-official": true,
     "hookify@claude-plugins-official": true,
     "security-guidance@claude-plugins-official": true,
-    "review-loop@hamel-review": true,
+    "review-loop@hamel-review": false,
     "comprehensive-review@claude-code-workflows": true,
-    "javascript-typescript@claude-code-workflows": true,
-    "python-development@claude-code-workflows": true,
-    "frontend-mobile-development@claude-code-workflows": true,
-    "security-scanning@claude-code-workflows": true,
     "documentation-generation@claude-code-workflows": true,
-    "unit-testing@claude-code-workflows": true,
-    "git-pr-workflows@claude-code-workflows": true,
-    "tdd-workflows@claude-code-workflows": true,
-    "error-debugging@claude-code-workflows": true,
-    "ui-design@claude-code-workflows": true,
-    "accessibility-compliance@claude-code-workflows": true,
-    "content-marketing@claude-code-workflows": true,
-    "seo-content-creation@claude-code-workflows": true,
-    "seo-technical-optimization@claude-code-workflows": true,
-    "seo-analysis-monitoring@claude-code-workflows": true,
-    "claude-mem@thedotmack": true
+    "javascript-typescript@claude-code-workflows": false,
+    "python-development@claude-code-workflows": false,
+    "frontend-mobile-development@claude-code-workflows": false,
+    "security-scanning@claude-code-workflows": false,
+    "unit-testing@claude-code-workflows": false,
+    "git-pr-workflows@claude-code-workflows": false,
+    "tdd-workflows@claude-code-workflows": false,
+    "error-debugging@claude-code-workflows": false,
+    "ui-design@claude-code-workflows": false,
+    "accessibility-compliance@claude-code-workflows": false,
+    "content-marketing@claude-code-workflows": false,
+    "seo-content-creation@claude-code-workflows": false,
+    "seo-technical-optimization@claude-code-workflows": false,
+    "seo-analysis-monitoring@claude-code-workflows": false,
+    "claude-mem@thedotmack": true,
+    "local-skills@dotfiles-local": true
   },
   "extraKnownMarketplaces": {
     "claude-code-workflows": {
@@ -164,7 +157,32 @@
       }
     }
   },
+  "skillOverrides": {
+    "superpowers:using-git-worktrees": "off",
+    "superpowers:dispatching-parallel-agents": "off",
+    "e2e-reviewer": "user-invocable-only",
+    "e2e-test-reviewer": "user-invocable-only",
+    "e2e-test-debugger": "user-invocable-only",
+    "playwright-debugger": "user-invocable-only",
+    "playwright-test-generator": "user-invocable-only",
+    "cypress-debugger": "user-invocable-only",
+    "ui-reverse-engineering": "user-invocable-only",
+    "ui-capture": "user-invocable-only",
+    "visual-debug": "user-invocable-only",
+    "transition-reverse-engineering": "user-invocable-only",
+    "deploy-to-vercel": "user-invocable-only",
+    "vercel-optimize": "user-invocable-only",
+    "vercel-cli-with-tokens": "user-invocable-only",
+    "vercel-react-best-practices": "user-invocable-only",
+    "vercel-react-native-skills": "user-invocable-only",
+    "vercel-react-view-transitions": "user-invocable-only",
+    "vercel-composition-patterns": "user-invocable-only",
+    "ai-slop-cleaner": "user-invocable-only",
+    "project-session-manager": "user-invocable-only"
+  },
   "alwaysThinkingEnabled": true,
+  "effortLevel": "xhigh",
+  "skipWorkflowUsageWarning": true,
   "autoUpdatesChannel": "latest",
   "skipDangerousModePermissionPrompt": true,
   "preferredNotifChannel": "ghostty",

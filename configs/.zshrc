@@ -62,14 +62,37 @@ command -v direnv &>/dev/null && eval "$(direnv hook zsh)"
 # against external MCP tools. Serena's prompt-override counteracts this so
 # Serena's semantic tools actually get used. Falls back to plain `claude` if
 # serena is not installed. See https://github.com/oraios/serena
-if command -v serena &>/dev/null && command -v claude &>/dev/null; then
+if command -v claude &>/dev/null; then
   claude() {
-    local override
-    override="$(serena prompts print-cc-system-prompt-override 2>/dev/null)"
-    if [ -n "$override" ]; then
-      command claude --system-prompt="$override" "$@"
+    local -a extra
+    # serena prompt override (optional — skipped if serena absent).
+    if command -v serena &>/dev/null; then
+      local override
+      override="$(serena prompts print-cc-system-prompt-override 2>/dev/null)"
+      [ -n "$override" ] && extra+=(--system-prompt="$override")
+    fi
+    # ultracode (xhigh effort + standing dynamic-workflow orchestration) is
+    # session-scoped and NOT read from settings.json, so opt every launch into
+    # it here. effortLevel:xhigh lives in settings.json; this adds the standing
+    # workflow orchestration on top. Disable per-session with CLAUDE_ULTRACODE=0.
+    [ "${CLAUDE_ULTRACODE:-1}" != "0" ] && extra+=(--settings '{"ultracode":true}')
+    command claude ${extra[@]+"${extra[@]}"} "$@"
+  }
+fi
+
+# ── omx (oh-my-codex): default launch flags ──
+# Codex-side analog of the claude() wrapper above: every interactive launch
+# gets --direct (no OMX tmux/HUD management), --xhigh (reasoning effort), and
+# --madmax (bypass Codex approvals/sandbox — intentional, mirrors Claude's
+# auto permission mode). Subcommands (setup/doctor/exec/…) are left untouched;
+# explicit flags passed later win (last-flag-wins per omx launch policy).
+# Disable per-session with OMX_DEFAULT_FLAGS=0.
+if command -v omx &>/dev/null; then
+  omx() {
+    if [ "${OMX_DEFAULT_FLAGS:-1}" != "0" ] && { [ $# -eq 0 ] || [[ "$1" == -* ]]; }; then
+      command omx --direct --xhigh --madmax "$@"
     else
-      command claude "$@"
+      command omx "$@"
     fi
   }
 fi

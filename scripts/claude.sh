@@ -47,16 +47,6 @@ install_claude_code() {
 }
 install_claude_code
 
-if $DRY_RUN; then
-  info "[dry-run] ralph install-skills"
-else
-  if ralph install-skills; then
-    info "ralph install-skills done"
-  else
-    info "⚠️  ralph install-skills failed"
-  fi
-fi
-
 # npm 11.x breaks npx for packages not in package.json
 if ! command -v skills &>/dev/null; then
   if $DRY_RUN; then
@@ -90,7 +80,6 @@ SKILL_REPOS=(
   "anthropics/skills@skill-creator"          # author / tune custom skills
   "supercent-io/skills-template@security-best-practices"
   "supercent-io/skills-template@code-review"
-  "yeachan-heo/oh-my-claudecode@ultrawork"
   "yeachan-heo/oh-my-claudecode@project-session-manager"  # worktree + tmux + gh/jira issue pipeline (psm fix/review/feature)
   "yeachan-heo/oh-my-claudecode@ai-slop-cleaner"           # regression-safe deletion-first cleanup of AI-generated code
 )
@@ -125,6 +114,13 @@ for url_args in "${SKILL_URLS[@]}"; do
     fi
   fi
 done
+
+# Repo-local skills/plugin bundle. This keeps locally-authored skills in this
+# repository and installs them through the same setup path instead of scattering
+# copies under ~/.claude or ~/.codex.
+if [ -x "$DOTFILES_DIR/scripts/skills.sh" ]; then
+  bash "$DOTFILES_DIR/scripts/skills.sh" claude
+fi
 
 # ── ui-clone-skills — install via upstream installer ──
 # The `skills add voidmatcha/ui-clone-skills` path skips required system

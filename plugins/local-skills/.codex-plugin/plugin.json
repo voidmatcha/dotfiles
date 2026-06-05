@@ -1,0 +1,40 @@
+{
+  "name": "local-skills",
+  "version": "0.1.0",
+  "description": "Local skills bundle for dotfiles verification, usage audits, code-intel readiness, work-scope safety, source provenance, and cmux diagnostics.",
+  "author": {
+    "name": "YONGJAE LEE",
+    "url": "https://github.com/voidmatcha"
+  },
+  "homepage": "https://github.com/voidmatcha/dotfiles",
+  "repository": "https://github.com/voidmatcha/dotfiles",
+  "license": "MIT",
+  "keywords": [
+    "local-skills",
+    "dotfiles",
+    "codex",
+    "claude-code",
+    "skills",
+    "verification",
+    "developer-tools"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Local Skills",
+    "shortDescription": "Local dotfiles verification, audit, and setup guard skills.",
+    "longDescription": "Use these local skills to verify the dotfiles repo and install scripts, audit local agent usage, diagnose code intelligence tooling, enforce work-scope safety reminders, track source provenance for imported agent assets, and debug cmux/purplemux workspace issues.",
+    "developerName": "YONGJAE LEE",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/voidmatcha/dotfiles",
+    "defaultPrompt": [
+      "Verify this dotfiles repo before install.",
+      "Audit whether my local agents and skills are actually being used.",
+      "Check codegraph and serena readiness for this repo."
+    ],
+    "brandColor": "#0F766E"
+  }
+}

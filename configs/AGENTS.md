@@ -74,8 +74,11 @@ are `scripts/dev.sh`, `Brewfile`, and `configs/mcp.json`.
   where text-level edits would be fragile. Semantic tools are active by
   default; serena's redundant basic utilities (read/grep/ls/bash equivalents)
   are auto-disabled because Claude Code already covers them. The shell
-  wrapper in `.zshrc` injects serena's system-prompt-override automatically
-  to counter Opus's strong bias toward built-in tools. https://github.com/oraios/serena
+  wrapper in `.zshrc` injects serena's system-prompt-override (to counter
+  Opus's strong bias toward built-in tools) and also defaults every `claude`
+  launch to `--settings '{"ultracode":true}'` (xhigh effort + standing
+  dynamic-workflow orchestration; opt out per-session with
+  `CLAUDE_ULTRACODE=0`). https://github.com/oraios/serena
 - **codegraph** (MCP) — pre-indexed knowledge graph (tree-sitter + SQLite) for
   **exploration** of large or cross-language codebases. Read-only;
   complements serena. Run `codegraph init -i` in each project once; the

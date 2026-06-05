@@ -1,3 +1,0 @@
-{"ts":"2026-06-01T10:09:34.363Z","hook":"iteration-context","action":"skip","iterationCount":1}
-{"ts":"2026-06-01T10:10:00.622Z","hook":"iteration-context","action":"skip","iterationCount":2}
-{"ts":"2026-06-01T10:10:12.124Z","hook":"stop-notify","projectName":"dotfiles","duration":"unknown","iterations":0}

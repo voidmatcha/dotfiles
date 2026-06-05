@@ -116,13 +116,15 @@ ensure_dir "$HOME/.claude/hooks" "$HOME/.claude/plugins" "$HOME/.claude/commands
 link_file "$DOTFILES_DIR/configs/claude-settings.json" "$HOME/.claude/settings.json"
 link_file "$DOTFILES_DIR/configs/CLAUDE.md"            "$HOME/.claude/CLAUDE.md"
 link_file "$DOTFILES_DIR/configs/RTK.md"               "$HOME/.claude/RTK.md"
-link_file "$DOTFILES_DIR/configs/hooks/skill-eval.sh"  "$HOME/.claude/hooks/skill-eval.sh"
 link_file "$DOTFILES_DIR/configs/hooks/pretool-guard.sh" "$HOME/.claude/hooks/pretool-guard.sh"
 link_file "$DOTFILES_DIR/configs/hooks/skill-md-edit-warn.sh" "$HOME/.claude/hooks/skill-md-edit-warn.sh"
-link_file "$DOTFILES_DIR/configs/hooks/suggest-compact.sh" "$HOME/.claude/hooks/suggest-compact.sh"
-link_file "$DOTFILES_DIR/configs/commands/orchestrate.md" "$HOME/.claude/commands/orchestrate.md"
+link_file "$DOTFILES_DIR/configs/hooks/work-scope-guard.sh" "$HOME/.claude/hooks/work-scope-guard.sh"
 link_file "$DOTFILES_DIR/configs/agents/scout.md"     "$HOME/.claude/agents/scout.md"
 link_file "$DOTFILES_DIR/configs/agents/critic.md"    "$HOME/.claude/agents/critic.md"
+link_file "$DOTFILES_DIR/configs/agents/debugger.md"  "$HOME/.claude/agents/debugger.md"
+link_file "$DOTFILES_DIR/configs/agents/test-engineer.md" "$HOME/.claude/agents/test-engineer.md"
+link_file "$DOTFILES_DIR/configs/agents/security-reviewer.md" "$HOME/.claude/agents/security-reviewer.md"
+link_file "$DOTFILES_DIR/configs/agents/git-master.md" "$HOME/.claude/agents/git-master.md"
 
 # Cursor
 ensure_dir "$HOME/.cursor/rules"

@@ -135,6 +135,9 @@ if $DRY_RUN; then
     info "[dry-run] omx not installed — would install with oh-my-codex"
   fi
   install_codex_cmux_skill
+  if [ -x "$DOTFILES_DIR/scripts/skills.sh" ]; then
+    bash "$DOTFILES_DIR/scripts/skills.sh" codex
+  fi
   info "[dry-run] codex login status"
   info "[dry-run] omx setup / omx doctor are manual post-install checks"
   info "Codex CLI + oh-my-codex setup done"
@@ -174,6 +177,9 @@ else
 fi
 
 install_codex_cmux_skill
+if [ -x "$DOTFILES_DIR/scripts/skills.sh" ]; then
+  bash "$DOTFILES_DIR/scripts/skills.sh" codex
+fi
 
 # ── Codex auth check ──
 if command -v codex &>/dev/null; then

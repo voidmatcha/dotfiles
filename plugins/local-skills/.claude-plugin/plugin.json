@@ -1,0 +1,21 @@
+{
+  "name": "local-skills",
+  "version": "0.1.0",
+  "description": "Local skills bundle for dotfiles verification, usage audits, code-intel readiness, work-scope safety, source provenance, and cmux diagnostics.",
+  "author": {
+    "name": "YONGJAE LEE",
+    "url": "https://github.com/voidmatcha"
+  },
+  "repository": "https://github.com/voidmatcha/dotfiles",
+  "license": "MIT",
+  "keywords": [
+    "local-skills",
+    "dotfiles",
+    "claude-code",
+    "codex",
+    "skills",
+    "verification",
+    "developer-tools"
+  ],
+  "skills": "./skills/"
+}

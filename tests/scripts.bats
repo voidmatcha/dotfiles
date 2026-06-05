@@ -104,6 +104,7 @@ teardown() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"[dry-run]"* ]]
   [[ "$output" == *"install Codex cmux skill"* ]]
+  [[ "$output" == *"install local Codex skill dotfiles-verify"* ]]
   [ ! -e "$home/.codex" ]
 }
 
@@ -126,6 +127,7 @@ SH
   [[ "$output" == *"codex --version"* ]]
   [[ "$output" == *"omx --version"* ]]
   [[ "$output" == *"install Codex cmux skill"* ]]
+  [[ "$output" == *"install local Codex skill dotfiles-verify"* ]]
   [[ "$output" == *"codex login status"* ]]
   [[ "$output" != *"codex/omx probe should not run"* ]]
   [ ! -e "$home/.codex" ]
@@ -332,6 +334,10 @@ SH
   grep -qxF '.omx/' "$REPO_ROOT/.gitignore"
 }
 
+@test "repo ignores generated Claude hook logs" {
+  grep -qxF '.claude/hooks/.logs/' "$REPO_ROOT/.gitignore"
+}
+
 @test "install one-time social CLI guidance uses twitter-cli command" {
   run grep -F 'command -v bird' "$REPO_ROOT/install.sh"
   [ "$status" -eq 1 ]
@@ -483,6 +489,47 @@ PY
   [ "$status" -eq 1 ]
 }
 
+@test "repo-local local-skills plugin manifests expose skills" {
+  python3 - <<PY
+import json
+from pathlib import Path
+
+root = Path('$REPO_ROOT')
+claude_market = json.loads((root / '.claude-plugin/marketplace.json').read_text())
+claude = json.loads((root / 'plugins/local-skills/.claude-plugin/plugin.json').read_text())
+codex = json.loads((root / 'plugins/local-skills/.codex-plugin/plugin.json').read_text())
+codex_market = json.loads((root / '.agents/plugins/marketplace.json').read_text())
+
+assert claude['name'] == 'local-skills'
+assert claude['skills'] == './skills/'
+assert claude_market['name'] == 'dotfiles-local'
+assert claude_market['plugins'][0]['name'] == 'local-skills'
+assert claude_market['plugins'][0]['source'] == './plugins/local-skills'
+assert codex['name'] == 'local-skills'
+assert codex['skills'] == './skills/'
+assert codex_market['name'] == 'dotfiles-local'
+assert codex_market['plugins'][0]['name'] == 'local-skills'
+assert codex_market['plugins'][0]['source'] == {'source': 'local', 'path': './plugins/local-skills'}
+for skill in ['dotfiles-verify', 'agent-usage-audit', 'code-intel-doctor', 'work-scope-guard', 'source-provenance', 'cmux-doctor']:
+    assert (root / 'plugins/local-skills/skills' / skill / 'SKILL.md').exists(), skill
+PY
+}
+
+@test "skills installer dry-run keeps local skills reversible" {
+  home="$TMPDIR_TEST/skills-home"
+  mkdir -p "$home"
+
+  run env HOME="$home" DOTFILES_DIR="$REPO_ROOT" DRY_RUN=true PATH="/usr/bin:/bin" bash "$REPO_ROOT/scripts/skills.sh" all
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"claude plugin marketplace add $REPO_ROOT"* ]]
+  [[ "$output" == *"claude plugin install local-skills@dotfiles-local"* ]]
+  [[ "$output" == *"install local Codex skill dotfiles-verify"* ]]
+  [ ! -e "$home/.codex" ]
+  [ ! -e "$home/.claude" ]
+}
+
+
 @test "CI validates Codex TOML config" {
   grep -q 'toml-config-check' "$REPO_ROOT/.github/workflows/lint.yml"
   grep -q 'tomllib' "$REPO_ROOT/.github/workflows/lint.yml"
@@ -497,6 +544,8 @@ PY
   grep -q 'codex login --device-auth' "$REPO_ROOT/README.md"
   grep -q '\[features\] goals = true' "$REPO_ROOT/README.md"
   grep -q 'codex --profile yolo' "$REPO_ROOT/README.md"
+  grep -q 'scripts/skills.sh codex' "$REPO_ROOT/README.md"
+  grep -q 'dotfiles-verify' "$REPO_ROOT/README.md"
   # README describes the Codex MCP entries by name without hardcoding the exact
   # [mcp_servers.*] token — the prose moves when entries are added/removed.
   grep -q 'mcp_servers' "$REPO_ROOT/README.md"
@@ -513,6 +562,7 @@ PY
   grep -q 'security-guidance@claude-plugins-official' "$REPO_ROOT/configs/claude-settings.json"
   grep -q 'review-loop@hamel-review' "$REPO_ROOT/configs/claude-settings.json"
   grep -q 'claude-mem@thedotmack' "$REPO_ROOT/configs/claude-settings.json"
+  grep -q 'local-skills@dotfiles-local' "$REPO_ROOT/configs/claude-settings.json"
   grep -q 'javascript-typescript@claude-code-workflows' "$REPO_ROOT/configs/claude-settings.json"
   grep -q 'seo-analysis-monitoring@claude-code-workflows' "$REPO_ROOT/configs/claude-settings.json"
   grep -q 'REVIEW_LOOP_CODEX_FLAGS' "$REPO_ROOT/configs/claude-settings.json"
@@ -523,6 +573,8 @@ PY
   grep -q 'review-loop@hamel-review' "$REPO_ROOT/README.md"
   grep -q 'session-wrap' "$REPO_ROOT/README.md"
   grep -q 'claude plugin list' "$REPO_ROOT/scripts/claude.sh"
+  grep -q 'scripts/skills.sh" claude' "$REPO_ROOT/scripts/claude.sh"
+  grep -q 'local-skills@dotfiles-local' "$REPO_ROOT/README.md"
 }
 
 @test "Claude setup installs Obsidian skills" {
@@ -624,6 +676,12 @@ for event in cfg['hooks']['PostToolUse']:
     for hook in event['hooks']:
         post_tool_commands.append(hook['command'])
 assert '~/.claude/hooks/skill-md-edit-warn.sh' in post_tool_commands
+
+session_commands = []
+for event in cfg['hooks']['SessionStart']:
+    for hook in event['hooks']:
+        session_commands.append(hook['command'])
+assert '~/.claude/hooks/work-scope-guard.sh' in session_commands
 PY
 }
 
@@ -657,6 +715,37 @@ PY
   grep -q '\$HOME/.claude/hooks/pretool-guard.sh' "$REPO_ROOT/install.sh"
   grep -q 'configs/hooks/skill-md-edit-warn.sh' "$REPO_ROOT/install.sh"
   grep -q '\$HOME/.claude/hooks/skill-md-edit-warn.sh' "$REPO_ROOT/install.sh"
+  grep -q 'configs/hooks/work-scope-guard.sh' "$REPO_ROOT/install.sh"
+  grep -q '\$HOME/.claude/hooks/work-scope-guard.sh' "$REPO_ROOT/install.sh"
+}
+
+@test "Claude work-scope guard emits advisory context under configured roots" {
+  work_root="$TMPDIR_TEST/work-root"
+  mkdir -p "$work_root/project"
+  input="$TMPDIR_TEST/work-scope-input.json"
+  output_file="$TMPDIR_TEST/work-scope-output.json"
+  python3 - "$input" "$work_root/project" <<'PY'
+import json
+import sys
+from pathlib import Path
+Path(sys.argv[1]).write_text(json.dumps({
+    'hook_event_name': 'SessionStart',
+    'cwd': sys.argv[2],
+}))
+PY
+
+  run bash -c "WORK_SCOPE_GUARD_ROOTS='$work_root' '$REPO_ROOT/configs/hooks/work-scope-guard.sh' < '$input' > '$output_file'"
+
+  [ "$status" -eq 0 ]
+  python3 - <<PY
+import json
+from pathlib import Path
+payload = json.loads(Path('$output_file').read_text())
+hook = payload['hookSpecificOutput']
+assert hook['hookEventName'] == 'SessionStart'
+assert 'WORK-SCOPE GUARD' in hook['additionalContext']
+assert '$work_root' in hook['additionalContext']
+PY
 }
 
 @test "Claude PreToolUse guard emits structured deny for destructive Bash" {
@@ -841,50 +930,13 @@ JSON
   [ -z "$output" ]
 }
 
-@test "suggest-compact hook is wired, executable, and never blocks" {
-  [ -x "$REPO_ROOT/configs/hooks/suggest-compact.sh" ]
-
-  python3 - <<PY
-import json
-from pathlib import Path
-
-cfg = json.loads((Path('$REPO_ROOT') / 'configs/claude-settings.json').read_text())
-commands = []
-for event in cfg['hooks']['PreToolUse']:
-    for hook in event['hooks']:
-        commands.append(hook['command'])
-assert '~/.claude/hooks/suggest-compact.sh' in commands
-PY
-
-  # Hook never blocks: exit 0, no stdout, regardless of input. Keep its
-  # counter in this test's temp dir so repeated local test runs are stable.
-  run env TMPDIR="$TMPDIR_TEST" CLAUDE_SESSION_ID=never-blocks \
-    bash -c "echo '{}' | '$REPO_ROOT/configs/hooks/suggest-compact.sh'"
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
-}
-
-@test "suggest-compact emits a stderr hint at threshold tool-count" {
-  count_file="$TMPDIR_TEST/claude-tool-count-bats-test"
-  rm -f "$count_file"
-  echo 49 > "$count_file"
-
-  TMPDIR="$TMPDIR_TEST" CLAUDE_SESSION_ID=bats-test \
-    run bash -c "echo '{}' | '$REPO_ROOT/configs/hooks/suggest-compact.sh' 2>&1"
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"~50 tool calls"* ]]
-
-  rm -f "$count_file"
-}
-
-@test "install links new commands, agents, and suggest-compact" {
-  grep -q 'configs/hooks/suggest-compact.sh' "$REPO_ROOT/install.sh"
-  grep -q '\$HOME/.claude/hooks/suggest-compact.sh' "$REPO_ROOT/install.sh"
-  grep -q 'configs/commands/orchestrate.md' "$REPO_ROOT/install.sh"
-  grep -q '\$HOME/.claude/commands/orchestrate.md' "$REPO_ROOT/install.sh"
+@test "install links local agents" {
   grep -q 'configs/agents/scout.md' "$REPO_ROOT/install.sh"
   grep -q 'configs/agents/critic.md' "$REPO_ROOT/install.sh"
+  grep -q 'configs/agents/debugger.md' "$REPO_ROOT/install.sh"
+  grep -q 'configs/agents/test-engineer.md' "$REPO_ROOT/install.sh"
+  grep -q 'configs/agents/security-reviewer.md' "$REPO_ROOT/install.sh"
+  grep -q 'configs/agents/git-master.md' "$REPO_ROOT/install.sh"
 }
 
 @test "AGENTS.md documents MCP budget and commit-trailer protocol" {
