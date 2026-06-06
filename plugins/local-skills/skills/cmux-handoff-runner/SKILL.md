@@ -12,7 +12,7 @@ Use a shell coordinator for long-running loops. Do not rely on a single agent pr
 1. **Coordinator owns sequencing.** A shell script or terminal driver launches one bounded agent task at a time, polls it, and decides the next step.
 2. **Agents own one unit.** Claude/Codex/OMX should receive only one clone loop, one improvement pass, or one verification pass per launch.
 3. **Next step needs evidence.** Continue only after both:
-   - a status/marker artifact exists, and
+   - a status/marker artifact exists and passes required-field validation, and
    - the relevant process/tool activity has ended or returned to an idle prompt.
 4. **Improve before continuing.** After each failed or incomplete loop: inspect artifacts, make one generalizable skill/hook/script fix, run targeted tests, run local install, then commit/push if the user requested persistence.
 
@@ -53,10 +53,12 @@ If the marker is missing, do not launch the agent there. Use an existing healthy
 Use repo-local ignored artifacts, commonly `.omx/artifacts/<run>/`:
 
 - `coordinator-status.md`: current step, active surface, PID, last poll time, next action
-- `<engine>-loop-<NN>-status.md`: commands run, gate reached, blocker, fidelity gaps, recommendation
-- `improvement-<engine>-<NN>.md`: changed files, rationale, tests, install result, commit/push status
+- `<engine>-loop-<NN>-status.md`: commands run, gate reached, hook/gate blocker, concrete fidelity gaps, one recommended improvement, lessons used
+- `improvement-<engine>-<NN>.md`: changed files/no-change decision, rationale, test evidence, install result, commit/push recommendation, deferred risks
 - `state.jsonl`: append-only events for launches, polls, exits, improvements, installs, commits
 - `coordinator.lock`: lock file containing PID, host, cwd, run id, and startedAt
+
+Do not treat a non-empty marker as sufficient. Validate that it includes the required fields before advancing.
 
 ## Safe launch pattern
 
@@ -69,6 +71,7 @@ Use repo-local ignored artifacts, commonly `.omx/artifacts/<run>/`:
 - Use a lock file or `flock` before launching a coordinator. If the lock PID is alive, attach/inspect it instead of starting a second coordinator.
 - Add `trap` cleanup for temporary files and child processes that belong to the current run id.
 - Write a heartbeat timestamp on every poll so a later session can distinguish slow work from a dead coordinator.
+- Validate loop/improvement marker content before advancing. A loop marker must identify commands, current gate, hook/gate blocker, concrete fidelity gap, recommended improvement, and whether carried-forward lessons were used. An improvement marker must identify changed files or no-change decision, rationale, test evidence, install result, commit/push recommendation, and deferred risks.
 - When commit/push is required, record `git status --short`, `git diff --stat`, commit SHA, upstream ahead/behind count, and push result.
 - Run Claude/Codex/OMX agent CLIs in the foreground of a real TTY. Do not background the agent process itself; if heartbeat is needed, run a separate background heartbeat watcher while the agent stays foreground.
 
@@ -98,6 +101,32 @@ fi
 trap 'echo "endedAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$LOCK"' EXIT
 ```
 
+Also add explicit marker validators before the next transition. Keep the exact field names flexible, but fail closed when the evidence categories are absent:
+
+```bash
+validate_loop_marker() {
+  local file="$1"
+  grep -Eiq 'commands? run|commands?|ran|executed' "$file" &&
+  grep -Eiq 'current gate|gate' "$file" &&
+  grep -Eiq 'hook|blocker|blocked|no blocker' "$file" &&
+  grep -Eiq 'fidelity|visual|diff|mismatch' "$file" &&
+  grep -Eiq 'recommended improvement|recommendation|improvement' "$file" &&
+  grep -Eiq 'lessons? used|sanitizer|state[- ]capture|blank[- ]viewport|blank viewport' "$file"
+}
+
+validate_improvement_marker() {
+  local file="$1"
+  grep -Eiq 'changed files|files? changed|modified|no improvements? needed|no repo changes|no change' "$file" &&
+  grep -Eiq 'rationale|why|reason' "$file" &&
+  grep -Eiq 'test evidence|tests?|pytest|bash -n|smoke|verified|not[- ]tested' "$file" &&
+  grep -Eiq 'install result|install|install\.sh|--no-deps' "$file" &&
+  grep -Eiq 'commit/push recommendation|commit|push' "$file" &&
+  grep -Eiq 'deferred risks?|risks?|no known risks?' "$file"
+}
+```
+
+If validation fails, write `current: blocked invalid <marker>` to `coordinator-status.md`, append an `invalid_*_marker` event to `state.jsonl`, and stop instead of launching the next step.
+
 ## Recovery heuristics
 
 Treat the handoff as stalled when any of these is true:
@@ -106,6 +135,7 @@ Treat the handoff as stalled when any of these is true:
 - a newly created cmux terminal has `runtime=0`;
 - a command appears in the terminal but no smoke marker or child process appears;
 - an agent changed files but did not write the required status marker;
+- a marker exists but fails required-field validation;
 - a helper process runs past its expected bound with no artifact mtime movement.
 - a second coordinator or agent was launched for the same run/component while the first is still active.
 - an agent exits immediately with `stdin is not a terminal`; this usually means the coordinator backgrounded a TTY-bound CLI.
@@ -124,6 +154,7 @@ Recovery order:
 Before declaring a handoff loop complete, capture:
 
 - final status marker for every requested unit;
+- marker validation evidence for every status/improvement transition;
 - no live scoped child processes;
 - local install/projection evidence when hooks or skills were changed;
 - test or smoke evidence for every improvement;
@@ -135,5 +166,6 @@ Before declaring a handoff loop complete, capture:
 - Do not ask a long-running agent prompt to run many future loops without an external coordinator.
 - Do not treat `cmux new-workspace OK` as proof that the terminal is executable.
 - Do not use status markers alone as completion proof while the agent/process is still active.
+- Do not use marker existence alone as completion proof; validate content categories first.
 - Do not start the next loop until improvement/install/commit requirements for the prior loop are satisfied.
 - Do not leave a hidden background coordinator, Vite server, browser session, or agent process running without recording it in the status artifact.
