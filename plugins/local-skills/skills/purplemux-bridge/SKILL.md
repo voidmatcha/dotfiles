@@ -1,45 +1,53 @@
 ---
 name: purplemux-bridge
-description: Bridge purplemux (web/phone tmux multiplexer, dedicated `purple` socket) and cmux (native GUI) sessions — attach pt-ws tmux sessions 1:1 into cmux workspaces, or hand an existing cmux Claude session off to purplemux via claude --resume. Use when the user wants the same session visible on desktop and phone, asks to attach/sync purplemux and cmux sessions ("퍼플먹스", "세션 동기화", "폰에서 이어서"), or wants to continue a cmux session from the purplemux web UI.
+description: Bidirectional bridge between purplemux (web/phone tmux multiplexer, dedicated `purple` socket) and cmux (native GUI) — attach live purplemux sessions 1:1 into cmux workspaces, and migrate cmux-only Claude sessions into purplemux tabs via claude --resume. Use when the user wants the same session visible/controllable on desktop and phone, asks to attach/sync purplemux and cmux ("퍼플먹스", "세션 동기화", "양방향", "폰에서 이어서"), or wants cmux sessions to show up in purplemux.
 ---
 
 # Purplemux Bridge
 
-Why a bridge is needed (and which direction works):
+Why a bridge (and the direction asymmetry):
 
-- purplemux owns tmux sessions named `pt-ws-*` on the dedicated `purple`
-  socket. Its web UI keeps its own registry — sessions created externally on
-  that socket do NOT appear in the UI.
-- cmux surfaces are plain Ghostty PTYs with no tmux underneath, so an
-  existing cmux session can never be mirrored into purplemux.
-- Therefore: **purplemux creates the session, cmux attaches to it** as a
-  second tmux client. Both stay fully synchronized (same session, two
-  clients). The reverse direction is conversation handoff only
-  (`claude --resume`), not terminal mirroring.
+- purplemux owns tmux sessions `pt-<wsId>-<paneId>-<tabId>` on the `purple`
+  socket; its UI registry lives in `~/.purplemux/workspaces.json`. Sessions
+  whose workspace id is missing there are **zombies** (tab closed in the UI).
+- cmux surfaces are plain Ghostty PTYs — no tmux underneath, so a running
+  cmux session can never be PTY-mirrored, only resumed.
+- Once a session is tmux-backed, sync IS bidirectional: cmux and the phone
+  are two clients of the same session. The asymmetry is only about where a
+  session is born — purplemux must create it; cmux attaches.
+
+**Liveness rule (user policy): only sessions alive on BOTH sides get
+bridged.** Zombie purplemux sessions are skipped; dead Claude sessions are
+never resumed automatically.
 
 ## Workflow
 
-All commands run from the dotfiles repo root.
+All commands from the dotfiles repo root.
 
 1. Inspect: `python3 scripts/purplemux_bridge.py list`
-   — purple-socket sessions with attached client ttys. A session that
-   already shows a client tty may already have a cmux workspace attached;
-   don't double-attach without asking.
-2. Attach one session into a cmux workspace:
-   `python3 scripts/purplemux_bridge.py attach <pt-ws-...> [--name N] [--no-focus]`
-   Or all pt-ws sessions 1:1: `python3 scripts/purplemux_bridge.py attach --all`
-3. Hand an existing cmux Claude session off to purplemux:
-   `python3 scripts/purplemux_bridge.py handoff <project-path>`
-   — lists recent Claude session ids for that path and prints the
-   `claude --resume` command. The user must create the tab in the
-   purplemux UI first and paste the command there; ask them to close the
-   original cmux session afterwards so two copies don't diverge.
+   — TAB column says live/ZOMBIE, RUNNING shows the foreground command.
+2. purplemux → cmux: `... attach <session>` or `... attach --all`
+   (live sessions only; `--include-dead` to override, `--no-focus` available).
+3. cmux → purplemux: `... migrate` (no args = discovery table of live claude
+   processes: cmux-only vs already tmux-backed, with resolved or candidate
+   session ids). Then `... migrate --pid <PID> [--session-id <ID>]` or
+   `... migrate --all`.
+   - Requires one **idle live** purplemux tab per migrated session; if short,
+     ask the user to create tabs in the purplemux UI (one tap) and re-run.
+   - After migrating, remind the user to close the ORIGINAL cmux surfaces —
+     two copies of the same conversation diverge. Closing kills the original
+     process, so confirm with the user first.
+4. Manual handoff helper: `... handoff <project-path>` prints recent session
+   ids and a ready-to-paste resume command.
 
 ## Caveats
 
-- tmux mirrors the smallest attached client; if the cmux pane and the phone
-  view differ a lot in size, the larger one gets letterboxed.
-- If `list` reports no purple-socket server, purplemux isn't running:
+- tmux mirrors the smallest attached client; a phone view letterboxes the
+  desktop view while attached.
+- purplemux has no public API to create tabs (creation is implicit when its
+  web client connects); don't try to fake `pt-*` sessions or edit
+  `~/.purplemux/workspaces.json` — the server holds state in memory.
+- If `list` reports no purple-socket server:
   `launchctl kickstart -k gui/$(id -u)/com.user.purplemux`.
-- Detach from the cmux side with `tmux detach` (purplemux's tmux.conf has no
-  prefix key) or just close the surface — the session survives either way.
+- Detach from the cmux side with `tmux detach` or close the surface — the
+  session survives either way.
