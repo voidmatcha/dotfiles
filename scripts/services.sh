@@ -19,7 +19,7 @@ LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
 if [ -d "$LAUNCH_AGENTS_DIR" ] && [ ! -w "$LAUNCH_AGENTS_DIR" ]; then
   if $DRY_RUN; then
     info "[dry-run] sudo chown -R $(whoami):staff $LAUNCH_AGENTS_DIR"
-  else
+  elif sudo_ok "chown $LAUNCH_AGENTS_DIR"; then
     warn "$LAUNCH_AGENTS_DIR is not writable — fixing ownership (sudo)"
     sudo chown -R "$(whoami):$(id -gn)" "$LAUNCH_AGENTS_DIR"
   fi
@@ -51,13 +51,19 @@ install_agent() {
   launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
   local bootstrap_output
   if ! bootstrap_output=$(launchctl bootstrap "gui/$(id -u)" "$plist_dst" 2>&1); then
-    warn "LaunchAgent bootstrap failed for $label; leaving plist installed but continuing."
-    while IFS= read -r line; do
-      [ -n "$line" ] && warn "  $line"
-    done <<< "$bootstrap_output"
-    warn "Debug manually with: launchctl bootstrap gui/$(id -u) $plist_dst"
-    warn "Then check logs: tail -n 80 $HOME/Library/Logs/${label#com.user.}.err.log"
-    return 0
+    # bootout returns before launchd finishes tearing the service down; an
+    # immediate bootstrap can race it and fail with "5: Input/output error".
+    # One delayed retry clears it.
+    sleep 2
+    if ! bootstrap_output=$(launchctl bootstrap "gui/$(id -u)" "$plist_dst" 2>&1); then
+      warn "LaunchAgent bootstrap failed for $label; leaving plist installed but continuing."
+      while IFS= read -r line; do
+        [ -n "$line" ] && warn "  $line"
+      done <<< "$bootstrap_output"
+      warn "Debug manually with: launchctl bootstrap gui/$(id -u) $plist_dst"
+      warn "Then check logs: tail -n 80 $HOME/Library/Logs/${label#com.user.}.err.log"
+      return 0
+    fi
   fi
 
   info "LaunchAgent installed: $label"

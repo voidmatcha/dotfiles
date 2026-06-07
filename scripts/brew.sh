@@ -29,6 +29,13 @@ if $DRY_RUN; then
   cat "$DOTFILES_DIR/Brewfile"
 else
   brew update
+  # docker formula now ships its own shell completions; a leftover
+  # docker-completion keg owns etc/bash_completion.d/docker and makes
+  # `brew link docker` fail mid-bundle. Remove it before bundling.
+  if brew list --formula docker-completion &>/dev/null; then
+    info "Removing docker-completion (conflicts with docker formula's bundled completions)"
+    brew uninstall --force docker-completion
+  fi
   brew bundle --file="$DOTFILES_DIR/Brewfile"
 fi
 

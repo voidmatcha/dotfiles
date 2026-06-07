@@ -22,6 +22,28 @@
     "context7"
   ],
   "disabledMcpjsonServers": [],
+  "skillOverrides": {
+    "superpowers:using-git-worktrees": "off",
+    "superpowers:dispatching-parallel-agents": "off",
+    "e2e-reviewer": "user-invocable-only",
+    "e2e-test-reviewer": "user-invocable-only",
+    "e2e-test-debugger": "user-invocable-only",
+    "playwright-debugger": "user-invocable-only",
+    "playwright-test-generator": "user-invocable-only",
+    "cypress-debugger": "user-invocable-only",
+    "ui-reverse-engineering": "user-invocable-only",
+    "ui-capture": "user-invocable-only",
+    "visual-debug": "user-invocable-only",
+    "deploy-to-vercel": "user-invocable-only",
+    "vercel-optimize": "user-invocable-only",
+    "vercel-cli-with-tokens": "user-invocable-only",
+    "vercel-react-best-practices": "user-invocable-only",
+    "vercel-react-native-skills": "user-invocable-only",
+    "vercel-react-view-transitions": "user-invocable-only",
+    "vercel-composition-patterns": "user-invocable-only",
+    "ai-slop-cleaner": "user-invocable-only",
+    "project-session-manager": "user-invocable-only"
+  },
   "allowedMcpServers": [
     {
       "serverName": "chrome-devtools"
@@ -34,6 +56,12 @@
     },
     {
       "serverName": "context7"
+    },
+    {
+      "serverName": "exa"
+    },
+    {
+      "serverName": "linkedin"
     }
   ],
   "deniedMcpServers": [
@@ -157,34 +185,11 @@
       }
     }
   },
-  "skillOverrides": {
-    "superpowers:using-git-worktrees": "off",
-    "superpowers:dispatching-parallel-agents": "off",
-    "e2e-reviewer": "user-invocable-only",
-    "e2e-test-reviewer": "user-invocable-only",
-    "e2e-test-debugger": "user-invocable-only",
-    "playwright-debugger": "user-invocable-only",
-    "playwright-test-generator": "user-invocable-only",
-    "cypress-debugger": "user-invocable-only",
-    "ui-reverse-engineering": "user-invocable-only",
-    "ui-capture": "user-invocable-only",
-    "visual-debug": "user-invocable-only",
-    "transition-reverse-engineering": "user-invocable-only",
-    "deploy-to-vercel": "user-invocable-only",
-    "vercel-optimize": "user-invocable-only",
-    "vercel-cli-with-tokens": "user-invocable-only",
-    "vercel-react-best-practices": "user-invocable-only",
-    "vercel-react-native-skills": "user-invocable-only",
-    "vercel-react-view-transitions": "user-invocable-only",
-    "vercel-composition-patterns": "user-invocable-only",
-    "ai-slop-cleaner": "user-invocable-only",
-    "project-session-manager": "user-invocable-only"
-  },
   "alwaysThinkingEnabled": true,
   "effortLevel": "xhigh",
-  "skipWorkflowUsageWarning": true,
   "autoUpdatesChannel": "latest",
   "skipDangerousModePermissionPrompt": true,
+  "skipWorkflowUsageWarning": true,
   "preferredNotifChannel": "ghostty",
   "remoteControlAtStartup": true,
   "agentPushNotifEnabled": true,

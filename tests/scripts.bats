@@ -417,6 +417,53 @@ SH
   [ "$status" -eq 1 ]
 }
 
+@test "codex config refresh preserves machine-local plugin state" {
+  home="$TMPDIR_TEST/codex-home"
+  bin="$TMPDIR_TEST/bin"
+  mkdir -p "$home/.codex" "$bin"
+  cat > "$bin/codex" <<'SH'
+#!/bin/sh
+if [ "$1" = "--version" ]; then printf 'codex-test\n'; exit 0; fi
+exit 0
+SH
+  chmod +x "$bin/codex"
+
+  # Live config = OUTDATED managed template (extra stale line) + state that
+  # Codex CLI wrote afterwards (plugin add / marketplace / project trust).
+  cp "$REPO_ROOT/configs/codex/config.toml" "$home/.codex/config.toml"
+  printf '\n# stale-line-from-old-template\n' >> "$home/.codex/config.toml"
+  cat >> "$home/.codex/config.toml" <<'TOML'
+
+[projects."/tmp/demo"]
+trust_level = "trusted"
+
+[marketplaces.local]
+path = "~/.agents/plugins/marketplace.json"
+
+[plugins."ui-clone-skills@local"]
+enabled = true
+
+[hooks.state."~/.codex/hooks.json:pre_tool_use:0:0"]
+trusted_hash = "sha256:deadbeef"
+TOML
+
+  run bash -c "env HOME='$home' DOTFILES_DIR='$REPO_ROOT' DRY_RUN=false NON_INTERACTIVE=true PATH='$bin:/usr/bin:/bin' bash '$REPO_ROOT/scripts/codex.sh' < /dev/null"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Refreshing managed Codex config"* ]]
+  # Template content refreshed: stale line gone, marker present.
+  ! grep -q 'stale-line-from-old-template' "$home/.codex/config.toml"
+  grep -q 'portable template' "$home/.codex/config.toml"
+  # CLI-recorded state survived the refresh.
+  grep -q '\[plugins."ui-clone-skills@local"\]' "$home/.codex/config.toml"
+  grep -q '\[marketplaces\.local\]' "$home/.codex/config.toml"
+  grep -q '\[projects."/tmp/demo"\]' "$home/.codex/config.toml"
+  grep -q 'trusted_hash = "sha256:deadbeef"' "$home/.codex/config.toml"
+  # And none of it leaked into the tracked template.
+  run grep -q 'ui-clone-skills@local' "$REPO_ROOT/configs/codex/config.toml"
+  [ "$status" -eq 1 ]
+}
+
 @test "tailscale non-interactive does not prompt before status check" {
   run bash -c "awk 'NR>=45 && NR<=55 { print }' '$REPO_ROOT/scripts/tailscale.sh' | grep -q 'NON_INTERACTIVE'"
   [ "$status" -eq 0 ]
@@ -510,7 +557,7 @@ assert codex['skills'] == './skills/'
 assert codex_market['name'] == 'dotfiles-local'
 assert codex_market['plugins'][0]['name'] == 'local-skills'
 assert codex_market['plugins'][0]['source'] == {'source': 'local', 'path': './plugins/local-skills'}
-for skill in ['dotfiles-verify', 'agent-usage-audit', 'code-intel-doctor', 'work-scope-guard', 'source-provenance', 'cmux-doctor']:
+for skill in ['dotfiles-verify', 'agent-usage-audit', 'code-intel-doctor', 'work-scope-guard', 'source-provenance']:
     assert (root / 'plugins/local-skills/skills' / skill / 'SKILL.md').exists(), skill
 PY
 }
@@ -701,12 +748,19 @@ assert cfg['allowedMcpServers'] == [
     {'serverName': 'serena'},
     {'serverName': 'codegraph'},
     {'serverName': 'context7'},
+    {'serverName': 'exa'},
+    {'serverName': 'linkedin'},
 ]
 assert {'serverName': 'filesystem'} in cfg['deniedMcpServers']
 assert 'chrome-devtools' in mcp['mcpServers']
 assert 'serena' in mcp['mcpServers']
 assert 'codegraph' in mcp['mcpServers']
 assert 'context7' in mcp['mcpServers']
+# Every server claude.sh registers from mcp.json must clear the allowlist,
+# or registration fails at install time with an enterprise-policy block.
+allowed = {e['serverName'] for e in cfg['allowedMcpServers']}
+missing = set(mcp['mcpServers']) - allowed
+assert not missing, f'mcp.json servers blocked by allowedMcpServers: {missing}'
 PY
 }
 

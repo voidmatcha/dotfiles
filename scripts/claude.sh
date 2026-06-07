@@ -78,14 +78,17 @@ SKILL_REPOS=(
   "anthropics/skills@webapp-testing"         # cake-pc-web Playwright
   "anthropics/skills@mcp-builder"            # author new MCP servers
   "anthropics/skills@skill-creator"          # author / tune custom skills
-  "supercent-io/skills-template@security-best-practices"
-  "supercent-io/skills-template@code-review"
+  # supercent-io/skills-template: removed — repository deleted/private on GitHub
+  # (clone now fails with auth prompt). Built-in /code-review and
+  # /security-review cover the same ground.
   "yeachan-heo/oh-my-claudecode@project-session-manager"  # worktree + tmux + gh/jira issue pipeline (psm fix/review/feature)
   "yeachan-heo/oh-my-claudecode@ai-slop-cleaner"           # regression-safe deletion-first cleanup of AI-generated code
 )
 
 SKILL_URLS=(
-  "https://github.com/pbakaus/impeccable --skill clarify"
+  # pbakaus/impeccable: upstream consolidated its standalone skills (clarify
+  # et al.) into one `impeccable` skill; clarify is now `/impeccable clarify`.
+  "https://github.com/pbakaus/impeccable"
   "https://github.com/kepano/obsidian-skills"
 )
 
@@ -152,13 +155,22 @@ marketplaces = cfg.get("extraKnownMarketplaces")
 if not isinstance(marketplaces, dict):
     raise SystemExit(0)
 
-entry = marketplaces.get("voidmatcha")
-source = entry.get("source") if isinstance(entry, dict) else None
-local_path = source.get("path", "") if isinstance(source, dict) else ""
+# Any directory-source marketplace with a home-anchored path is machine-local
+# pollution: `claude plugin marketplace add` persists such registrations into
+# settings.json, and when that lands in the tracked file it breaks installs on
+# other machines/usernames. skills.sh / the ui-clone installer re-register
+# them locally on every install, so stripping here loses nothing.
 home_prefixes = ("/" + "Users" + "/", "/" + "home" + "/")
-
-if source and source.get("source") == "directory" and local_path.startswith(home_prefixes):
-    del marketplaces["voidmatcha"]
+stale = [
+    name for name, entry in marketplaces.items()
+    if isinstance(entry, dict)
+    and isinstance(entry.get("source"), dict)
+    and entry["source"].get("source") == "directory"
+    and entry["source"].get("path", "").startswith(home_prefixes)
+]
+if stale:
+    for name in stale:
+        del marketplaces[name]
     if not marketplaces:
         del cfg["extraKnownMarketplaces"]
     path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False) + "\n")
@@ -358,14 +370,26 @@ register_mcp_from_file() {
       info "[dry-run] claude mcp add-json --scope user $name '$entry'"
       continue
     fi
-    # Remove first (idempotent), then add. Suppress "not found" errors on first run.
+    # Already registered with the exact same config → leave it alone. This is
+    # the common path on re-runs, and it avoids the remove→add window below,
+    # which drops a working entry whenever the add fails (policy block,
+    # CLI hang). add-json stores the entry verbatim, so equality is reliable.
+    if json_entry_exists "$HOME/.claude.json" '.mcpServers[$n] == $e' \
+        --arg n "$name" --argjson e "$entry"; then
+      info "MCP already registered: $name"
+      continue
+    fi
+    # Remove first (add-json refuses to overwrite), then add.
     # 30s timeout: `claude` CLI subcommands have been observed to hang on
     # certain machines/versions; don't let MCP setup stall install.sh.
     with_timeout 30 claude mcp remove --scope user "$name" >/dev/null 2>&1 || true
-    if with_timeout 30 claude mcp add-json --scope user "$name" "$entry" >/dev/null 2>&1; then
+    local add_output
+    if add_output=$(with_timeout 30 claude mcp add-json --scope user "$name" "$entry" 2>&1); then
       info "Registered MCP: $name"
     else
-      warn "Failed to register MCP: $name (timeout or error)"
+      # Surface the CLI's own first line — "blocked by enterprise policy" vs a
+      # timeout need entirely different operator responses.
+      warn "Failed to register MCP: $name — $(printf '%s' "$add_output" | head -n 1)"
     fi
   done <<< "$names"
 }

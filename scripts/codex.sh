@@ -25,15 +25,10 @@ sanitize_codex_shared_config() {
       print dynamic_notify
       next
     }
+    # Machine-local state sections — must never live in the shared template.
+    # Keep in sync with extract_machine_local_codex_sections below.
     /^\[/ {
-      drop = 0
-      if ($0 ~ /^\[projects\."/ ||
-          $0 == "[marketplaces.openai-primary-runtime]" ||
-          $0 == "[plugins.\"documents@openai-primary-runtime\"]" ||
-          $0 == "[plugins.\"spreadsheets@openai-primary-runtime\"]" ||
-          $0 == "[plugins.\"presentations@openai-primary-runtime\"]") {
-        drop = 1
-      }
+      drop = ($0 ~ /^\[projects\."/ || $0 ~ /^\[marketplaces\./ || $0 ~ /^\[plugins\./ || $0 ~ /^\[hooks\.state/)
     }
     !drop { print }
   ' "$config_file" > "$tmp_file"
@@ -46,20 +41,53 @@ sanitize_codex_shared_config() {
   fi
 }
 
+# Codex CLI uses config.toml as a mutable state store on top of user config:
+# `codex plugin add` records [plugins."name@marketplace"], marketplace
+# registration writes [marketplaces.*], project trust writes [projects."..."],
+# and the one-time hook-trust prompt records [hooks.state.*] hashes. Those
+# sections are machine-local by definition and must survive template
+# refreshes — a plain template copy silently uninstalls every CLI-added
+# plugin (e.g. ui-clone-skills@local, registered by the upstream installer
+# that claude.sh runs earlier in the same pipeline) and re-triggers every
+# hook-trust prompt.
+extract_machine_local_codex_sections() {
+  local config_file="$1"
+  [ -f "$config_file" ] || return 0
+
+  awk '
+    # Keep in sync with the drop patterns in sanitize_codex_shared_config.
+    /^\[/ {
+      keep = ($0 ~ /^\[projects\."/ || $0 ~ /^\[marketplaces\./ || $0 ~ /^\[plugins\./ || $0 ~ /^\[hooks\.state/)
+    }
+    keep { print }
+  ' "$config_file"
+}
+
 install_codex_config() {
   local dst="$CODEX_CONFIG_DIR/config.toml"
-  local backup_dst
+  local backup_dst tmp_file preserved=""
 
   ensure_dir "$CODEX_CONFIG_DIR"
 
   if $DRY_RUN; then
-    info "[dry-run] cp $CODEX_SHARED_CONFIG -> $dst"
+    info "[dry-run] cp $CODEX_SHARED_CONFIG -> $dst (preserving machine-local sections)"
     return 0
   fi
 
+  tmp_file=$(mktemp)
+  cp "$CODEX_SHARED_CONFIG" "$tmp_file"
+
   if [ -L "$dst" ]; then
     rm "$dst"
-  elif [ -e "$dst" ] && ! cmp -s "$CODEX_SHARED_CONFIG" "$dst"; then
+  elif [ -e "$dst" ]; then
+    preserved="$(extract_machine_local_codex_sections "$dst")"
+    if [ -n "$preserved" ]; then
+      printf '\n%s\n' "$preserved" >> "$tmp_file"
+    fi
+    if cmp -s "$tmp_file" "$dst"; then
+      rm -f "$tmp_file"
+      return 0
+    fi
     if grep -q "portable template" "$dst"; then
       warn "Refreshing managed Codex config at $dst"
     else
@@ -69,8 +97,14 @@ install_codex_config() {
     fi
   fi
 
-  cp "$CODEX_SHARED_CONFIG" "$dst"
-  info "Copied: $CODEX_SHARED_CONFIG -> $dst"
+  # cat instead of mv: keeps the destination inode and mode stable.
+  cat "$tmp_file" > "$dst"
+  rm -f "$tmp_file"
+  if [ -n "$preserved" ]; then
+    info "Installed Codex config: $dst (template + preserved machine-local sections)"
+  else
+    info "Copied: $CODEX_SHARED_CONFIG -> $dst"
+  fi
 }
 
 install_codex_cmux_skill() {

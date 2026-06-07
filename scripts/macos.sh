@@ -46,12 +46,14 @@ LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
 if [ -d "$LAUNCH_AGENTS_DIR" ] && [ ! -w "$LAUNCH_AGENTS_DIR" ]; then
   if $DRY_RUN; then
     info "[dry-run] sudo chown -R $(whoami):staff $LAUNCH_AGENTS_DIR"
-  else
+  elif sudo_ok "chown $LAUNCH_AGENTS_DIR"; then
     warn "$LAUNCH_AGENTS_DIR is not writable — fixing ownership (sudo)"
     sudo chown -R "$(whoami):$(id -gn)" "$LAUNCH_AGENTS_DIR"
   fi
 fi
-if ! $DRY_RUN; then
+if ! $DRY_RUN && [ -d "$LAUNCH_AGENTS_DIR" ] && [ ! -w "$LAUNCH_AGENTS_DIR" ]; then
+  warn "$LAUNCH_AGENTS_DIR still not writable — skipping CapsLock LaunchAgent"
+elif ! $DRY_RUN; then
   mkdir -p "$LAUNCH_AGENTS_DIR"
   cat > "$LAUNCH_AGENTS_DIR/com.user.capslock-escape.plist" << 'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -140,7 +142,7 @@ run_defaults write com.apple.screencapture type -string "png"
 info "Enabling Remote Login (SSH)..."
 if $DRY_RUN; then
   info "[dry-run] Skipping Remote Login enable"
-else
+elif sudo_ok "enable Remote Login (SSH)"; then
   sudo systemsetup -setremotelogin on 2>/dev/null || info "⚠️  Remote Login enable failed — enable manually in System Settings > General > Sharing"
 fi
 
@@ -169,6 +171,8 @@ else
   else
     if [ ! -f "$TOUCHID_CONF" ] && [ ! -f "$TOUCHID_TEMPLATE" ]; then
       warn "/etc/pam.d/sudo_local.template missing — your macOS may not support sudo_local; skipping"
+    elif ! sudo_ok "enable Touch ID for sudo"; then
+      :
     else
       if [ -f "$TOUCHID_CONF" ]; then
         backup_dst="$(next_backup_path "$TOUCHID_CONF")"
@@ -195,7 +199,12 @@ if [ ! -x "$FW_TOOL" ]; then
   warn "$FW_TOOL not found — skipping firewall config"
 elif $DRY_RUN; then
   info "[dry-run] would enable firewall + stealth + signed-allow"
-else
+elif "$FW_TOOL" --getglobalstate 2>/dev/null | grep -q "enabled" \
+  && "$FW_TOOL" --getstealthmode 2>/dev/null | grep -Eq "is on|enabled"; then
+  # Reading state needs no privileges; skipping here keeps repeat installs
+  # from prompting for sudo at all.
+  info "Firewall already ON with stealth mode — skipping"
+elif sudo_ok "configure Application Firewall"; then
   sudo "$FW_TOOL" --setglobalstate on        > /dev/null
   sudo "$FW_TOOL" --setstealthmode on        > /dev/null
   sudo "$FW_TOOL" --setallowsigned on        > /dev/null

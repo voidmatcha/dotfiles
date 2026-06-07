@@ -103,6 +103,18 @@ with_timeout() {
   perl -e 'alarm shift; exec @ARGV' "$secs" "$@"
 }
 
+# sudo_ok "<description>"
+# Gate for sudo-requiring steps. Interactive runs always proceed (sudo prompts
+# as usual). Non-interactive runs proceed only when sudo works without a
+# password (cached credentials / NOPASSWD); otherwise the step is skipped with
+# a warning instead of hanging on a prompt or dying under set -e.
+sudo_ok() {
+  $NON_INTERACTIVE || return 0
+  sudo -n true 2>/dev/null && return 0
+  warn "non-interactive: sudo requires a password — skipping: $*"
+  return 1
+}
+
 # json_entry_exists <file> <jq-filter> [extra jq args, e.g. --arg n "val"]
 # Used to skip already-applied idempotent operations whose CLI hangs on re-apply.
 # Pass shell-controlled values via `--arg` to avoid jq filter injection.
