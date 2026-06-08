@@ -23,7 +23,7 @@ Pick the tool that matches the task. Each row lists trade-offs; obey them.
 | Platform | Tool | Setup | Notes |
 |----------|------|-------|-------|
 | YouTube / Bilibili / 1800+ video sites | `yt-dlp --dump-json <URL>` (meta), `yt-dlp --write-sub --skip-download <URL>` (subs) | None | No auth needed |
-| Twitter / X | `twitter search "query"`, `twitter read <URL>`, `twitter user <handle>` | Logged in to x.com in Chrome/Firefox (cookie auto-extracted) | Don't bulk-scrape (account flag risk) |
+| Twitter / X | `twitter search "query"`, `twitter tweet <URL_OR_ID>`, `twitter user <handle>` | Logged in to x.com in Chrome/Firefox (cookie auto-extracted) | Don't bulk-scrape (account flag risk) |
 | Reddit | `rdt search "query"`, `rdt read <POST_ID>` | `rdt login` once (Reddit requires auth since 2024) | Returns post + comments |
 | LinkedIn | `linkedin` MCP tool — Claude calls it directly | Browser auth on first MCP tool call | Low-volume only; ToS prohibits automated tools |
 | RSS / Atom | `python3 -c 'import feedparser; d=feedparser.parse("<URL>"); ...'` | None (feedparser installed via dev.sh) | Blogs, YouTube channel feeds, GitHub releases, HN, Hada News |
@@ -63,6 +63,16 @@ a file I already know": Read.
 | Throwaway clean session, no auth carryover | `chrome-devtools` MCP tool |
 | **Don't** use Playwright MCP (per project rule); `agent-browser` covers the same need with less weight | — |
 
+### "I need to inspect past agent sessions / usage"
+
+| Task | Tool | Why |
+|------|------|-----|
+| Browse/search Claude, Codex, and other local agent sessions | `agentsview serve` | Local web UI with full-text search, session viewer, usage dashboards, and live updates. Binds to `127.0.0.1` by default. |
+| Fast cross-agent usage summary | `agentsview usage daily --all --json` | SQLite-backed local replacement/complement for `ccusage`; covers Claude, Codex, Hermes, and other supported agents. |
+| Session-shape analytics | `agentsview stats --format json` | Summarizes duration, user-message count, peak context, cache economics, tool/model/agent mix, and hourly patterns. |
+| Per-session token/cost details | `agentsview session usage <id> --format json` | Pinpoints which specific session produced the usage spike before deciding compact/clear/handover. |
+| Current session context/cache policy | `$context-check` or `python3 plugins/local-skills/skills/context-check/scripts/context_check.py diagnose --cwd "$PWD"` | Advisory continue/compact/clear/handover decision; Claude also gets a lightweight UserPromptSubmit warning hook. |
+
 ## Available tools — reference
 
 These are installed by this dotfiles setup. Prefer them over reinventing or
@@ -75,10 +85,7 @@ are `scripts/dev.sh`, `Brewfile`, and `configs/mcp.json`.
   default; serena's redundant basic utilities (read/grep/ls/bash equivalents)
   are auto-disabled because Claude Code already covers them. The shell
   wrapper in `.zshrc` injects serena's system-prompt-override (to counter
-  Opus's strong bias toward built-in tools) and also defaults every `claude`
-  launch to `--settings '{"ultracode":true}'` (xhigh effort + standing
-  dynamic-workflow orchestration; opt out per-session with
-  `CLAUDE_ULTRACODE=0`). https://github.com/oraios/serena
+  Opus's strong bias toward built-in tools). https://github.com/oraios/serena
 - **codegraph** (MCP) — pre-indexed knowledge graph (tree-sitter + SQLite) for
   **exploration** of large or cross-language codebases. Read-only;
   complements serena. Run `codegraph init -i` in each project once; the
@@ -105,6 +112,16 @@ are `scripts/dev.sh`, `Brewfile`, and `configs/mcp.json`.
   hook. Saves 60–90% tokens. Compressed output is what you see by default;
   use `rtk proxy <cmd>` (or run outside the hook path) when you need raw output.
 - **ccusage** — `ccusage` CLI for analyzing your token usage from local JSONL.
+- **agentsview** — local-first session intelligence for Claude Code, Codex,
+  Hermes, and other agent logs. Use `agentsview serve` for the browser UI,
+  `agentsview usage daily --all --json` for usage summaries,
+  `agentsview stats --format json` for session-shape/cache-economics analysis,
+  and `agentsview session usage <id> --format json` for a single session.
+- **context-check** (local skill/hook) — advisory policy for long sessions:
+  continue while cache/context is healthy; compact when preserving useful context
+  matters; clear for new/disposable work; hand over only for cross-tool/tab
+  transfer or poisoned context. The Claude hook never auto-clears or auto-compacts;
+  Codex/OMX uses `$context-check` or the script directly.
 - **wrangler** — Cloudflare Workers/Pages/R2/D1 CLI. `wrangler login` once.
 - **context7** (MCP) — up-to-date library/framework docs lookup. Public host
   (`mcp.context7.com`) works anonymously; company overlay sets

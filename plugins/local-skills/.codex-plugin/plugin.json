@@ -1,7 +1,7 @@
 {
   "name": "local-skills",
   "version": "0.1.0",
-  "description": "Local skills bundle for dotfiles verification, usage audits, code-intel readiness, work-scope safety, source provenance, cmux agent handoff coordination, and runaway agent-process cleanup.",
+  "description": "Local skills bundle for dotfiles verification, usage audits, code-intel readiness, work-scope safety, context/cache pressure checks, source provenance, cmux handoff coordination, verified cross-session handover, and runaway agent-process cleanup.",
   "author": {
     "name": "YONGJAE LEE",
     "url": "https://github.com/voidmatcha"
@@ -21,8 +21,8 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Local Skills",
-    "shortDescription": "Local dotfiles verification, audit, setup guard, and cmux skills.",
-    "longDescription": "Use these local skills to verify the dotfiles repo and install scripts, audit local agent usage, diagnose code intelligence tooling, enforce work-scope safety reminders, track source provenance for imported agent assets, coordinate long-running Claude/Codex/OMX handoffs through cmux safely, and clean up runaway agent processes.",
+    "shortDescription": "Local dotfiles verification, audit, context-check, cmux, and handover skills.",
+    "longDescription": "Use these local skills to verify the dotfiles repo and install scripts, audit local agent usage, diagnose code intelligence tooling, enforce work-scope safety reminders, check long-session context/cache pressure before continue/compact/clear/handover decisions, track source provenance for imported agent assets, coordinate long-running Claude/Codex/OMX handoffs through cmux safely, perform verified cross-session handovers with ACK/READY evidence, and clean up runaway agent processes.",
     "developerName": "YONGJAE LEE",
     "category": "Developer Tools",
     "capabilities": [
@@ -34,7 +34,9 @@
       "Verify this dotfiles repo before install.",
       "Audit whether my local agents and skills are actually being used.",
       "Check codegraph and serena readiness for this repo.",
-      "Coordinate a long-running Claude/Codex loop in cmux safely."
+      "Check whether this agent session should continue, compact, clear, or hand over.",
+      "Coordinate a long-running Claude/Codex loop in cmux safely.",
+      "Hand over this task to fresh OMX and Claude tabs, verify ACK/READY, then close this tab."
     ],
     "brandColor": "#0F766E"
   }

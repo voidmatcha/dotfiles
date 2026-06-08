@@ -1,7 +1,7 @@
 {
   "name": "local-skills",
   "version": "0.1.0",
-  "description": "Local skills bundle for dotfiles verification, usage audits, code-intel readiness, work-scope safety, source provenance, cmux agent handoff coordination, and runaway agent-process cleanup.",
+  "description": "Local skills bundle for dotfiles verification, usage audits, code-intel readiness, work-scope safety, context/cache pressure checks, source provenance, cmux handoff coordination, verified cross-session handover, and runaway agent-process cleanup.",
   "author": {
     "name": "YONGJAE LEE",
     "url": "https://github.com/voidmatcha"

@@ -51,6 +51,7 @@ cask "raycast"
 cask "karabiner-elements"
 cask "rectangle"
 cask "cursor"
+cask "agentsview"                # local-first Claude/Codex session browser + usage analytics
 cask "zoom"
 cask "keka"                     # file archiver
 cask "cmux"                     # Ghostty-based terminal for AI coding agents

@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "local-skills",
-      "description": "Local skills bundle for dotfiles verification, usage audits, code-intel readiness, work-scope safety, source provenance.",
+      "description": "Local skills bundle for dotfiles verification, usage audits, code-intel readiness, work-scope safety, context/cache checks, source provenance, cmux coordination, and verified handover.",
       "version": "0.1.0",
       "author": {
         "name": "YONGJAE LEE",
@@ -23,7 +23,11 @@
         "local-skills",
         "dotfiles",
         "skills",
-        "verification"
+        "verification",
+        "handover",
+        "cmux",
+        "context",
+        "cache"
       ]
     }
   ]

@@ -71,51 +71,7 @@ if command -v claude &>/dev/null; then
       override="$(serena prompts print-cc-system-prompt-override 2>/dev/null)"
       [ -n "$override" ] && extra+=(--system-prompt="$override")
     fi
-    # ultracode (xhigh effort + standing dynamic-workflow orchestration) is
-    # session-scoped and NOT read from settings.json, so opt every launch into
-    # it here. effortLevel:xhigh lives in settings.json; this adds the standing
-    # workflow orchestration on top. Disable per-session with CLAUDE_ULTRACODE=0.
-    # CC honors only the FIRST --settings flag (later ones silently dropped),
-    # so if the caller already passes one (e.g. cmux injects its hooks via
-    # --settings), merge ultracode INTO it instead of adding a second flag —
-    # otherwise we'd shadow the caller's settings. On merge failure, leave the
-    # caller's args untouched (ultracode skipped, launch never broken).
-    local -a args
-    args=("$@")
-    if [ "${CLAUDE_ULTRACODE:-1}" != "0" ]; then
-      local i merged=0 val
-      for (( i = 1; i <= $#args; i++ )); do
-        case "${args[i]}" in
-          --settings)
-            (( i < $#args )) || break
-            val="$(_claude_ultracode_merge "${args[i+1]}")" && { args[i+1]="$val"; }
-            merged=1
-            break ;;
-          --settings=*)
-            val="$(_claude_ultracode_merge "${args[i]#--settings=}")" && { args[i]="--settings=$val"; }
-            merged=1
-            break ;;
-        esac
-      done
-      (( merged )) || extra+=(--settings '{"ultracode":true}')
-    fi
-    command claude ${extra[@]+"${extra[@]}"} "${args[@]}"
-  }
-  # Merge {"ultracode":true} into a --settings value (JSON string or file path).
-  # Prints merged JSON on success; exits non-zero (prints nothing) on failure.
-  _claude_ultracode_merge() {
-    python3 -c '
-import json, os, sys
-v = sys.argv[1]
-try:
-    d = json.loads(v) if v.lstrip().startswith("{") else json.load(open(os.path.expanduser(v)))
-    if not isinstance(d, dict):
-        sys.exit(1)
-except Exception:
-    sys.exit(1)
-d.setdefault("ultracode", True)
-print(json.dumps(d))
-' "$1" 2>/dev/null
+    command claude ${extra[@]+"${extra[@]}"} "$@"
   }
 fi
 

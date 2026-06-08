@@ -40,6 +40,13 @@ if command -v zsh &>/dev/null && [ -f configs/.zshrc ]; then
   zsh -n configs/.zshrc
 fi
 
+info "Python syntax"
+python_cache_dir="$(mktemp -d)"
+while IFS= read -r file; do
+  PYTHONPYCACHEPREFIX="$python_cache_dir" python3 -m py_compile "$file"
+done < <(find scripts plugins/local-skills/skills -type f -name '*.py' | sort)
+rm -rf "$python_cache_dir"
+
 info "JSON manifests/configs"
 python3 - <<'PY'
 import json
@@ -61,12 +68,124 @@ from pathlib import Path
 try:
     import tomllib
 except ModuleNotFoundError:  # pragma: no cover - old local Python fallback
-    import tomli as tomllib
+    try:
+        import tomli as tomllib
+    except ModuleNotFoundError:
+        tomllib = None
+
+
+def strip_comment(line):
+    in_string = False
+    quote = ""
+    escaped = False
+    out = []
+    for char in line:
+        if in_string:
+            out.append(char)
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                in_string = False
+            continue
+        if char in {'"', "'"}:
+            in_string = True
+            quote = char
+            out.append(char)
+        elif char == "#":
+            break
+        else:
+            out.append(char)
+    return "".join(out).strip()
+
+
+def validate_toml_minimal(text, path):
+    """Dependency-free sanity check for this repo's portable Codex TOML.
+
+    Strict tomllib/tomli is preferred. This fallback covers the syntax used in
+    configs/codex/config.toml so macOS system Python can run the verifier
+    without installing extra packages.
+    """
+    import ast
+    import re
+
+    key_re = re.compile(r'^(?:[A-Za-z0-9_.-]+|"[^"\\]*(?:\\.[^"\\]*)*")$')
+    header_re = re.compile(r'^\[[A-Za-z0-9_.-]+\]$')
+    current = ""
+    start_line = 0
+    bracket_balance = 0
+    saw_assignment = False
+
+    def check_statement(statement, line_no):
+        nonlocal saw_assignment
+        if not statement:
+            return
+        if statement.startswith("["):
+            if not header_re.match(statement):
+                raise SyntaxError(f"{path}:{line_no}: invalid TOML table header: {statement}")
+            return
+        if "=" not in statement:
+            raise SyntaxError(f"{path}:{line_no}: expected key = value")
+        key, value = statement.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key_re.match(key):
+            raise SyntaxError(f"{path}:{line_no}: invalid TOML key: {key}")
+        if not value:
+            raise SyntaxError(f"{path}:{line_no}: missing TOML value for {key}")
+        if value in {"true", "false"}:
+            saw_assignment = True
+            return
+        if re.fullmatch(r"[0-9]+", value):
+            saw_assignment = True
+            return
+        if value.startswith("["):
+            if not value.endswith("]"):
+                raise SyntaxError(f"{path}:{line_no}: unterminated TOML array")
+            ast.literal_eval(value)
+            saw_assignment = True
+            return
+        if value.startswith('"') or value.startswith("'"):
+            ast.literal_eval(value)
+            saw_assignment = True
+            return
+        raise SyntaxError(f"{path}:{line_no}: unsupported TOML value in fallback parser: {value}")
+
+    for line_no, raw_line in enumerate(text.splitlines(), start=1):
+        line = strip_comment(raw_line)
+        if not line:
+            continue
+        if current:
+            current += "\n" + line
+            bracket_balance += line.count("[") - line.count("]")
+            if bracket_balance <= 0:
+                check_statement(current, start_line)
+                current = ""
+            continue
+        if "=" in line:
+            value = line.split("=", 1)[1].strip()
+            bracket_balance = value.count("[") - value.count("]")
+            if bracket_balance > 0:
+                current = line
+                start_line = line_no
+                continue
+        check_statement(line, line_no)
+    if current:
+        raise SyntaxError(f"{path}:{start_line}: unterminated TOML array")
+    if not saw_assignment:
+        raise SyntaxError(f"{path}: no TOML assignments found")
+
 
 path = Path('configs/codex/config.toml')
 if path.exists():
-    tomllib.loads(path.read_text())
-    print(f'validated {path}')
+    text = path.read_text()
+    if tomllib is not None:
+        tomllib.loads(text)
+        print(f'validated {path}')
+    else:
+        validate_toml_minimal(text, path)
+        print(f'validated {path} (minimal fallback)')
 PY
 
 if command -v plutil &>/dev/null; then

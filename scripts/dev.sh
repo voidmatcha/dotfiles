@@ -290,7 +290,7 @@ fi
 # Install the upstream CLIs directly. See configs/AGENTS.md for the one-liners
 # agents should call.
 # - yt-dlp: YouTube/Bilibili/1800+ sites — installed via Brewfile (no auth)
-# - twitter-cli (public-clis/twitter-cli): X/Twitter via cookie auth — `twitter search/read/tweet`
+# - twitter-cli (public-clis/twitter-cli): X/Twitter via cookie auth — `twitter search/tweet/user`
 # - rdt-cli (public-clis/rdt-cli): Reddit via cookie auth — `rdt search/read`
 for tool_pkg in "twitter-cli" "rdt-cli"; do
   case "$tool_pkg" in

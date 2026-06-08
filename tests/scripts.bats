@@ -583,6 +583,31 @@ PY
   grep -q 'configs/codex/config.toml' "$REPO_ROOT/.github/workflows/lint.yml"
 }
 
+@test "verify.sh validates Codex TOML without tomllib or tomli" {
+  pythonpath="$TMPDIR_TEST/no-tomllib-pythonpath"
+  mkdir -p "$pythonpath"
+  cat > "$pythonpath/sitecustomize.py" <<'PY'
+import builtins
+
+real_import = builtins.__import__
+
+
+def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
+    if name in {"tomllib", "tomli"}:
+        raise ModuleNotFoundError(f"No module named {name!r}")
+    return real_import(name, globals, locals, fromlist, level)
+
+
+builtins.__import__ = guarded_import
+PY
+
+  run env PYTHONPATH="$pythonpath" bash "$REPO_ROOT/scripts/verify.sh" --quick
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"validated configs/codex/config.toml (minimal fallback)"* ]]
+  [[ "$output" == *"OK (quick)"* ]]
+}
+
 @test "README documents Codex as first-class setup" {
   grep -q 'Codex CLI:' "$REPO_ROOT/README.md"
   grep -q 'scripts/codex.sh' "$REPO_ROOT/README.md"
@@ -1034,4 +1059,212 @@ JSON
   # Homebrew no longer manages the Claude Code CLI.
   run grep -E '^[[:space:]]*cask "claude-code"' "$REPO_ROOT/Brewfile"
   [ "$status" -ne 0 ]
+}
+
+@test "handover helper completes ACK/CONFIRM/READY handshake" {
+  work="$TMPDIR_TEST/handover-repo"
+  gitcfg="$TMPDIR_TEST/gitconfig-handover"
+  mkdir -p "$work"
+  : > "$gitcfg"
+  env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$gitcfg" git -C "$work" init -q
+  env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$gitcfg" \
+    git -C "$work" -c user.name=test -c user.email=test@example.com -c commit.gpgsign=false \
+    commit --allow-empty -qm init
+
+  helper="$REPO_ROOT/plugins/local-skills/skills/handover/scripts/handover.py"
+  run env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$gitcfg" \
+    python3 "$helper" init --cwd "$work" --run-id handover-test \
+      --handshake verified \
+      --target omx --target claude \
+      --task "continue the smoke task" \
+      --success "both receivers are ready" \
+      --completed "created test repo" \
+      --remaining "continue from package" \
+      --decision "use durable artifacts" \
+      --artifact ".omx/artifacts/handover-test/handoff.json" \
+      --risk "none"
+  [ "$status" -eq 0 ]
+
+  run_dir="$work/.omx/artifacts/handover-test"
+  run python3 "$helper" validate --run-dir "$run_dir" --no-fail
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"complete": false'* ]]
+
+  run env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$gitcfg" \
+    python3 "$helper" ack --run-dir "$run_dir" --target omx --summary understood --next-action continue
+  [ "$status" -eq 0 ]
+  run env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$gitcfg" \
+    python3 "$helper" ack --run-dir "$run_dir" --target claude --summary understood --next-action continue
+  [ "$status" -eq 0 ]
+  run python3 "$helper" confirm --run-dir "$run_dir"
+  [ "$status" -eq 0 ]
+  run python3 "$helper" ready --run-dir "$run_dir" --target omx
+  [ "$status" -eq 0 ]
+  run python3 "$helper" ready --run-dir "$run_dir" --target claude
+  [ "$status" -eq 0 ]
+  run python3 "$helper" validate --run-dir "$run_dir"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"complete": true'* ]]
+  [[ "$output" == *'"handshake": "verified"'* ]]
+}
+
+@test "handover helper fast handshake completes with READY only" {
+  work="$TMPDIR_TEST/handover-fast"
+  gitcfg="$TMPDIR_TEST/gitconfig-handover-fast"
+  mkdir -p "$work"
+  : > "$gitcfg"
+  env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$gitcfg" git -C "$work" init -q
+  env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$gitcfg" \
+    git -C "$work" -c user.name=test -c user.email=test@example.com -c commit.gpgsign=false \
+    commit --allow-empty -qm init
+
+  helper="$REPO_ROOT/plugins/local-skills/skills/handover/scripts/handover.py"
+  run env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$gitcfg" \
+    python3 "$helper" init --cwd "$work" --run-id handover-fast \
+      --target omx \
+      --task "continue the fast smoke task"
+  [ "$status" -eq 0 ]
+
+  run_dir="$work/.omx/artifacts/handover-fast"
+  run env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$gitcfg" \
+    python3 "$helper" ready --run-dir "$run_dir" --target omx \
+      --summary "read package" --next-action "continue now"
+  [ "$status" -eq 0 ]
+  run python3 "$helper" validate --run-dir "$run_dir"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"complete": true'* ]]
+  [[ "$output" == *'"handshake": "fast"'* ]]
+  [[ "$output" == *'"source_confirmation_required": false'* ]]
+}
+
+@test "handover close-current fails open when cmux close fails" {
+  work="$TMPDIR_TEST/handover-close-fail-open"
+  fake_bin="$TMPDIR_TEST/fake-cmux-bin"
+  gitcfg="$TMPDIR_TEST/gitconfig-handover-close"
+  mkdir -p "$work" "$fake_bin"
+  : > "$gitcfg"
+  cat > "$fake_bin/cmux" <<'SH'
+#!/bin/sh
+echo "fake cmux close failure" >&2
+exit 9
+SH
+  chmod +x "$fake_bin/cmux"
+  env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$gitcfg" git -C "$work" init -q
+  env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$gitcfg" \
+    git -C "$work" -c user.name=test -c user.email=test@example.com -c commit.gpgsign=false \
+    commit --allow-empty -qm init
+
+  helper="$REPO_ROOT/plugins/local-skills/skills/handover/scripts/handover.py"
+  run env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$gitcfg" \
+    python3 "$helper" init --cwd "$work" --run-id close-fail \
+      --target omx \
+      --task "close fail-open smoke" \
+      --close-current \
+      --source-workspace stale-workspace \
+      --source-surface stale-surface
+  [ "$status" -eq 0 ]
+
+  run_dir="$work/.omx/artifacts/close-fail"
+  run env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$gitcfg" \
+    python3 "$helper" ready --run-dir "$run_dir" --target omx \
+      --summary "read package" --next-action "continue now"
+  [ "$status" -eq 0 ]
+
+  run env PATH="$fake_bin:$PATH" python3 "$helper" close-current --run-dir "$run_dir" --execute --delay 0
+  [ "$status" -eq 3 ]
+  [[ "$output" == *"leaving source session open"* ]]
+  [[ "$output" != *"Traceback"* ]]
+}
+
+@test "handover helper resolves explicit tags before natural-language inference" {
+  work="$TMPDIR_TEST/handover-targets-explicit"
+  mkdir -p "$work"
+  helper="$REPO_ROOT/plugins/local-skills/skills/handover/scripts/handover.py"
+
+  run python3 "$helper" init --cwd "$work" --run-id handover-targets \
+    --target-from "handover:claude,omx and maybe codex later" \
+    --task "target inference smoke"
+  [ "$status" -eq 0 ]
+
+  python3 - "$work/.omx/artifacts/handover-targets/handoff.json" <<'PY'
+import json
+import sys
+
+data = json.load(open(sys.argv[1]))
+assert [target["name"] for target in data["targets"]] == ["claude", "omx"]
+assert data["target_source"] == "explicit-tag"
+assert data["handshake"] == "fast"
+assert data["launch_commands"]["omx"]["command"] == "omx --direct --xhigh --madmax"
+assert data["launch_commands"]["claude"]["command"] == "claude"
+assert data["launch_commands"]["omx"]["title"] == "handover-omx-targets"
+PY
+}
+
+@test "handover helper infers targets from natural language when tags are absent" {
+  work="$TMPDIR_TEST/handover-targets-natural"
+  mkdir -p "$work"
+  helper="$REPO_ROOT/plugins/local-skills/skills/handover/scripts/handover.py"
+
+  run python3 "$helper" init --cwd "$work" --run-id handover-targets \
+    --target-from "omx랑 클로드 새 탭으로 넘겨줘" \
+    --task "natural target inference smoke"
+  [ "$status" -eq 0 ]
+
+  python3 - "$work/.omx/artifacts/handover-targets/handoff.json" <<'PY'
+import json
+import sys
+
+data = json.load(open(sys.argv[1]))
+assert [target["name"] for target in data["targets"]] == ["omx", "claude"]
+assert data["target_source"] == "text-inferred"
+PY
+}
+
+@test "handover helper allows per-target launch command overrides" {
+  work="$TMPDIR_TEST/handover-targets-override"
+  mkdir -p "$work"
+  helper="$REPO_ROOT/plugins/local-skills/skills/handover/scripts/handover.py"
+
+  run env HANDOVER_OMX_COMMAND='omx --direct --high --madmax' \
+    HANDOVER_CLAUDE_ARGS='--model opus' \
+    python3 "$helper" init --cwd "$work" --run-id handover-targets \
+      --target omx --target claude \
+      --task "launch override smoke"
+  [ "$status" -eq 0 ]
+
+  python3 - "$work/.omx/artifacts/handover-targets/launch-commands.json" <<'PY'
+import json
+import sys
+
+data = json.load(open(sys.argv[1]))
+assert data["omx"]["command"] == "omx --direct --high --madmax"
+assert data["claude"]["command"] == "claude --model opus"
+assert data["omx"]["cmux_command"].startswith("zsh -ic ")
+PY
+}
+
+@test "handover helper auto run ids include random suffix to avoid same-folder collisions" {
+  work="$TMPDIR_TEST/handover-auto-run-id"
+  mkdir -p "$work"
+  helper="$REPO_ROOT/plugins/local-skills/skills/handover/scripts/handover.py"
+
+  run python3 "$helper" init --cwd "$work" --target omx --task "first auto id"
+  [ "$status" -eq 0 ]
+  first="$output"
+  run python3 "$helper" init --cwd "$work" --target omx --task "second auto id"
+  [ "$status" -eq 0 ]
+  second="$output"
+
+  python3 - "$first" "$second" <<'PY'
+import json
+import re
+import sys
+
+first = json.loads(sys.argv[1])
+second = json.loads(sys.argv[2])
+pattern = re.compile(r"handover-\d{8}-\d{6}-[0-9a-f]{6}$")
+assert pattern.search(first["run_dir"]), first["run_dir"]
+assert pattern.search(second["run_dir"]), second["run_dir"]
+assert first["run_dir"] != second["run_dir"]
+PY
 }
