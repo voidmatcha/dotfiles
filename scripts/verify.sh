@@ -232,6 +232,9 @@ if command -v claude &>/dev/null; then
   claude_validator_home="$(mktemp -d)"
   if (
     export HOME="$claude_validator_home"
+    export LC_ALL=C
+    export LANG=C
+    export LC_CTYPE=C
     mkdir -p "$HOME/.claude"
     with_timeout 60 claude plugin validate "$DOTFILES_DIR" >/dev/null
   ); then

@@ -54,7 +54,7 @@ sandbox_mode = "danger-full-access"
 [mcp_servers.chrome-devtools]
 command = "npx"
 args = ["-y", "chrome-devtools-mcp@0.23.0"]
-startup_timeout_sec = 15
+startup_timeout_sec = 60
 
 # serena — LSP-backed semantic code navigation + editing (cross-file rename,
 # symbol-aware edits). Personal/user scope; not in NAVER MCP catalog.
@@ -68,7 +68,7 @@ args = [
   "--project-from-cwd",
   "--open-web-dashboard", "false",
 ]
-startup_timeout_sec = 20
+startup_timeout_sec = 60
 
 # codegraph — pre-indexed code knowledge graph for exploration / trace /
 # architecture questions on large repos. Read-only; complements serena.

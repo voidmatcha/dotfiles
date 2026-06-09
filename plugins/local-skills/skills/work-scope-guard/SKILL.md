@@ -1,6 +1,6 @@
 ---
 name: work-scope-guard
-description: Configure, inspect, or explain local work-scope safety reminders for company/work directories, sensitive URLs, internal data routing, or hook-based context overlays. Use when asked to prevent accidental public-tool use on work projects or to add a company/work guardrail.
+description: "Inspect work-scope safety reminders for company/work dirs, sensitive URLs, internal data routing, and hook overlays."
 ---
 
 # Work Scope Guard

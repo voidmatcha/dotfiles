@@ -1,6 +1,6 @@
 ---
 name: dotfiles-verify
-description: Verify this dotfiles repository, its install scripts, plugin manifests, hook configuration, JSON/TOML/plist files, or CI-style smoke checks before or after changes. Use when asked to check whether the dotfiles setup is safe, installable, pluginized correctly, or ready to run.
+description: "Verify dotfiles install scripts, plugin manifests, hooks, TOML/JSON/plist config, and CI-style smoke checks."
 ---
 
 # Dotfiles Verify

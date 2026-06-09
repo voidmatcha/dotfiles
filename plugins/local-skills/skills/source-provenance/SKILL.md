@@ -1,6 +1,6 @@
 ---
 name: source-provenance
-description: Track provenance for imported, adapted, or vendored skills, agents, hooks, prompts, plugins, scripts, or third-party workflow assets. Use when adding external agent assets or auditing whether local files cite upstream source, license, and adaptation status.
+description: "Track provenance for imported skills, agents, hooks, prompts, plugins, scripts, and third-party workflow assets."
 ---
 
 # Source Provenance

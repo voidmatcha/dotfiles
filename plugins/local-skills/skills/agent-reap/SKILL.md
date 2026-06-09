@@ -1,6 +1,6 @@
 ---
 name: agent-reap
-description: Scan for and clean up runaway or orphaned processes left behind by dead agent sessions — stuck zip/tail jobs, orphaned python/node inline scripts pegging the CPU after a claude/codex/omx loop or headless session dies. Use when the machine feels hot or loud, CPU is pegged near 100%, a loop session crashed mid-run, or the user asks to clean up processes (e.g. "프로세스 정리", "고아 프로세스", "CPU 왜 이래", "fans are spinning").
+description: "Clean up runaway/orphaned agent processes: stuck zip/tail/python/node, high CPU, dead Claude/Codex/OMX sessions."
 ---
 
 # Agent Reap

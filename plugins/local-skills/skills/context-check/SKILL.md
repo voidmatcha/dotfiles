@@ -1,6 +1,6 @@
 ---
 name: context-check
-description: Check current Claude/Codex/OMX session context, cache, and handover pressure before deciding whether to continue, compact, clear, or hand over. Use when managing long sessions, cache expiry, context bloat, owl/agentsview/ccusage signals, compact-vs-clear decisions, or cross-tool handoff readiness.
+description: "Check Claude/Codex/OMX context, cache, headroom, and handover pressure; advise continue, compact, clear, or hand off."
 ---
 
 # Context Check

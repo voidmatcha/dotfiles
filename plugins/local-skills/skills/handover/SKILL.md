@@ -1,6 +1,6 @@
 ---
 name: handover
-description: Hand off the current task to fresh cmux tabs/sessions running OMX, Claude, or Codex; supports explicit target tags like handover:omx, handover:claude, and handover:codex as well as natural-language target inference; create durable handoff artifacts, require a mutual ACK/CONFIRM/READY handshake, retry or recover failed transfers, and close the current cmux tab/session only after the receiver proves it can continue.
+description: "Hand off current work to fresh cmux/OMX/Claude/Codex sessions with artifacts, readiness checks, and recovery tracking."
 ---
 
 # Handover

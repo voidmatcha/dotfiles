@@ -1,6 +1,6 @@
 ---
 name: agent-usage-audit
-description: Audit whether local Claude/Codex agents, subagents, commands, or skills are installed and actually used from recent local session history. Use when asked what agents/skills/hooks are worth adding, pruning, or routing based on past usage.
+description: "Audit installed Claude/Codex agents, skills, commands, and recent session usage to decide what to prune, keep, or route."
 ---
 
 # Agent Usage Audit

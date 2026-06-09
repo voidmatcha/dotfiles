@@ -1,6 +1,6 @@
 ---
 name: code-intel-doctor
-description: Diagnose code intelligence setup for codegraph, serena, MCP server registration, Codex config, or per-repo index readiness. Use when symbol search, code tracing, MCP routing, or codegraph/serena availability seems broken or stale.
+description: "Diagnose codegraph/serena MCP setup, Codex config, and per-repo indexes when code intelligence is broken or stale."
 ---
 
 # Code Intel Doctor

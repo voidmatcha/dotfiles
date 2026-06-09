@@ -1,6 +1,6 @@
 ---
 name: cmux-handoff-runner
-description: Manage long-running Claude/Codex/OMX work handed off through cmux tabs or surfaces. Use when asked to start, attach, monitor, or recover agent loops in cmux; when cmux tabs appear idle or commands do not execute; or when a multi-step loop must pause for improvement, install, commit, and continue safely.
+description: "Manage long-running Claude/Codex/OMX handoffs in cmux tabs: start, attach, monitor, recover idle or stuck sessions."
 ---
 
 # Cmux Handoff Runner
