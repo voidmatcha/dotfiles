@@ -13,14 +13,17 @@ CLAUDE_MARKETPLACE_NAME="dotfiles-local"
 CLAUDE_PLUGIN_ID="local-skills@$CLAUDE_MARKETPLACE_NAME"
 CLAUDE_KNOWN_MARKETPLACES_JSON="$HOME/.claude/plugins/known_marketplaces.json"
 CLAUDE_INSTALLED_PLUGINS_JSON="$HOME/.claude/plugins/installed_plugins.json"
+MATT_POCOCK_SKILLS_REF="${MATT_POCOCK_SKILLS_REF:-2bf70051928429983de3b5718d277150926f8c89}"
+GRILL_ME_SKILL_URL="https://raw.githubusercontent.com/mattpocock/skills/${MATT_POCOCK_SKILLS_REF}/skills/productivity/grill-me/SKILL.md"
 
 usage() {
   cat <<'USAGE'
 Usage: scripts/skills.sh [all|claude|codex] [--dry-run]
 
-Installs repo-local skills through the local plugin/skills path:
-  claude  registers this repo as local-skills@dotfiles-local
-  codex   symlinks plugins/local-skills/skills/* into ~/.codex/skills
+Installs repo-local skills through the local plugin/skills path and upstream
+standalone skills pinned for reproducibility:
+  claude  registers this repo as local-skills@dotfiles-local and installs upstream Claude skills
+  codex   symlinks plugins/local-skills/skills/* into ~/.codex/skills and installs upstream Codex skills
   all     does both (default)
 USAGE
 }
@@ -46,6 +49,57 @@ while [ "$#" -gt 0 ]; do
   esac
   shift
 done
+
+install_upstream_skill_from_url() {
+  local tool_name="$1"
+  local skills_dir="$2"
+  local skill_name="$3"
+  local url="$4"
+  local dest="$skills_dir/$skill_name"
+  local tmp_file backup_dst
+
+  if $DRY_RUN; then
+    info "[dry-run] install upstream $tool_name skill $skill_name from $url -> $dest"
+    return 0
+  fi
+
+  ensure_dir "$skills_dir"
+  tmp_file="$(mktemp)"
+  if ! curl -fsSL "$url" -o "$tmp_file"; then
+    rm -f "$tmp_file"
+    warn "Failed upstream $tool_name skill download: $skill_name ($url)"
+    return 0
+  fi
+
+  if ! grep -q '^name: '"$skill_name"'$' "$tmp_file"; then
+    rm -f "$tmp_file"
+    warn "Downloaded upstream skill has unexpected name; skipping: $skill_name"
+    return 0
+  fi
+
+  if [ -L "$dest" ]; then
+    rm "$dest"
+    mkdir -p "$dest"
+  elif [ -e "$dest" ] && [ ! -d "$dest" ]; then
+    backup_dst="$(next_backup_path "$dest")"
+    warn "Backing up $dest -> $backup_dst"
+    mv "$dest" "$backup_dst"
+    mkdir -p "$dest"
+  else
+    mkdir -p "$dest"
+  fi
+
+  mv "$tmp_file" "$dest/SKILL.md"
+  info "Installed upstream $tool_name skill: $skill_name -> $dest"
+}
+
+install_claude_upstream_skills() {
+  install_upstream_skill_from_url "Claude" "$HOME/.claude/skills" "grill-me" "$GRILL_ME_SKILL_URL"
+}
+
+install_codex_upstream_skills() {
+  install_upstream_skill_from_url "Codex" "$CODEX_CONFIG_DIR/skills" "grill-me" "$GRILL_ME_SKILL_URL"
+}
 
 install_codex_local_skills() {
   local skills_dir="$CODEX_CONFIG_DIR/skills"
@@ -124,13 +178,17 @@ install_claude_local_plugin() {
 
 case "$mode" in
   all)
+    install_claude_upstream_skills
     install_claude_local_plugin
+    install_codex_upstream_skills
     install_codex_local_skills
     ;;
   claude)
+    install_claude_upstream_skills
     install_claude_local_plugin
     ;;
   codex)
+    install_codex_upstream_skills
     install_codex_local_skills
     ;;
 esac

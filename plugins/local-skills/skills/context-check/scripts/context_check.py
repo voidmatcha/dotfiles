@@ -19,6 +19,7 @@ import time
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any
+from urllib.request import urlopen
 
 STATE_PATH = Path(os.environ.get("CONTEXT_CHECK_STATE", "~/.cache/context-check/state.json")).expanduser()
 HOOK_WARNING_INTERVAL_SECONDS = 15 * 60
@@ -249,6 +250,42 @@ def _collect_owl_signal() -> Signal:
     return Signal("owl", "observed", "; ".join(details), severity)
 
 
+def _headroom_port_from_env() -> str:
+    port = os.environ.get("HEADROOM_PORT")
+    if port:
+        return port
+    for name in ("OPENAI_BASE_URL", "ANTHROPIC_BASE_URL"):
+        value = os.environ.get(name, "")
+        match = re.search(r"127\.0\.0\.1:([0-9]+)|localhost:([0-9]+)", value)
+        if match:
+            return match.group(1) or match.group(2)
+    return "8787"
+
+
+def _headroom_proxy_ready(port: str) -> bool:
+    try:
+        with urlopen(f"http://127.0.0.1:{port}/livez", timeout=0.6) as response:
+            return 200 <= int(response.status) < 300
+    except Exception:
+        return False
+
+
+def _collect_headroom_signal() -> Signal:
+    active = os.environ.get("HEADROOM_AGENT_ACTIVE", "")
+    mode = os.environ.get("HEADROOM_MODE", "cache")
+    port = _headroom_port_from_env()
+    ready = _headroom_proxy_ready(port)
+    if active:
+        status = "observed" if ready else "error"
+        severity = "info" if ready else "warn"
+        return Signal("headroom", status, f"active for {active}; mode={mode}; port={port}; proxy_ready={ready}", severity)
+    if ready:
+        return Signal("headroom", "observed", f"proxy ready on port {port}; mode={mode}", "info")
+    if shutil.which("headroom"):
+        return Signal("headroom", "available", "headroom installed but no active proxy detected", "info")
+    return Signal("headroom", "unavailable", "headroom not installed or not on PATH", "info")
+
+
 def _find_numeric_keys(obj: Any, interesting: tuple[str, ...], found: list[tuple[str, float]]) -> None:
     if isinstance(obj, dict):
         for key, value in obj.items():
@@ -309,6 +346,14 @@ def _pick_recommendation(signals: list[Signal], intent: str) -> Recommendation:
     max_severity = max((_severity_rank(signal.severity) for signal in signals), default=0)
     red_names = {signal.name for signal in signals if signal.severity == "red"}
     warn_names = {signal.name for signal in signals if signal.severity == "warn"}
+    headroom_active = any(signal.name == "headroom" and signal.status == "observed" for signal in signals)
+
+    # Headroom-backed sessions already have a cache/proxy layer, so owl cache
+    # warnings are still useful but should not by themselves force a high-
+    # confidence compact recommendation. Missing owl-rs is reported as info.
+    if headroom_active and "owl" in red_names:
+        red_names.remove("owl")
+        warn_names.add("owl")
 
     if intent == "handover":
         return Recommendation("handover", "high", "handover intent was explicit", if_same_task="handover")
@@ -425,7 +470,7 @@ def cmd_diagnose(args: argparse.Namespace) -> int:
 
     signals = list(local_signals)
     if not args.local_only:
-        signals.extend([_collect_owl_signal(), _collect_agentsview_signal()])
+        signals.extend([_collect_headroom_signal(), _collect_owl_signal(), _collect_agentsview_signal()])
         if args.include_ccusage:
             signals.append(_collect_ccusage_signal())
 

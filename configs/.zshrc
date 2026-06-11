@@ -28,6 +28,32 @@ source "$ZSH/oh-my-zsh.sh"
 # ── Local bin (early — uv tool installs go here, serena check below needs it) ──
 export PATH="$HOME/.local/bin:$PATH"
 
+# ── Headroom default agent entrypoints ──
+# When installed, route normal Claude/Codex/OMX launches through Headroom's
+# cache/proxy wrappers. This is intentionally shell-level only: `command claude`,
+# `command codex`, `command omx`, or `HEADROOM_DEFAULT=0` bypasses it instantly.
+# Owl/context-check remains advisory and optional; missing owl-rs should not
+# prevent Headroom-backed entry.
+export HEADROOM_MODE="${HEADROOM_MODE:-cache}"
+
+__headroom_default_enabled() {
+  local tool value
+  tool="$1"
+  [ "${HEADROOM_DEFAULT:-1}" != "0" ] || return 1
+  [ "${HEADROOM_DISABLE:-0}" != "1" ] || return 1
+  case "$tool" in
+    claude) value="${HEADROOM_CLAUDE:-1}" ;;
+    codex) value="${HEADROOM_CODEX:-1}" ;;
+    omx) value="${HEADROOM_OMX:-1}" ;;
+    *) value=1 ;;
+  esac
+  [ "$value" != "0" ]
+}
+
+__headroom_wrapper_available() {
+  command -v "$1" &>/dev/null && command -v headroom &>/dev/null
+}
+
 # ── Rancher Desktop (optional, Docker CLI replacement) ──
 [ -d "$HOME/.rd/bin" ] && export PATH="$HOME/.rd/bin:$PATH"
 
@@ -57,11 +83,11 @@ command -v atuin &>/dev/null && eval "$(atuin init zsh --disable-up-arrow)"
 # ── direnv ──
 command -v direnv &>/dev/null && eval "$(direnv hook zsh)"
 
-# ── Claude Code: serena system-prompt override (Opus built-in-tool bias workaround) ──
-# Opus + CC's large built-in tool descriptions create strong bias
-# against external MCP tools. Serena's prompt-override counteracts this so
-# Serena's semantic tools actually get used. Falls back to plain `claude` if
-# serena is not installed. See https://github.com/oraios/serena
+# ── Claude Code: Headroom default + serena system-prompt override ──
+# Headroom is used when available; otherwise this falls back to plain `claude`.
+# Serena's prompt-override counteracts Opus/Claude Code bias against external
+# MCP tools. Disable Headroom per invocation with HEADROOM_DEFAULT=0 or
+# HEADROOM_CLAUDE=0; bypass the function entirely with `command claude`.
 if command -v claude &>/dev/null; then
   claude() {
     local -a extra
@@ -71,19 +97,65 @@ if command -v claude &>/dev/null; then
       override="$(serena prompts print-cc-system-prompt-override 2>/dev/null)"
       [ -n "$override" ] && extra+=(--system-prompt="$override")
     fi
-    command claude ${extra[@]+"${extra[@]}"} "$@"
+    if __headroom_default_enabled claude && __headroom_wrapper_available claudeh; then
+      command claudeh ${extra[@]+"${extra[@]}"} "$@"
+    else
+      command claude ${extra[@]+"${extra[@]}"} "$@"
+    fi
   }
 fi
 
-# ── omx (oh-my-codex): default launch flags ──
-# Codex-side analog of the claude() wrapper above: every interactive launch
-# gets --direct (no OMX tmux/HUD management), --xhigh (reasoning effort), and
-# --madmax (bypass Codex approvals/sandbox — intentional, mirrors Claude's
-# auto permission mode). Subcommands (setup/doctor/exec/…) are left untouched;
-# explicit flags passed later win (last-flag-wins per omx launch policy).
-# Disable per-session with OMX_DEFAULT_FLAGS=0.
+# ── Codex CLI: Headroom default ──
+if command -v codex &>/dev/null; then
+  codex() {
+    if __headroom_default_enabled codex && __headroom_wrapper_available codexh; then
+      command codexh "$@"
+    else
+      command codex "$@"
+    fi
+  }
+fi
+
+# ── omx (oh-my-codex): Headroom default + launch flags ──
+
+# Guard raw OMX HUD watches so repeated shells/commands do not stack panes/processes.
+# `omx hud --tmux` remains the preferred managed HUD surface; this only catches
+# accidental raw `omx hud --watch` invocations before they fork another watcher.
+__dotfiles_omx_hud_watch_running() {
+  pgrep -f 'oh-my-codex/dist/cli/omx\.js hud --watch' >/dev/null 2>&1
+}
+
+__dotfiles_omx_hud_watch_guard() {
+  [[ "$1" == "hud" ]] || return 1
+  shift
+
+  local arg
+  for arg in "$@"; do
+    [[ "$arg" == "--watch" || "$arg" == "-w" ]] || continue
+    if __dotfiles_omx_hud_watch_running; then
+      echo "omx hud --watch already running; use 'omx hud --tmux' or 'omx hud --reconcile-tmux'." >&2
+      return 0
+    fi
+    return 1
+  done
+
+  return 1
+}
+# Headroom is used when available; otherwise every interactive launch still gets
+# --direct (no OMX tmux/HUD management), --xhigh (reasoning effort), and
+# --madmax (bypass Codex approvals/sandbox — intentional, mirrors Claude's auto
+# permission mode). Subcommands (setup/doctor/exec/…) are left untouched.
+# Disable Headroom with HEADROOM_DEFAULT=0/HEADROOM_OMX=0; disable flag injection
+# with OMX_DEFAULT_FLAGS=0.
 if command -v omx &>/dev/null; then
   omx() {
+  if __dotfiles_omx_hud_watch_guard "$@"; then
+    return 0
+  fi
+    if __headroom_default_enabled omx && __headroom_wrapper_available omxh; then
+      command omxh "$@"
+      return $?
+    fi
     if [ "${OMX_DEFAULT_FLAGS:-1}" != "0" ] && { [ $# -eq 0 ] || [[ "$1" == -* ]]; }; then
       command omx --direct --xhigh --madmax "$@"
     else
@@ -106,6 +178,66 @@ fi
 # Symlinked from dotfiles/company/configs/zshrc-overlay.sh by company/install.sh.
 # Used for shell hooks that should only run on company machines (e.g. Codex HUD).
 [ -f "$HOME/.company.zshrc.sh" ] && . "$HOME/.company.zshrc.sh"
+
+# Company overlays may define their own agent functions (for example Codex HUD).
+# Re-apply the Headroom entrypoint as the outermost wrapper, but preserve the
+# overlay function as the fallback when Headroom is disabled or unavailable.
+if typeset -f claude >/dev/null; then
+  functions[__dotfiles_claude_base]="${functions[claude]}"
+fi
+if typeset -f codex >/dev/null; then
+  functions[__dotfiles_codex_base]="${functions[codex]}"
+fi
+if typeset -f omx >/dev/null; then
+  functions[__dotfiles_omx_base]="${functions[omx]}"
+fi
+
+if command -v claude &>/dev/null || typeset -f claude >/dev/null; then
+  claude() {
+    if __headroom_default_enabled claude && __headroom_wrapper_available claudeh; then
+      local -a extra
+      if command -v serena &>/dev/null; then
+        local override
+        override="$(serena prompts print-cc-system-prompt-override 2>/dev/null)"
+        [ -n "$override" ] && extra+=(--system-prompt="$override")
+      fi
+      command claudeh ${extra[@]+"${extra[@]}"} "$@"
+    elif typeset -f __dotfiles_claude_base >/dev/null; then
+      __dotfiles_claude_base "$@"
+    else
+      command claude "$@"
+    fi
+  }
+fi
+
+if command -v codex &>/dev/null || typeset -f codex >/dev/null; then
+  codex() {
+    if __headroom_default_enabled codex && __headroom_wrapper_available codexh; then
+      command codexh "$@"
+    elif typeset -f __dotfiles_codex_base >/dev/null; then
+      __dotfiles_codex_base "$@"
+    else
+      command codex "$@"
+    fi
+  }
+fi
+
+if command -v omx &>/dev/null || typeset -f omx >/dev/null; then
+  omx() {
+  if __dotfiles_omx_hud_watch_guard "$@"; then
+    return 0
+  fi
+    if __headroom_default_enabled omx && __headroom_wrapper_available omxh; then
+      command omxh "$@"
+    elif typeset -f __dotfiles_omx_base >/dev/null; then
+      __dotfiles_omx_base "$@"
+    elif [ "${OMX_DEFAULT_FLAGS:-1}" != "0" ] && { [ $# -eq 0 ] || [[ "$1" == -* ]]; }; then
+      command omx --direct --xhigh --madmax "$@"
+    else
+      command omx "$@"
+    fi
+  }
+fi
 
 # ── Tailscale dev-server bind helpers ──
 # Returns Tailscale IPv4 address, or empty string if not connected.
@@ -165,6 +297,33 @@ alias gd="git diff"
 alias gl="git log --oneline --graph"
 alias gp="git push"
 alias gc="git commit"
+alias wtcode="agent-worktrees --open"
+alias wturl="agent-worktree-url"
+alias wtlink="agent-worktree-link"
+alias wtdeck="agent-worktree-cmux"
+alias wtdeckall="agent-worktrees-cmux"
 
 # Enable 1h prompt-cache TTL (vs 5min default) for Anthropic API
 export ENABLE_PROMPT_CACHING_1H=1
+# >>> rtk token-saving aliases >>>
+# Non-overriding RTK shortcuts for token-optimized agent/dev output.
+# Use raw commands when exact output is required.
+alias rls='rtk ls'
+alias rtree='rtk tree'
+alias rgrep='rtk grep'
+alias rgit='rtk git'
+alias rgh='rtk gh'
+alias rcurl='rtk curl'
+alias rwget='rtk wget'
+alias rtsc='rtk tsc'
+alias rpnpm='rtk pnpm'
+alias rnpm='rtk npm'
+alias rnpx='rtk npx'
+alias rtest='rtk test'
+alias rerr='rtk err'
+# <<< rtk token-saving aliases <<<
+# >>> headroom token-saving config >>>
+# Enable Headroom AST-aware code compression for future proxy/wrap launches.
+# Keep mode unset here so existing launchers can choose cache vs token explicitly.
+export HEADROOM_CODE_AWARE_ENABLED=1
+# <<< headroom token-saving config <<<

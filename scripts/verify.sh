@@ -223,7 +223,8 @@ assert claude['name'] == 'local-skills'
 assert claude.get('skills') == './skills/'
 assert codex['name'] == 'local-skills'
 assert codex.get('skills') == './skills/'
-assert Path('plugins/local-skills/skills/dotfiles-verify/SKILL.md').exists()
+for skill in ['dotfiles-verify', 'context-check', 'handover']:
+    assert Path('plugins/local-skills/skills', skill, 'SKILL.md').exists()
 print('validated local-skills plugin manifests')
 PY
 

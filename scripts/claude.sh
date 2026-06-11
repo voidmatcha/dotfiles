@@ -243,7 +243,6 @@ PLUGINS=(
   "autoresearch@autoresearch"                         # bounded metric loop + 13 Claude commands
   "claude-hud@claude-hud"                             # statusline context/tool/agent/todo HUD
   "skills-janitor@skills-janitor"                     # skill inventory, dupes, token value
-  "codex@openai-codex"
   "superpowers@claude-plugins-official"
   "rust-analyzer-lsp@claude-plugins-official"
   "fakechat@claude-plugins-official"

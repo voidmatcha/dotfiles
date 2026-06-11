@@ -19,7 +19,9 @@ model_auto_compact_token_limit = 200000
 # (each setting below is verified against the official Codex docs linked inline.)
 
 model = "gpt-5.5"
-model_provider = "openai"
+# Leave model_provider unset so Codex uses its OpenAI default. Headroom injects
+# a temporary provider at runtime; keeping a template-level provider here creates
+# a duplicate TOML key during wrapped Codex/OMX launches.
 approval_policy = "on-request"
 sandbox_mode = "workspace-write"
 
@@ -105,7 +107,8 @@ max_depth = 2
 # OMX TUI StatusLine (Codex CLI v0.101.0+)
 [tui]
 # omx:managed-status-line
-status_line = ["model-with-reasoning", "git-branch", "context-remaining", "total-input-tokens", "total-output-tokens", "five-hour-limit", "weekly-limit"]
+status_line = ["thread-title", "model-with-reasoning", "git-branch", "context-remaining", "total-input-tokens", "total-output-tokens", "five-hour-limit", "weekly-limit"]
+terminal_title = ["thread-title", "project-name", "git-branch"]
 
 # ============================================================
 # End oh-my-codex

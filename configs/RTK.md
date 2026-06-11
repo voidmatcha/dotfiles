@@ -26,4 +26,4 @@ which rtk             # Verify correct binary
 All other commands are automatically rewritten by the Claude Code hook.
 Example: `git status` → `rtk git status` (transparent, 0 tokens overhead)
 
-Refer to CLAUDE.md for full command reference.
+Shared rules live in `~/.agent/AGENTS.md`; extended tool routing lives in this dotfiles repo's `docs/agent-reference.md`.

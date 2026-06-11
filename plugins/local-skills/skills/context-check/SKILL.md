@@ -30,10 +30,16 @@ Use this skill as an advisory context/cache gate. It should not mutate session s
 
 ## Tool priority
 
-- **Claude with owl installed**: trust owl cache expiry/idle warnings first.
+- **Headroom active (`claudeh`/`codexh`/`omxh` or default shell wrappers)**:
+  treat Headroom as the primary token/cache mitigation layer. Do not compact or
+  clear merely because owl is unavailable; use owl only as an extra Claude-side
+  cache signal when installed.
+- **Claude with owl installed**: trust owl cache expiry/idle warnings first when
+  Headroom is not active; when Headroom is active, owl warnings are advisory and
+  lower confidence by themselves.
 - **Claude/Codex/OMX with agentsview**: use agentsview for local session-shape and usage evidence; treat it as lower confidence for the current live prompt than owl.
 - **ccusage**: useful historical spend signal, not a current-context oracle; run only when explicitly needed (`--include-ccusage`).
-- **No tools available**: fall back to local hook state, prompt size, transcript size, idle time, and turn count.
+- **No owl/tools available**: fall back to Headroom status when present plus local hook state, prompt size, transcript size, idle time, and turn count.
 
 ## Availability
 

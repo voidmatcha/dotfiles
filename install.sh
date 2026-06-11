@@ -133,7 +133,9 @@ link_file "$DOTFILES_DIR/configs/AGENTS.md" "$HOME/.cursor/rules/AGENTS.md"
 
 # Codex CLI
 ensure_dir "$HOME/.codex"
-link_file "$DOTFILES_DIR/configs/codex/config.toml" "$HOME/.codex/config.toml"
+# Codex config is a mutable local file. scripts/codex.sh copies the portable
+# template and preserves machine-local project/plugin/hook state; do not symlink
+# it or Codex/Headroom runtime writes can dirty this repo.
 
 RTK_CONFIG_DIR="$HOME/Library/Application Support/rtk"
 ensure_dir "$RTK_CONFIG_DIR"

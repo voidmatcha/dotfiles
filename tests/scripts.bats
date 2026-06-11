@@ -133,6 +133,338 @@ SH
   [ ! -e "$home/.codex" ]
 }
 
+@test "headroom installer dry-run installs CLI and wrapper entrypoints" {
+  home="$TMPDIR_TEST/headroom-home"
+  mkdir -p "$home"
+
+  run env HOME="$home" DOTFILES_DIR="$REPO_ROOT" DRY_RUN=true PATH="/usr/bin:/bin" \
+    bash "$REPO_ROOT/scripts/headroom.sh"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"uv tool install -p 3.13 'headroom-ai[proxy,mcp,code]'"* ]]
+  [[ "$output" == *"ln -sf $REPO_ROOT/scripts/headroom-agent.sh -> $home/.local/bin/claudeh"* ]]
+  [[ "$output" == *"ln -sf $REPO_ROOT/scripts/headroom-agent.sh -> $home/.local/bin/codexh"* ]]
+  [[ "$output" == *"ln -sf $REPO_ROOT/scripts/headroom-agent.sh -> $home/.local/bin/omxh"* ]]
+  [ ! -e "$home/.local/bin" ]
+}
+
+@test "statusline installer dry-run installs session-label helpers" {
+  home="$TMPDIR_TEST/statusline-home"
+  mkdir -p "$home"
+
+  run env HOME="$home" DOTFILES_DIR="$REPO_ROOT" DRY_RUN=true PATH="/usr/bin:/bin" \
+    bash "$REPO_ROOT/scripts/statusline.sh"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"ln -sf $REPO_ROOT/scripts/agent-session-label.sh -> $home/.local/bin/agent-session-label"* ]]
+  [[ "$output" == *"ln -sf $REPO_ROOT/scripts/claude-statusline.sh -> $home/.local/bin/claude-statusline"* ]]
+  [[ "$output" == *"ln -sf $REPO_ROOT/scripts/worktree-workspace.sh -> $home/.local/bin/agent-worktrees"* ]]
+  [[ "$output" == *"ln -sf $REPO_ROOT/scripts/worktree-workspace.sh -> $home/.local/bin/agent-worktrees-cmux"* ]]
+  [[ "$output" == *"ln -sf $REPO_ROOT/scripts/worktree-workspace.sh -> $home/.local/bin/agent-worktree-url"* ]]
+  [[ "$output" == *"ln -sf $REPO_ROOT/scripts/worktree-workspace.sh -> $home/.local/bin/agent-worktree-link"* ]]
+  [[ "$output" == *"ln -sf $REPO_ROOT/scripts/worktree-workspace.sh -> $home/.local/bin/agent-worktree-cmux"* ]]
+  [ ! -e "$home/.local/bin" ]
+}
+
+
+@test "worktree workspace helper renders code-server workspace and branch URLs" {
+  repo="$TMPDIR_TEST/wt-main"
+  feature="$TMPDIR_TEST/wt-feature"
+  mkdir -p "$repo"
+  git -C "$repo" init -q
+  git -C "$repo" config user.name "Test User"
+  git -C "$repo" config user.email "test@example.com"
+  echo "main" > "$repo/README.md"
+  git -C "$repo" add README.md
+  git -C "$repo" commit -qm init
+  git -C "$repo" branch feature/demo
+  git -C "$repo" worktree add -q "$feature" feature/demo
+
+  run env XDG_CACHE_HOME="$TMPDIR_TEST/cache" CODE_SERVER_BASE_URL="http://127.0.0.1:8088" \
+    bash "$REPO_ROOT/scripts/worktree-workspace.sh" --repo "$repo" --print
+
+  [ "$status" -eq 0 ]
+  workspace="$output"
+  [ -f "$workspace" ]
+
+  python3 - "$workspace" "$repo" "$feature" <<'PY'
+import json
+import sys
+from pathlib import Path
+workspace, repo, feature = sys.argv[1:]
+data = json.load(open(workspace))
+paths = {str(Path(folder["path"]).resolve()) for folder in data["folders"]}
+names = " ".join(folder["name"] for folder in data["folders"])
+assert str(Path(repo).resolve()) in paths
+assert str(Path(feature).resolve()) in paths
+assert "feature/demo" in names
+assert data["settings"]["git.openRepositoryInParentFolders"] == "always"
+PY
+
+  run env XDG_CACHE_HOME="$TMPDIR_TEST/cache" CODE_SERVER_BASE_URL="http://127.0.0.1:8088" \
+    bash "$REPO_ROOT/scripts/worktree-workspace.sh" --repo "$repo" --folder-url feature/demo
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == "http://127.0.0.1:8088/?folder="* ]]
+  [[ "$output" == *"wt-feature"* ]]
+}
+
+
+@test "worktree cmux helper opens code-server URL in cmux browser split" {
+  repo="$TMPDIR_TEST/cmux-wt-main"
+  feature="$TMPDIR_TEST/cmux-wt-feature"
+  bin="$TMPDIR_TEST/cmux-bin"
+  mkdir -p "$repo" "$bin"
+  git -C "$repo" init -q
+  git -C "$repo" config user.name "Test User"
+  git -C "$repo" config user.email "test@example.com"
+  echo "main" > "$repo/README.md"
+  git -C "$repo" add README.md
+  git -C "$repo" commit -qm init
+  git -C "$repo" branch feature/demo
+  git -C "$repo" worktree add -q "$feature" feature/demo
+
+  cat > "$bin/cmux" <<'SH'
+#!/bin/sh
+printf '%s\n' "$*" > "$TMPDIR_TEST/cmux-args.txt"
+SH
+  chmod +x "$bin/cmux"
+
+  run env TMPDIR_TEST="$TMPDIR_TEST" XDG_CACHE_HOME="$TMPDIR_TEST/cache" \
+    CODE_SERVER_BASE_URL="http://127.0.0.1:8088" PATH="$bin:/usr/bin:/bin" \
+    bash "$REPO_ROOT/scripts/worktree-workspace.sh" --repo "$repo" --cmux-folder feature/demo
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == "http://127.0.0.1:8088/?folder="* ]]
+  args="$(cat "$TMPDIR_TEST/cmux-args.txt")"
+  [[ "$args" == browser\ open-split\ http://127.0.0.1:8088/?folder=* ]]
+  [[ "$args" == *"--focus true"* ]]
+}
+
+@test "code-server setup dry-run installs worktree-focused extensions" {
+  home="$TMPDIR_TEST/code-server-home"
+  mkdir -p "$home"
+  run env HOME="$home" DOTFILES_DIR="$REPO_ROOT" DRY_RUN=true PATH="/usr/bin:/bin" \
+    bash "$REPO_ROOT/scripts/code-server.sh"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"code-server --install-extension jackiotyu.git-worktree-manager"* ]]
+  [[ "$output" == *"code-server --install-extension eamodio.gitlens"* ]]
+  [[ "$output" == *"code-server --install-extension mhutchie.git-graph"* ]]
+}
+
+@test "agent session label prefers explicit, cmux, then tmux labels" {
+  run env AGENT_SESSION_LABEL="manual session" bash "$REPO_ROOT/scripts/agent-session-label.sh"
+  [ "$status" -eq 0 ]
+  [ "$output" = "manual session" ]
+
+  run env -i PATH="/usr/bin:/bin" HOME="$HOME" PWD="$REPO_ROOT" \
+    CMUX_WORKSPACE_ID="workspace:5" CMUX_SURFACE_ID="surface:10" \
+    bash "$REPO_ROOT/scripts/agent-session-label.sh"
+  [ "$status" -eq 0 ]
+  [ "$output" = "cmux:workspace:5/surface:10" ]
+
+  run env -i PATH="/usr/bin:/bin" HOME="$HOME" PWD="$REPO_ROOT" \
+    CMUX_WORKSPACE_ID="1B683630-1190-4466-A582-5901D3E08ADC" \
+    CMUX_SURFACE_ID="A821A951-FF1F-4434-9F1F-36E452B85123" \
+    bash "$REPO_ROOT/scripts/agent-session-label.sh"
+  [ "$status" -eq 0 ]
+  [ "$output" = "cmux:1B683630/A821A951" ]
+
+  bin="$TMPDIR_TEST/fake-tmux-bin"
+  mkdir -p "$bin"
+  cat > "$bin/tmux" <<'SH'
+#!/bin/sh
+if [ "$1" = "display-message" ]; then
+  printf 'tmux-main:agents.2\n'
+fi
+SH
+  chmod +x "$bin/tmux"
+  run env -i PATH="$bin:/usr/bin:/bin" HOME="$HOME" PWD="$REPO_ROOT" TMUX="/tmp/tmux" \
+    bash "$REPO_ROOT/scripts/agent-session-label.sh"
+  [ "$status" -eq 0 ]
+  [ "$output" = "tmux:tmux-main:agents.2" ]
+}
+
+@test "Claude statusline prefixes existing HUD output with session label" {
+  base="$TMPDIR_TEST/base-statusline.sh"
+  cat > "$base" <<'SH'
+#!/bin/sh
+printf 'hud line 1\nhud line 2\n'
+SH
+  chmod +x "$base"
+
+  run env AGENT_SESSION_LABEL="cmux:workspace:5/surface:10" AGENT_STATUSLINE_BASE="$base" \
+    AGENT_STATUSLINE_WORKTREE_LINK=0 bash "$REPO_ROOT/scripts/claude-statusline.sh"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == "[cmux:workspace:5/surface:10] hud line 1"$'\n'"hud line 2" ]]
+}
+
+
+
+@test "graphify routing is shared, not Claude-only" {
+  grep -q '/graphify' "$REPO_ROOT/configs/AGENTS.md"
+  grep -q 'graphify skill' "$REPO_ROOT/configs/AGENTS.md"
+  ! grep -q 'graphify' "$REPO_ROOT/configs/CLAUDE.md"
+}
+
+@test "dev setup installs graphify for Claude and Codex" {
+  grep -q 'graphify install --platform claude' "$REPO_ROOT/scripts/dev.sh"
+  grep -q 'graphify install --platform codex' "$REPO_ROOT/scripts/dev.sh"
+  grep -q 'python3 -m pip install --user graphifyy' "$REPO_ROOT/scripts/dev.sh"
+  grep -q 'Claude/Codex skill' "$REPO_ROOT/README.md"
+}
+
+@test "dev setup installs PyYAML for Codex plugin validation" {
+  grep -q 'python3 -m pip install --user PyYAML' "$REPO_ROOT/scripts/dev.sh"
+  grep -q 'import yaml' "$REPO_ROOT/scripts/dev.sh"
+  grep -q 'Codex plugin validator dependency' "$REPO_ROOT/scripts/dev.sh"
+}
+
+@test "shared references point to the compact AGENTS and detailed docs" {
+  grep -q "docs/agent-reference.md" "$REPO_ROOT/scripts/dev.sh"
+  grep -q "docs/agent-reference.md" "$REPO_ROOT/configs/RTK.md"
+  ! grep -q 'Refer to CLAUDE.md for full command reference' "$REPO_ROOT/configs/RTK.md"
+  ! grep -q 'configs/AGENTS.md for the one-liners' "$REPO_ROOT/scripts/dev.sh"
+}
+
+@test "zshrc defaults agent entrypoints through Headroom with opt-out" {
+  zshrc="$REPO_ROOT/configs/.zshrc"
+
+  grep -q 'HEADROOM_DEFAULT:-1' "$zshrc"
+  grep -q 'HEADROOM_DISABLE' "$zshrc"
+  grep -q 'HEADROOM_CLAUDE:-1' "$zshrc"
+  grep -q 'HEADROOM_CODEX:-1' "$zshrc"
+  grep -q 'HEADROOM_OMX:-1' "$zshrc"
+  grep -q 'command claudeh' "$zshrc"
+  grep -q 'command codexh' "$zshrc"
+  grep -q 'command omxh' "$zshrc"
+  grep -q 'command omx --direct --xhigh --madmax' "$zshrc"
+  grep -q '__dotfiles_codex_base' "$zshrc"
+  grep -q 'missing owl-rs should not' "$zshrc"
+}
+
+@test "dev setup runs headroom installer before agent-browser" {
+  headroom_line=$(grep -n 'scripts/headroom.sh' "$REPO_ROOT/scripts/dev.sh" | head -1 | cut -d: -f1)
+  statusline_line=$(grep -n 'scripts/statusline.sh' "$REPO_ROOT/scripts/dev.sh" | head -1 | cut -d: -f1)
+  agent_browser_line=$(grep -n 'Checking agent-browser' "$REPO_ROOT/scripts/dev.sh" | head -1 | cut -d: -f1)
+
+  [ -n "$headroom_line" ]
+  [ -n "$statusline_line" ]
+  [ -n "$agent_browser_line" ]
+  [ "$headroom_line" -lt "$agent_browser_line" ]
+  [ "$headroom_line" -lt "$statusline_line" ]
+  [ "$statusline_line" -lt "$agent_browser_line" ]
+}
+
+@test "omxh wrapper protects cmux-style concurrent sessions" {
+  script="$REPO_ROOT/scripts/headroom-agent.sh"
+
+  grep -q 'headroom-agent/codex-config' "$script"
+  grep -q 'managed-by-headroom-agent' "$script"
+  grep -q 'neutralized-model-provider' "$script"
+  grep -q 'neutralize_top_level_model_provider' "$script"
+  grep -q 'restore_top_level_model_provider' "$script"
+  grep -q 'active_session_count' "$script"
+  grep -q 'another Codex-config Headroom session is already using port' "$script"
+  grep -q 'trap cleanup EXIT INT TERM HUP' "$script"
+  grep -q '/livez' "$script"
+  grep -q 'target.*!=.*claude' "$script"
+  grep -q -- '--no-serena' "$script"
+  grep -q 'custom CODEX_HOME' "$script"
+  grep -q 'headroom unwrap codex --port "$port" --no-stop-proxy' "$script"
+  grep -q 'codex) run_codex_config_wrapped codex codex' "$script"
+  grep -q 'omx) run_codex_config_wrapped omx omx' "$script"
+}
+
+@test "headroom codex wrapper neutralizes duplicate template provider during launch" {
+  home="$TMPDIR_TEST/headroom-provider-home"
+  bin="$TMPDIR_TEST/headroom-provider-bin"
+  mkdir -p "$home/.codex" "$bin"
+  cat > "$home/.codex/config.toml" <<'TOML'
+model = "gpt-5.5"
+model_provider = "openai"
+
+[features]
+goals = true
+TOML
+
+  cat > "$bin/headroom" <<'SH'
+#!/bin/sh
+case "$1" in
+  proxy)
+    sleep 120
+    ;;
+  wrap)
+    # Simulate prepare-only success. The wrapper owns provider neutralization.
+    exit 0
+    ;;
+  unwrap)
+    exit 0
+    ;;
+esac
+exit 0
+SH
+  cat > "$bin/codex" <<'SH'
+#!/bin/sh
+if grep -q '^model_provider = "openai"' "$HOME/.codex/config.toml"; then
+  echo "provider duplicate was not neutralized" >&2
+  exit 42
+fi
+grep -q 'disabled by headroom-agent' "$HOME/.codex/config.toml"
+SH
+  chmod +x "$bin/headroom" "$bin/codex"
+
+  run env HOME="$home" PATH="$bin:/usr/bin:/bin" HEADROOM_WAIT_SECONDS=0 HEADROOM_CODEX_MCP=0 \
+    bash "$REPO_ROOT/scripts/headroom-agent.sh" codex
+
+  [ "$status" -eq 0 ]
+  grep -q '^model_provider = "openai"' "$home/.codex/config.toml"
+  run grep -q 'disabled by headroom-agent' "$home/.codex/config.toml"
+  [ "$status" -eq 1 ]
+}
+
+@test "headroom omx wrapper does not duplicate default flags already supplied" {
+  home="$TMPDIR_TEST/headroom-omx-flags-home"
+  bin="$TMPDIR_TEST/headroom-omx-flags-bin"
+  mkdir -p "$home/.codex" "$bin"
+  cat > "$home/.codex/config.toml" <<'TOML'
+model = "gpt-5.5"
+TOML
+
+  cat > "$bin/headroom" <<'SH'
+#!/bin/sh
+case "$1" in
+  proxy) sleep 120 ;;
+  wrap|unwrap) exit 0 ;;
+esac
+exit 0
+SH
+  cat > "$bin/omx" <<'SH'
+#!/bin/sh
+printf '%s\n' "$*" > "$HOME/omx-args.txt"
+SH
+  chmod +x "$bin/headroom" "$bin/omx"
+
+  run env HOME="$home" PATH="$bin:/usr/bin:/bin" HEADROOM_WAIT_SECONDS=0 HEADROOM_OMX_MCP=0 \
+    bash "$REPO_ROOT/scripts/headroom-agent.sh" omx --direct --xhigh --madmax
+
+  [ "$status" -eq 0 ]
+  [ "$(cat "$home/omx-args.txt")" = "--direct --xhigh --madmax" ]
+}
+
+@test "context-check treats Headroom as primary and owl as optional" {
+  skill="$REPO_ROOT/plugins/local-skills/skills/context-check/SKILL.md"
+  script="$REPO_ROOT/plugins/local-skills/skills/context-check/scripts/context_check.py"
+
+  grep -q 'Headroom active' "$skill"
+  grep -q 'Do not compact or' "$skill"
+  grep -q 'owl-rs not found", "info"' "$script"
+  grep -q '_collect_headroom_signal' "$script"
+  grep -q 'HEADROOM_AGENT_ACTIVE' "$script"
+}
+
 @test "hermes dry-run does not execute version probe" {
   home="$TMPDIR_TEST/hermes-home"
   bin="$TMPDIR_TEST/bin"
@@ -301,8 +633,13 @@ SH
 @test "zshrc drops invalid C.UTF-8 locale on macOS" {
   grep -q 'LC_ALL:-.*C.UTF-8' "$REPO_ROOT/configs/.zshrc"
   grep -q 'LC_CTYPE:-.*C.UTF-8' "$REPO_ROOT/configs/.zshrc"
+  grep -Fq '"C.UTF-8" ]]; then' "$REPO_ROOT/configs/.zshrc"
   grep -q 'unset LC_ALL' "$REPO_ROOT/configs/.zshrc"
   grep -q 'unset LC_CTYPE' "$REPO_ROOT/configs/.zshrc"
+
+  if command -v zsh >/dev/null 2>&1; then
+    zsh -n "$REPO_ROOT/configs/.zshrc"
+  fi
 }
 
 @test "macos Touch ID sudo preserves existing sudo_local" {
@@ -502,7 +839,7 @@ from pathlib import Path
 
 cfg = tomllib.loads((Path('$REPO_ROOT') / 'configs/codex/config.toml').read_text())
 assert cfg['model'] == 'gpt-5.5'
-assert cfg['model_provider'] == 'openai'
+assert 'model_provider' not in cfg
 assert cfg['approval_policy'] == 'on-request'
 assert cfg['sandbox_mode'] == 'workspace-write'
 assert cfg['suppress_unstable_features_warning'] is True
@@ -513,6 +850,8 @@ assert cfg['notify'][8] == 'omx-notify'
 assert cfg['features']['goals'] is True
 assert cfg['features']['child_agents_md'] is True
 assert cfg['features']['multi_agent'] is True
+assert cfg['tui']['status_line'][0] == 'thread-title'
+assert cfg['tui']['terminal_title'] == ['thread-title', 'project-name', 'git-branch']
 yolo = cfg['profiles']['yolo']
 assert yolo['approval_policy'] == 'never'
 assert yolo['sandbox_mode'] == 'danger-full-access'
@@ -534,6 +873,12 @@ PY
 
   run grep -F 'npm install -g @openai/codex' "$REPO_ROOT/scripts/claude.sh"
   [ "$status" -eq 1 ]
+}
+
+@test "install leaves mutable Codex config to codex.sh" {
+  grep -q 'Codex config is a mutable local file' "$REPO_ROOT/install.sh"
+  ! grep -q 'link_file "$DOTFILES_DIR/configs/codex/config.toml"' "$REPO_ROOT/install.sh"
+  grep -q 'preserving machine-local sections' "$REPO_ROOT/scripts/codex.sh"
 }
 
 @test "repo-local local-skills plugin manifests expose skills" {
@@ -560,6 +905,23 @@ assert codex_market['plugins'][0]['source'] == {'source': 'local', 'path': './pl
 for skill in ['dotfiles-verify', 'agent-usage-audit', 'code-intel-doctor', 'work-scope-guard', 'source-provenance']:
     assert (root / 'plugins/local-skills/skills' / skill / 'SKILL.md').exists(), skill
 PY
+}
+
+@test "skills.sh installs Matt Pocock grill-me as standalone upstream skill" {
+  grep -q 'mattpocock/skills' "$REPO_ROOT/scripts/skills.sh"
+  grep -q 'GRILL_ME_SKILL_URL' "$REPO_ROOT/scripts/skills.sh"
+
+  home="$TMPDIR_TEST/upstream-skill-home"
+  codex_home="$TMPDIR_TEST/upstream-skill-codex"
+  mkdir -p "$home"
+
+  run env HOME="$home" CODEX_HOME="$codex_home" DOTFILES_DIR="$REPO_ROOT" DRY_RUN=true PATH="/usr/bin:/bin" bash "$REPO_ROOT/scripts/skills.sh" all
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"install upstream Claude skill grill-me"* ]]
+  [[ "$output" == *"install upstream Codex skill grill-me"* ]]
+  [ ! -e "$home/.claude" ]
+  [ ! -e "$codex_home" ]
 }
 
 @test "skills installer dry-run keeps local skills reversible" {
@@ -628,7 +990,8 @@ PY
 }
 
 @test "Claude plugin install settings and docs stay aligned" {
-  grep -q 'codex@openai-codex' "$REPO_ROOT/configs/claude-settings.json"
+  ! grep -q 'codex@openai-codex' "$REPO_ROOT/configs/claude-settings.json"
+  ! grep -q 'codex@openai-codex' "$REPO_ROOT/scripts/claude.sh"
   grep -q 'claude-hud@claude-hud' "$REPO_ROOT/configs/claude-settings.json"
   grep -q 'skills-janitor@skills-janitor' "$REPO_ROOT/configs/claude-settings.json"
   grep -q 'security-guidance@claude-plugins-official' "$REPO_ROOT/configs/claude-settings.json"
@@ -742,6 +1105,9 @@ for event in cfg['hooks']['PreToolUse']:
         commands.append(hook['command'])
 assert 'rtk hook claude' in commands
 assert '~/.claude/hooks/pretool-guard.sh' in commands
+expected_statusline = 'bash -lc \\'exec "' + chr(36) + 'HOME/.local/bin/claude-statusline"\\''
+assert cfg['statusLine']['command'] == expected_statusline
+assert cfg['statusLine']['refreshInterval'] == 5
 
 post_tool_commands = []
 for event in cfg['hooks']['PostToolUse']:
@@ -1018,11 +1384,21 @@ JSON
   grep -q 'configs/agents/git-master.md' "$REPO_ROOT/install.sh"
 }
 
-@test "AGENTS.md documents MCP budget and commit-trailer protocol" {
+@test "AGENTS.md stays compact while detailed routing lives in docs" {
   grep -q '<10 enabled' "$REPO_ROOT/configs/AGENTS.md"
+  grep -q "dotfiles repo's" "$REPO_ROOT/configs/AGENTS.md"
   grep -q 'Commit message protocol' "$REPO_ROOT/configs/AGENTS.md"
   grep -q 'Confidence:' "$REPO_ROOT/configs/AGENTS.md"
   grep -q 'Rejected:' "$REPO_ROOT/configs/AGENTS.md"
+  grep -q 'Tool routing' "$REPO_ROOT/docs/agent-reference.md"
+  grep -q 'Jina Reader' "$REPO_ROOT/docs/agent-reference.md"
+  grep -q 'codegraph' "$REPO_ROOT/docs/agent-reference.md"
+}
+
+@test "Claude wrapper documents the actual shared AGENTS import path" {
+  grep -Fqx '@~/.agent/AGENTS.md' "$REPO_ROOT/configs/CLAUDE.md"
+  grep -Fq '@~/.agent/AGENTS.md' "$REPO_ROOT/README.md"
+  grep -Fq 'imports ~/.agent/AGENTS.md' "$REPO_ROOT/README.md"
 }
 
 @test "codex.sh installs oh-my-codex (omx) alongside the Codex CLI" {

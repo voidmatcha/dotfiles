@@ -153,23 +153,34 @@ else
   fi
 fi
 
-# ── graphify (Claude Code skill: knowledge graph from any folder) ──
+# ── graphify (Claude/Codex skill: knowledge graph from any folder) ──
 info "Checking graphify..."
-if $DRY_RUN; then
-  info "[dry-run] pip install graphifyy && graphify install"
-elif command -v graphify &>/dev/null; then
-  info "graphify already installed"
-else
-  info "Installing graphify (pip)..."
-  # graphify ships under "graphifyy" on PyPI until the "graphify" name is reclaimed
-  if pip install --user graphifyy 2>/dev/null && command -v graphify &>/dev/null; then
-    if graphify install; then
-      info "graphify skill installed — use /graphify in Claude Code"
+install_graphify_platforms() {
+  local platform
+  for platform in claude codex; do
+    if graphify install --platform "$platform"; then
+      info "graphify skill installed for $platform — use /graphify for mixed docs/PDFs"
     else
-      warn "graphify install (skill registration) failed — try: graphify install"
+      warn "graphify install for $platform failed — try: graphify install --platform $platform"
     fi
+  done
+}
+
+if $DRY_RUN; then
+  info "[dry-run] python3 -m pip install --user graphifyy && graphify install --platform claude && graphify install --platform codex"
+else
+  if command -v graphify &>/dev/null; then
+    info "graphify already installed"
   else
-    warn "graphify install failed — try manually: pip install --user graphifyy && graphify install"
+    info "Installing graphify (python3 user site)..."
+    # graphify ships under "graphifyy" on PyPI until the "graphify" name is reclaimed
+    if ! python3 -m pip install --user graphifyy 2>/dev/null || ! command -v graphify &>/dev/null; then
+      warn "graphify install failed — try manually: python3 -m pip install --user graphifyy && graphify install --platform claude && graphify install --platform codex"
+    fi
+  fi
+
+  if command -v graphify &>/dev/null; then
+    install_graphify_platforms
   fi
 fi
 
@@ -232,6 +243,26 @@ else
   warn "rtk not installed (brew bundle should have it) — skipping"
 fi
 
+# ── headroom (default-capable wrappers for Claude/Codex/OMX compression) ──
+# Installs the Headroom CLI and wrapper entrypoints. configs/.zshrc uses them
+# automatically when available; HEADROOM_DEFAULT=0 falls back to direct tools.
+if [ -x "$DOTFILES_DIR/scripts/headroom.sh" ]; then
+  bash "$DOTFILES_DIR/scripts/headroom.sh"
+fi
+
+# ── agent statusline helpers ──
+# Claude's statusLine is command-based, so a small wrapper can prepend the
+# current cmux/tmux/session label while delegating to Owl / the existing HUD.
+# Codex exposes built-in `thread-title`/terminal-title fields in config.toml.
+if [ -x "$DOTFILES_DIR/scripts/statusline.sh" ]; then
+  bash "$DOTFILES_DIR/scripts/statusline.sh"
+fi
+
+# ── code-server browser IDE extensions ──
+if [ -x "$DOTFILES_DIR/scripts/code-server.sh" ]; then
+  bash "$DOTFILES_DIR/scripts/code-server.sh"
+fi
+
 # ── agent-browser (Vercel Labs) ──
 info "Checking agent-browser..."
 if $DRY_RUN; then
@@ -279,15 +310,25 @@ fi
 # ── feedparser (RSS/Atom parser, Python lib used inline by agents) ──
 info "Checking feedparser..."
 if $DRY_RUN; then
-  info "[dry-run] pip install --user feedparser"
+  info "[dry-run] python3 -m pip install --user feedparser"
 elif python3 -c "import feedparser" 2>/dev/null; then
   info "feedparser already installed"
 else
-  pip install --user feedparser 2>/dev/null || warn "feedparser install failed — try: pip install --user feedparser"
+  python3 -m pip install --user feedparser 2>/dev/null || warn "feedparser install failed — try: python3 -m pip install --user feedparser"
+fi
+
+# ── PyYAML (Codex plugin validator dependency) ──
+info "Checking PyYAML..."
+if $DRY_RUN; then
+  info "[dry-run] python3 -m pip install --user PyYAML"
+elif python3 -c "import yaml" 2>/dev/null; then
+  info "PyYAML already installed"
+else
+  python3 -m pip install --user PyYAML 2>/dev/null || warn "PyYAML install failed — try: python3 -m pip install --user PyYAML"
 fi
 
 # ── Social-platform read tools (Agent-Reach upstream tools) ──
-# Install the upstream CLIs directly. See configs/AGENTS.md for the one-liners
+# Install the upstream CLIs directly. See docs/agent-reference.md for the one-liners
 # agents should call.
 # - yt-dlp: YouTube/Bilibili/1800+ sites — installed via Brewfile (no auth)
 # - twitter-cli (public-clis/twitter-cli): X/Twitter via cookie auth — `twitter search/tweet/user`

@@ -14,12 +14,14 @@
     ],
     "defaultMode": "auto"
   },
+  "model": "claude-fable-5[1m]",
   "enableAllProjectMcpServers": false,
   "enabledMcpjsonServers": [
     "chrome-devtools",
     "serena",
     "codegraph",
-    "context7"
+    "context7",
+    "figma-developer-mcp"
   ],
   "disabledMcpjsonServers": [],
   "skillOverrides": {
@@ -62,6 +64,9 @@
     },
     {
       "serverName": "linkedin"
+    },
+    {
+      "serverName": "figma-developer-mcp"
     }
   ],
   "deniedMcpServers": [
@@ -129,12 +134,17 @@
     ]
   },
   "allowManagedMcpServersOnly": true,
+  "statusLine": {
+    "type": "command",
+    "command": "bash -lc 'exec \"$HOME/.local/bin/claude-statusline\"'",
+    "padding": 2,
+    "refreshInterval": 5
+  },
   "enabledPlugins": {
     "ralph-loop@claude-plugins-official": false,
     "autoresearch@autoresearch": false,
     "claude-hud@claude-hud": true,
     "skills-janitor@skills-janitor": true,
-    "codex@openai-codex": true,
     "session-wrap": true,
     "superpowers@claude-plugins-official": true,
     "rust-analyzer-lsp@claude-plugins-official": false,

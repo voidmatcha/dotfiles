@@ -31,6 +31,25 @@ cd ~/dotfiles
 ./install.sh
 ```
 
+
+## Browser worktree dashboard
+
+This setup uses code-server as the lightweight web UI for git worktrees. Run:
+
+```bash
+agent-worktrees --open
+```
+
+It generates a multi-root `.code-workspace` from `git worktree list` under
+`~/.cache/agent-worktrees/` and opens it in code-server. Branch-specific links are available with `agent-worktree-url [branch]`,
+OSC-8 HUD/statusline links with `agent-worktree-link [branch]`, and cmux-deck
+browser splits with `agent-worktree-cmux [branch]` / `agent-worktrees-cmux`.
+
+`scripts/code-server.sh` installs the worktree-oriented code-server extensions
+`jackiotyu.git-worktree-manager`, `eamodio.gitlens`, and `mhutchie.git-graph`.
+Details: `docs/worktree-code-server.md`.
+
+
 ## What gets installed
 
 **Homebrew + apps** — packages from `Brewfile`, including the usual CLI tools (ripgrep/fd/bat/eza/fzf/zoxide/atuin/direnv/jq/delta/tmux) plus `bats-core` for shell-script tests, `uv` (Python tool installer used by serena), `gettext` (envsubst, used by company overlay), `git-filter-repo` (surgical history rewrites), and `docker` CLI (no Docker Desktop — pair with Rancher Desktop on hosts with licensing restrictions).
@@ -47,7 +66,9 @@ cd ~/dotfiles
 - defuddle — free local web extraction tool for LLM-friendly Markdown
 - [serena](https://github.com/oraios/serena) — MCP server for semantic code navigation + **editing** (LSP-backed). Installed via `uv tool install`, registered in `configs/mcp.json` with `--context claude-code --project-from-cwd`. `.zshrc` wraps `claude` to inject serena's system-prompt-override (counters Opus's bias toward built-in tools)
 - [codegraph](https://github.com/colbymchenry/codegraph) — read-only MCP server for **exploring** large codebases via a pre-indexed knowledge graph (tree-sitter + SQLite, watcher auto-syncs on save). Installed via `npm install -g @colbymchenry/codegraph`. Complementary to serena: codegraph wins on "how does X reach Y" / architecture / framework-route mapping / iOS+RN cross-language bridges; serena wins on symbol-level edits and refactors. Run `codegraph init -i` once per project. Personal user-scope only — not in the NAVER MCP catalog, so excluded from company project-scope (`~/work/.mcp.json`).
-- [graphify](https://github.com/safishamsi/graphify) — Claude Code skill (`/graphify`) that turns any folder into a queryable knowledge graph. For pure code, codegraph is more specialized; reach for graphify on mixed content (PDFs, docs, papers). Installed via `pip install --user graphifyy && graphify install`
+- [headroom](https://github.com/chopratejas/headroom) — default context compression wrapper installed via `scripts/headroom.sh` (`uv tool install -p 3.13 'headroom-ai[proxy,mcp,code]'`). When `headroom` + wrapper symlinks exist, `.zshrc` routes `claude`, `codex`, and `omx` through Headroom automatically; explicit `claudeh`, `codexh`, and `omxh` remain available. Bypass with `HEADROOM_DEFAULT=0`, per-tool `HEADROOM_CLAUDE=0` / `HEADROOM_CODEX=0` / `HEADROOM_OMX=0`, or `command claude|codex|omx`. `codexh`/`omxh` share a lock/refcount around Codex's default `~/.codex/config.toml` Headroom provider so the config is only unwrapped after the last wrapped Codex/OMX session exits; the tracked Codex template intentionally leaves `model_provider` unset because Headroom injects a temporary provider at runtime. Default `HEADROOM_MODE=cache` preserves provider prefix-cache behavior; set `HEADROOM_MODE=token` for maximum compression. Owl is optional; context-check treats missing `owl-rs` as advisory, not a blocker.
+- Agent status labels — `scripts/statusline.sh` installs `~/.local/bin/agent-session-label` and `~/.local/bin/claude-statusline`. Claude Code's `statusLine` command prefixes the existing Owl/HUD output with a cmux workspace/surface label, tmux session/window/pane label, agent session ID, or project fallback. Codex/OMX uses built-in `thread-title` in `[tui].status_line` plus `terminal_title = ["thread-title", "project-name", "git-branch"]` so terminal/cmux tabs expose the active Codex thread.
+- [graphify](https://github.com/safishamsi/graphify) — Claude/Codex skill (`/graphify`) that turns any folder into a queryable knowledge graph. For pure code, codegraph is more specialized; reach for graphify on mixed content (PDFs, docs, papers). Installed via `python3 -m pip install --user graphifyy && graphify install --platform claude && graphify install --platform codex`
 - [agentsview](https://github.com/kenn-io/agentsview) — local-first Claude/Codex session browser and usage analytics dashboard. Installed via Homebrew cask (`brew install --cask agentsview`); CLI one-liners include `agentsview serve`, `agentsview usage daily --all --json`, `agentsview stats --format json`, and `agentsview session usage <id> --format json`.
 - [wrangler](https://developers.cloudflare.com/workers/wrangler/) — Cloudflare Workers/Pages/R2/D1 CLI
 - Social / web read CLIs (subset of what [agent-reach](https://github.com/Panniantong/Agent-Reach) bundles, installed directly to keep the dependency surface small):
@@ -56,7 +77,7 @@ cd ~/dotfiles
   - `rdt` (rdt-cli, via pipx) — Reddit search/read; `rdt login` once (Reddit requires auth since 2024)
   - `feedparser` (Python lib) — RSS/Atom feeds (blog/YouTube channel/GitHub releases/Hacker News etc.)
   - For any other URL, `curl https://r.jina.ai/<URL>` returns clean Markdown (Jina Reader, no install)
-  - See `configs/AGENTS.md` for exact one-liners agents should call.
+  - See `docs/agent-reference.md` for exact one-liners agents should call.
 - MCP servers wired up by `configs/mcp.json` (registered via `claude mcp add-json --scope user`):
   - **chrome-devtools** — browser control
   - **serena** — semantic code intelligence (LSP edit/refactor)
@@ -72,19 +93,19 @@ cd ~/dotfiles
 
 **Claude Code:**
 - Install — native build via `scripts/claude.sh`, which downloads the official `claude.ai/install.sh` (to `~/.local`) and runs it from disk (no curl-pipe-bash); thereafter it self-updates with `claude update`. Deliberately **not** Homebrew — the cask lags upstream and gets shadowed by `~/.local/bin` on PATH, so a brew-installed `claude` is never the one that actually runs.
-- Skills — agent-skills, ai-slop-cleaner, clarify, code-review, doc-coauthoring, e2e-skills, frontend-design, humanizer, im-not-ai, internal-comms, karpathy-guidelines, mcp-builder, obsidian-skills, project-session-manager (`/oh-my-claudecode:psm`), security-best-practices, skill-creator, ui-clone-skills, webapp-testing, plus repo-local skills (`dotfiles-verify`, `agent-usage-audit`, `code-intel-doctor`, `work-scope-guard`, `context-check`, `source-provenance`, `cmux-handoff-runner`, `handover`, `agent-reap`) exposed from `plugins/local-skills/skills/` via `scripts/skills.sh`
+- Skills — agent-skills, ai-slop-cleaner, clarify, code-review, doc-coauthoring, e2e-skills, frontend-design, humanizer, im-not-ai, internal-comms, karpathy-guidelines, mcp-builder, obsidian-skills, project-session-manager (`/oh-my-claudecode:psm`), security-best-practices, skill-creator, ui-clone-skills, webapp-testing, Matt Pocock's upstream `grill-me` installed as a pinned standalone skill by `scripts/skills.sh`, plus repo-local skills (`dotfiles-verify`, `agent-usage-audit`, `code-intel-doctor`, `work-scope-guard`, `context-check`, `source-provenance`, `cmux-handoff-runner`, `handover`, `agent-reap`) exposed from `plugins/local-skills/skills/` via `scripts/skills.sh`
 - Local agents — scout, critic, debugger, test-engineer, security-reviewer, and git-master are symlinked from `configs/agents/` into `~/.claude/agents/` so core review/debug/test/git lanes work even before optional plugin marketplaces are available.
-- Plugins (enabled by default) — `local-skills@dotfiles-local` (this repo as a local Claude skill plugin; Codex gets the same repo-local skills through `scripts/skills.sh codex` symlinks), [claude-hud@claude-hud](https://github.com/jarrodwatts/claude-hud) (context/tool/agent/todo statusline; run `/claude-hud:setup` once; personal machines only), [skills-janitor@skills-janitor](https://github.com/khendzel/skills-janitor) (skill inventory, duplicates, token value, cleanup), [codex@openai-codex](https://github.com/openai/codex-plugin-cc) (delegate to / review with the local Codex CLI from inside Claude Code), security-guidance, superpowers, claude-md-management (`/claude-md-management:revise-claude-md` + `claude-md-improver` audit skill), hookify, session-wrap, [claude-mem@thedotmack](https://github.com/thedotmack/claude-mem) (persistent memory + cross-session search), plus comprehensive-review and documentation-generation from the [wshobson/agents](https://github.com/wshobson/agents) marketplace. Plugin slash command names follow each plugin's manifest: many use `/<plugin-name>:<command>`; standalone skills (`/graphify`, etc.) don't take the prefix.
+- Plugins (enabled by default) — `local-skills@dotfiles-local` (this repo as a local Claude skill plugin; Codex gets the same repo-local skills through `scripts/skills.sh codex` symlinks), [claude-hud@claude-hud](https://github.com/jarrodwatts/claude-hud) (context/tool/agent/todo statusline; run `/claude-hud:setup` once; personal machines only), [skills-janitor@skills-janitor](https://github.com/khendzel/skills-janitor) (skill inventory, duplicates, token value, cleanup), security-guidance, superpowers, claude-md-management (`/claude-md-management:revise-claude-md` + `claude-md-improver` audit skill), hookify, session-wrap, [claude-mem@thedotmack](https://github.com/thedotmack/claude-mem) (persistent memory + cross-session search), plus comprehensive-review and documentation-generation from the [wshobson/agents](https://github.com/wshobson/agents) marketplace. Plugin slash command names follow each plugin's manifest: many use `/<plugin-name>:<command>`; standalone skills (`/graphify`, etc.) don't take the prefix.
 - Plugins (parked — installed/cached but `enabledPlugins: false`; largely superseded by native Claude Code features such as workflows/ultracode, `/simplify`, `/code-review`, `/security-review`, and worktrees; revive with one settings flip) — ralph-loop, [autoresearch@autoresearch](https://github.com/uditgoenka/autoresearch), [review-loop@hamel-review](https://github.com/hamelsmu/claude-review-loop) (`REVIEW_LOOP_CODEX_FLAGS="--sandbox workspace-write"` stays set so a revival never inherits the plugin's dangerous default), rust-analyzer-lsp, fakechat, vercel, session-report, and the remaining [wshobson/agents](https://github.com/wshobson/agents) packs (javascript-typescript, python-development, frontend-mobile-development, security-scanning, unit-testing, tdd-workflows, git-pr-workflows, error-debugging, ui-design, accessibility-compliance, content-marketing, seo-*).
 - Hooks — `rtk hook claude` (in-place PreToolUse hook registered via `rtk init --global`; compresses Bash output 60–90%), pretool-guard (structured PreToolUse deny for risky Bash), skill-md-edit-warn (PostToolUse reminder after editing `SKILL.md`), work-scope-guard (SessionStart advisory when cwd is under configured work roots), context-check (UserPromptSubmit advisory for continue/compact/clear/handover pressure; never auto-clears), plus security-guidance plugin hooks (edit/stop security review; the Stop-hook code-review pass is disabled via `ENABLE_CODE_SECURITY_REVIEW=0`). Hooks from parked plugins (autoresearch, review-loop) stay dormant while those plugins are disabled.
 - MCP — chrome-devtools (browser control via Chrome DevTools Protocol), serena (semantic code intelligence, LSP edit/refactor), codegraph (read-only pre-indexed code graph for exploration), context7 (version-aware docs lookup). Defined in `configs/mcp.json`; `scripts/claude.sh` registers each entry via `claude mcp add-json --scope user` (writes to `~/.claude.json`, not the older `.mcp.json` symlink path), while Claude settings pin the approved managed servers.
-- Codex CLI — first-class `scripts/codex.sh` setup owns `@openai/codex` install/auth, installs the official cmux Codex skill plus repo-local skills into `~/.codex/skills/` (including `$context-check` for continue/compact/clear/handover advice), and copies the portable `configs/codex/config.toml` template to `~/.codex/config.toml` so Codex's machine-local trust/runtime entries don't dirty the repo.
-- Token saving — settings calibrated against [spilist's checklist gist](https://gist.github.com/spilist/c468cbf1ed0ffc91100f813aabdcd520) (verified against official docs). Claude Code: `includeGitInstructions: false` drops the built-in git workflow instructions + git status snapshot from the system prompt. `autoInstallIdeExtension: false` keeps Claude Code as a pure terminal tool — no auto-install of VS Code/JetBrains extensions. Codex: `web_search = "disabled"` drops the web_search tool definition (re-enable per-invocation with `codex --search`). `[features].apps = false` drops ChatGPT-connector tool definitions.
+- Codex CLI — first-class `scripts/codex.sh` setup owns `@openai/codex` install/auth, installs the official cmux Codex skill, Matt Pocock's upstream `grill-me`, plus repo-local skills into `~/.codex/skills/` (including `$context-check` for continue/compact/clear/handover advice), and copies the portable `configs/codex/config.toml` template to `~/.codex/config.toml` so Codex's machine-local trust/runtime entries don't dirty the repo.
+- Token saving — settings calibrated against [spilist's checklist gist](https://gist.github.com/spilist/c468cbf1ed0ffc91100f813aabdcd520) (verified against official docs). Claude Code: `includeGitInstructions: false` drops the built-in git workflow instructions + git status snapshot from the system prompt. `autoInstallIdeExtension: false` keeps Claude Code as a pure terminal tool — no auto-install of VS Code/JetBrains extensions. Codex: `web_search = "disabled"` drops the web_search tool definition (re-enable per-invocation with `codex --search`). `[features].apps = false` drops ChatGPT-connector tool definitions. Session-level compression is on by default in interactive shells when Headroom is installed; use `HEADROOM_DEFAULT=0` or `command codex`/`command claude`/`command omx` for a direct session.
 
 **Codex CLI:**
 - CLI — `scripts/codex.sh` installs `@openai/codex` with npm when `codex` is missing; upstream also supports `brew install --cask codex`
-- Config — `configs/codex/config.toml` is copied to `~/.codex/config.toml`; it sets OpenAI `gpt-5.5`, `approval_policy = "on-request"`, `sandbox_mode = "workspace-write"`, `web_search = "disabled"`, `[features] apps = false`, `[features] goals = true`, and four `[mcp_servers.*]` entries: `chrome-devtools`, `serena` (LSP code intelligence), `codegraph` (read-only code graph), `context7` (current docs lookup)
-- Skills — `scripts/codex.sh` installs the cmux skill from `manaflow-ai/cmux` (`skills/cmux`) into `~/.codex/skills/cmux` and calls `scripts/skills.sh codex` to symlink repo-local skills into `~/.codex/skills/`.
+- Config — `configs/codex/config.toml` is copied to `~/.codex/config.toml`; it sets `gpt-5.5`, leaves `model_provider` unset so Codex uses its OpenAI default and Headroom can inject a temporary provider without duplicate TOML keys, sets `approval_policy = "on-request"`, `sandbox_mode = "workspace-write"`, `web_search = "disabled"`, `[features] apps = false`, `[features] goals = true`, and four `[mcp_servers.*]` entries: `chrome-devtools`, `serena` (LSP code intelligence), `codegraph` (read-only code graph), `context7` (current docs lookup)
+- Skills — `scripts/codex.sh` installs the cmux skill from `manaflow-ai/cmux` (`skills/cmux`) into `~/.codex/skills/cmux` and calls `scripts/skills.sh codex` to install pinned upstream standalone skills such as `grill-me` plus repo-local symlinks into `~/.codex/skills/`.
 - Profile — `codex --profile yolo` is available as an explicit opt-in profile (`approval_policy = "never"`, `sandbox_mode = "danger-full-access"`); don't use it outside an isolated environment
 - Auth — `codex.sh` checks `codex login status`; run `codex login` for ChatGPT sign-in, `codex login --device-auth` for a headless device-code flow, or `printenv OPENAI_API_KEY | codex login --with-api-key` for API-key auth
 
@@ -107,7 +128,7 @@ Installed services run at every login with `KeepAlive=true` (throttle 60s); `ser
   - Tailnet exposure: `tailscale serve --bg --https=8443 --set-path=/ http://localhost:8088`
   - Restart: `launchctl kickstart -k gui/$(id -u)/com.user.code-server`
 
-**Shared agent config** — canonical `~/.agent/AGENTS.md` with shared rules, also symlinked to `~/.cursor/rules/AGENTS.md` before Claude Code setup. `~/.claude/CLAUDE.md` imports it via `@AGENTS.md`.
+**Shared agent config** — canonical `~/.agent/AGENTS.md` with shared rules, also symlinked to `~/.cursor/rules/AGENTS.md` before Claude Code setup. `~/.claude/CLAUDE.md` imports it via `@~/.agent/AGENTS.md`.
 
 **Dotfiles symlinks** — zshrc, tmux.conf, gitconfig, gitignore_global, Claude Code settings, pretool-guard hook, skill-md-edit-warn hook, work-scope-guard hook. Codex config is copied as a mutable local file. `configs/mcp.json` is read by `scripts/claude.sh` for user-scope MCP registration.
 
@@ -135,6 +156,9 @@ dotfiles/
 │   ├── git.sh              # Git config + SSH keys
 │   ├── claude.sh           # Claude Code skills, plugins, tools
 │   ├── codex.sh            # Codex CLI config + cmux skill + auth prompt
+│   ├── headroom.sh         # Headroom CLI installer + claudeh/codexh/omxh symlinks
+│   ├── headroom-agent.sh   # Headroom wrapper dispatcher
+│   ├── statusline.sh       # Claude/Codex-visible session label helpers
 │   ├── skills.sh           # repo-local skills/plugin installer
 │   ├── verify.sh           # repo smoke verifier
 │   ├── lib/
@@ -153,8 +177,8 @@ dotfiles/
 │   ├── .gitconfig-personal
 │   ├── .gitconfig-work
 │   ├── .gitignore_global
-│   ├── AGENTS.md           # canonical agent rules (Claude + Cursor)
-│   ├── CLAUDE.md           # Claude Code wrapper (imports AGENTS.md)
+│   ├── AGENTS.md           # canonical shared agent rules
+│   ├── CLAUDE.md           # Claude Code wrapper (imports ~/.agent/AGENTS.md)
 │   ├── claude-settings.json
 │   ├── mcp.json            # shared Claude MCP servers
 │   ├── codex/
