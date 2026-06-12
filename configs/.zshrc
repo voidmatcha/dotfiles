@@ -36,6 +36,11 @@ export PATH="$HOME/.local/bin:$PATH"
 # prevent Headroom-backed entry.
 export HEADROOM_MODE="${HEADROOM_MODE:-cache}"
 
+# Keep plain OMX launches direct by default. Codex already exposes the
+# useful session details via [tui].status_line, so the managed OMX tmux
+# HUD pane is opt-in (`omx --tmux` or OMX_LAUNCH_POLICY=tmux).
+export OMX_LAUNCH_POLICY="${OMX_LAUNCH_POLICY:-direct}"
+
 __headroom_default_enabled() {
   local tool value
   tool="$1"
@@ -121,6 +126,39 @@ fi
 # Guard raw OMX HUD watches so repeated shells/commands do not stack panes/processes.
 # `omx hud --tmux` remains the preferred managed HUD surface; this only catches
 # accidental raw `omx hud --watch` invocations before they fork another watcher.
+
+__dotfiles_cleanup_orphan_hud_panes() {
+  [[ -n "${TMUX:-}" ]] || return 0
+  command -v tmux >/dev/null 2>&1 || return 0
+
+  local pane pid command cwd args envline leader
+  while IFS=$'\t' read -r pane pid command cwd; do
+    [[ -n "$pane" && -n "$pid" ]] || continue
+    args="$(ps -ww -o args= -p "$pid" 2>/dev/null)" || continue
+
+    if [[ "$args" == *"codex-hud"* ]]; then
+      [[ -n "${GP_CODEX_HUD_DISABLE:-}" ]] || continue
+      tmux kill-pane -t "$pane" >/dev/null 2>&1 || true
+      continue
+    fi
+
+    [[ "$args" == *"oh-my-codex/dist/cli/omx.js hud --watch"* ]] || continue
+    envline="$(ps eww -p "$pid" 2>/dev/null)" || envline=""
+    leader="$(printf '%s\n' "$envline" | sed -n 's/.*OMX_TMUX_HUD_LEADER_PANE=\([^ ]*\).*/\1/p' | head -1)"
+
+    # Keep a live, intentionally managed OMX HUD. Remove only panes whose leader
+    # disappeared, which is the common stale bottom-HUD case after OMX exits.
+    if [[ -n "$leader" ]] && tmux display-message -p -t "$leader" '#{pane_id}' >/dev/null 2>&1; then
+      continue
+    fi
+
+    tmux kill-pane -t "$pane" >/dev/null 2>&1 || true
+  done < <(tmux list-panes -a -F '#{pane_id}\t#{pane_pid}\t#{pane_current_command}\t#{pane_current_path}' 2>/dev/null)
+}
+
+__dotfiles_cleanup_orphan_hud_panes >/dev/null 2>&1 || true
+precmd_functions+=(__dotfiles_cleanup_orphan_hud_panes)
+
 __dotfiles_omx_hud_watch_running() {
   pgrep -f 'oh-my-codex/dist/cli/omx\.js hud --watch' >/dev/null 2>&1
 }
@@ -177,6 +215,11 @@ fi
 # ── Company-local shell overlay (optional) ──
 # Symlinked from dotfiles/company/configs/zshrc-overlay.sh by company/install.sh.
 # Used for shell hooks that should only run on company machines (e.g. Codex HUD).
+
+# The optional company overlay can source GP Codex HUD, which creates a
+# tmux split. Keep it off by default to avoid a second HUD beside Codex
+# built-in status_line/explicit OMX HUD. Set GP_CODEX_HUD_DISABLE= to opt in.
+export GP_CODEX_HUD_DISABLE="${GP_CODEX_HUD_DISABLE-1}"
 [ -f "$HOME/.company.zshrc.sh" ] && . "$HOME/.company.zshrc.sh"
 
 # Company overlays may define their own agent functions (for example Codex HUD).

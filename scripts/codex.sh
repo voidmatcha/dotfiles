@@ -107,6 +107,49 @@ install_codex_config() {
   fi
 }
 
+
+sanitize_codex_hooks_single_hud() {
+  local hooks_file="$CODEX_CONFIG_DIR/hooks.json"
+
+  [ -f "$hooks_file" ] || return 0
+
+  if $DRY_RUN; then
+    info "[dry-run] sanitize OMX native hook HUD owner env in $hooks_file"
+    return 0
+  fi
+
+  python3 - "$hooks_file" <<'PY'
+import json
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+data = json.loads(path.read_text())
+prefix = "env -u OMX_TMUX_HUD_OWNER -u OMX_TMUX_HUD_LEADER_PANE "
+leading_owner_env = re.compile(
+    r"^(?:env\s+(?:(?:-u\s+OMX_TMUX_HUD_OWNER|-u\s+OMX_TMUX_HUD_LEADER_PANE)\s+)+)+"
+)
+changed = 0
+
+for entries in data.get("hooks", {}).values():
+    for entry in entries:
+        for hook in entry.get("hooks", []):
+            command = hook.get("command")
+            if not isinstance(command, str) or "codex-native-hook.js" not in command:
+                continue
+            normalized = leading_owner_env.sub("", command)
+            next_command = prefix + normalized
+            if next_command != command:
+                hook["command"] = next_command
+                changed += 1
+
+if changed:
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+print(changed)
+PY
+}
+
 install_codex_cmux_skill() {
   local skills_dir="$CODEX_CONFIG_DIR/skills"
   local dest="$skills_dir/cmux"
@@ -270,9 +313,9 @@ if command -v omx &>/dev/null && ! $DRY_RUN; then
   warn "       omx exec --skip-git-repo-check -C . \"Reply with exactly OMX-EXEC-OK\""
   warn ""
   warn "  4) Recommended launch:"
-  warn "       omx --madmax --high          # default: managed detached tmux"
-  warn "       omx --direct --yolo          # one-off, no OMX tmux/HUD management"
-  warn "  Set OMX_LAUNCH_POLICY=direct|tmux|detached-tmux|auto for a persistent default."
+  warn "       omx --madmax --high          # default: direct, no OMX tmux/HUD pane"
+  warn "       omx --tmux --madmax --high   # opt-in managed tmux/HUD surface"
+  warn "  Set OMX_LAUNCH_POLICY=tmux|detached-tmux|auto to override the dotfiles direct default."
   echo ""
 fi
 
