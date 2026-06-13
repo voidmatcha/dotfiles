@@ -253,7 +253,7 @@ fi
 # ── agent statusline helpers ──
 # Claude's statusLine is command-based, so a small wrapper can prepend the
 # current cmux/tmux/session label while delegating to Owl / the existing HUD.
-# Codex exposes built-in `thread-title`/terminal-title fields in config.toml.
+# Codex status_line is config.toml-based; omit thread-title to avoid UUID fallback in HUD.
 if [ -x "$DOTFILES_DIR/scripts/statusline.sh" ]; then
   bash "$DOTFILES_DIR/scripts/statusline.sh"
 fi

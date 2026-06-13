@@ -108,6 +108,16 @@ install_codex_config() {
 }
 
 
+# WORKAROUND(oh-my-codex@0.18.11, 소스 검증 2026-06-12):
+# 업스트림 결함 — hooks/extensibility/dispatcher.js가 process.env를 통째 상속해
+# 네이티브 훅이 OMX_TMUX_HUD_OWNER/OMX_TMUX_HUD_LEADER_PANE을 물려받아 HUD pane을
+# 재생성할 수 있음 (team/tmux-session.js scrubTeamWorkerHudOwnershipEnv와 비대칭=누락).
+# 이 함수는 등록된 훅 명령에 `env -u ...` 접두를 박아 누수를 차단한다.
+# 한계: 스크립트 실행 시점의 훅만 수정 — OMX가 훅을 재등록하면 재실행 필요
+#       (그 빈틈은 .zshrc의 __dotfiles_cleanup_orphan_hud_panes가 보험).
+# 롤백 조건: 업스트림이 훅 dispatch 시 HUD env scrub을 넣으면 이 함수와 호출부,
+#            .zshrc의 precmd 정리(같은 날짜 WORKAROUND 주석)를 함께 제거할 것.
+# 업스트림 이슈: https://github.com/Yeachan-Heo/oh-my-codex/issues (TBD)
 sanitize_codex_hooks_single_hud() {
   local hooks_file="$CODEX_CONFIG_DIR/hooks.json"
 

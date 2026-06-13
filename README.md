@@ -34,21 +34,32 @@ cd ~/dotfiles
 
 ## Browser worktree dashboard
 
-This setup uses code-server as the lightweight web UI for git worktrees. Run:
-
-```bash
-agent-worktrees --open
-```
-
-It generates a multi-root `.code-workspace` from `git worktree list` under
-`~/.cache/agent-worktrees/` and opens it in code-server. Branch-specific links are available with `agent-worktree-url [branch]`,
-OSC-8 HUD/statusline links with `agent-worktree-link [branch]`, and cmux-deck
-browser splits with `agent-worktree-cmux [branch]` / `agent-worktrees-cmux`.
+This setup uses code-server as the lightweight web UI for git worktrees.
+Opening worktrees in browser VS Code (code-server) is handled by the
+`local-skills/worktree-open` skill — agents build the `?folder=`/`?workspace=`
+URL directly (no installed helper binaries), preferring the Tailscale Serve
+endpoint (`https://<tailnet-host-or-ip>:8443`) before local fallback.
 
 `scripts/code-server.sh` installs the worktree-oriented code-server extensions
 `jackiotyu.git-worktree-manager`, `eamodio.gitlens`, and `mhutchie.git-graph`.
-Details: `docs/worktree-code-server.md`.
 
+## Local preview server
+
+Generated HTML reports, static build outputs, exported dashboards, and other
+local browser artifacts are served by the repo-local `local-preview-server`
+skill. It starts a durable `python3 -m http.server` process, prefers tmux when
+available, binds to `0.0.0.0`, verifies the exact reported URL, and reports
+localhost plus LAN/Tailscale URLs without creating public internet exposure by
+default.
+
+Typical agent-facing commands:
+
+```bash
+plugins/local-skills/skills/local-preview-server/scripts/local-preview-server.sh start --path ./report.html --port 8377
+plugins/local-skills/skills/local-preview-server/scripts/local-preview-server.sh start --path ./dist
+plugins/local-skills/skills/local-preview-server/scripts/local-preview-server.sh status --port 8377
+plugins/local-skills/skills/local-preview-server/scripts/local-preview-server.sh stop --port 8377
+```
 
 ## What gets installed
 
@@ -67,7 +78,7 @@ Details: `docs/worktree-code-server.md`.
 - [serena](https://github.com/oraios/serena) — MCP server for semantic code navigation + **editing** (LSP-backed). Installed via `uv tool install`, registered in `configs/mcp.json` with `--context claude-code --project-from-cwd`. `.zshrc` wraps `claude` to inject serena's system-prompt-override (counters Opus's bias toward built-in tools)
 - [codegraph](https://github.com/colbymchenry/codegraph) — read-only MCP server for **exploring** large codebases via a pre-indexed knowledge graph (tree-sitter + SQLite, watcher auto-syncs on save). Installed via `npm install -g @colbymchenry/codegraph`. Complementary to serena: codegraph wins on "how does X reach Y" / architecture / framework-route mapping / iOS+RN cross-language bridges; serena wins on symbol-level edits and refactors. Run `codegraph init -i` once per project. Personal user-scope only — not in the NAVER MCP catalog, so excluded from company project-scope (`~/work/.mcp.json`).
 - [headroom](https://github.com/chopratejas/headroom) — default context compression wrapper installed via `scripts/headroom.sh` (`uv tool install -p 3.13 'headroom-ai[proxy,mcp,code]'`). When `headroom` + wrapper symlinks exist, `.zshrc` routes `claude`, `codex`, and `omx` through Headroom automatically; explicit `claudeh`, `codexh`, and `omxh` remain available. Bypass with `HEADROOM_DEFAULT=0`, per-tool `HEADROOM_CLAUDE=0` / `HEADROOM_CODEX=0` / `HEADROOM_OMX=0`, or `command claude|codex|omx`. `codexh`/`omxh` share a lock/refcount around Codex's default `~/.codex/config.toml` Headroom provider so the config is only unwrapped after the last wrapped Codex/OMX session exits; the tracked Codex template intentionally leaves `model_provider` unset because Headroom injects a temporary provider at runtime. Default `HEADROOM_MODE=cache` preserves provider prefix-cache behavior; set `HEADROOM_MODE=token` for maximum compression. Owl is optional; context-check treats missing `owl-rs` as advisory, not a blocker.
-- Agent status labels — `scripts/statusline.sh` installs `~/.local/bin/agent-session-label` and `~/.local/bin/claude-statusline`. Claude Code's `statusLine` command prefixes the existing Owl/HUD output with a cmux workspace/surface label, tmux session/window/pane label, agent session ID, or project fallback. Codex/OMX uses built-in `thread-title` in `[tui].status_line` plus `terminal_title = ["thread-title", "project-name", "git-branch"]` so terminal/cmux tabs expose the active Codex thread.
+- Agent status labels — `scripts/statusline.sh` installs `~/.local/bin/agent-session-label` and `~/.local/bin/claude-statusline`. Claude Code's `statusLine` command prefixes the existing Owl/HUD output with a cmux workspace/surface label, tmux session/window/pane label, agent session ID, or project fallback. Codex/OMX uses built-in status_line items without `thread-title` so UUID fallback session IDs do not leak into the HUD; terminal titles stay project/branch based.
 - [graphify](https://github.com/safishamsi/graphify) — Claude/Codex skill (`/graphify`) that turns any folder into a queryable knowledge graph. For pure code, codegraph is more specialized; reach for graphify on mixed content (PDFs, docs, papers). Installed via `python3 -m pip install --user graphifyy && graphify install --platform claude && graphify install --platform codex`
 - [agentsview](https://github.com/kenn-io/agentsview) — local-first Claude/Codex session browser and usage analytics dashboard. Installed via Homebrew cask (`brew install --cask agentsview`); CLI one-liners include `agentsview serve`, `agentsview usage daily --all --json`, `agentsview stats --format json`, and `agentsview session usage <id> --format json`.
 - [wrangler](https://developers.cloudflare.com/workers/wrangler/) — Cloudflare Workers/Pages/R2/D1 CLI
@@ -93,7 +104,7 @@ Details: `docs/worktree-code-server.md`.
 
 **Claude Code:**
 - Install — native build via `scripts/claude.sh`, which downloads the official `claude.ai/install.sh` (to `~/.local`) and runs it from disk (no curl-pipe-bash); thereafter it self-updates with `claude update`. Deliberately **not** Homebrew — the cask lags upstream and gets shadowed by `~/.local/bin` on PATH, so a brew-installed `claude` is never the one that actually runs.
-- Skills — agent-skills, ai-slop-cleaner, clarify, code-review, doc-coauthoring, e2e-skills, frontend-design, humanizer, im-not-ai, internal-comms, karpathy-guidelines, mcp-builder, obsidian-skills, project-session-manager (`/oh-my-claudecode:psm`), security-best-practices, skill-creator, ui-clone-skills, webapp-testing, Matt Pocock's upstream `grill-me` installed as a pinned standalone skill by `scripts/skills.sh`, plus repo-local skills (`dotfiles-verify`, `agent-usage-audit`, `code-intel-doctor`, `work-scope-guard`, `context-check`, `source-provenance`, `cmux-handoff-runner`, `handover`, `agent-reap`) exposed from `plugins/local-skills/skills/` via `scripts/skills.sh`
+- Skills — agent-skills, ai-slop-cleaner, clarify, code-review, doc-coauthoring, e2e-skills, frontend-design, humanizer, im-not-ai, internal-comms, karpathy-guidelines, mcp-builder, obsidian-skills, project-session-manager (`/oh-my-claudecode:psm`), security-best-practices, skill-creator, ui-clone-skills, webapp-testing, Matt Pocock's upstream `grill-me` installed as a pinned standalone skill by `scripts/skills.sh`, plus repo-local skills (`dotfiles-verify`, `agent-usage-audit`, `code-intel-doctor`, `worktree-open`, `local-preview-server`, `work-scope-guard`, `context-check`, `source-provenance`, `cmux-handoff-runner`, `handover`, `agent-reap`) exposed from `plugins/local-skills/skills/` via `scripts/skills.sh`
 - Local agents — scout, critic, debugger, test-engineer, security-reviewer, and git-master are symlinked from `configs/agents/` into `~/.claude/agents/` so core review/debug/test/git lanes work even before optional plugin marketplaces are available.
 - Plugins (enabled by default) — `local-skills@dotfiles-local` (this repo as a local Claude skill plugin; Codex gets the same repo-local skills through `scripts/skills.sh codex` symlinks), [claude-hud@claude-hud](https://github.com/jarrodwatts/claude-hud) (context/tool/agent/todo statusline; run `/claude-hud:setup` once; personal machines only), [skills-janitor@skills-janitor](https://github.com/khendzel/skills-janitor) (skill inventory, duplicates, token value, cleanup), security-guidance, superpowers, claude-md-management (`/claude-md-management:revise-claude-md` + `claude-md-improver` audit skill), hookify, session-wrap, [claude-mem@thedotmack](https://github.com/thedotmack/claude-mem) (persistent memory + cross-session search), plus comprehensive-review and documentation-generation from the [wshobson/agents](https://github.com/wshobson/agents) marketplace. Plugin slash command names follow each plugin's manifest: many use `/<plugin-name>:<command>`; standalone skills (`/graphify`, etc.) don't take the prefix.
 - Plugins (parked — installed/cached but `enabledPlugins: false`; largely superseded by native Claude Code features such as workflows/ultracode, `/simplify`, `/code-review`, `/security-review`, and worktrees; revive with one settings flip) — ralph-loop, [autoresearch@autoresearch](https://github.com/uditgoenka/autoresearch), [review-loop@hamel-review](https://github.com/hamelsmu/claude-review-loop) (`REVIEW_LOOP_CODEX_FLAGS="--sandbox workspace-write"` stays set so a revival never inherits the plugin's dangerous default), rust-analyzer-lsp, fakechat, vercel, session-report, and the remaining [wshobson/agents](https://github.com/wshobson/agents) packs (javascript-typescript, python-development, frontend-mobile-development, security-scanning, unit-testing, tdd-workflows, git-pr-workflows, error-debugging, ui-design, accessibility-compliance, content-marketing, seo-*).
@@ -125,7 +136,8 @@ Installed services run at every login with `KeepAlive=true` (throttle 60s); `ser
   - Installed via Brewfile (`brew "code-server"`)
   - Reads `~/.config/code-server/config.yaml` (services.sh scaffolds with a random password and enforces `chmod 600`)
   - Binds to `127.0.0.1:8088`. Logs at `~/Library/Logs/code-server.{out,err}.log`
-  - Tailnet exposure: `tailscale serve --bg --https=8443 --set-path=/ http://localhost:8088`
+ - Tailnet exposure: `tailscale serve --bg --https=8443 --set-path=/ http://localhost:8088`;
+   worktree links prefer `https://<tailnet-host-or-ip>:8443`
   - Restart: `launchctl kickstart -k gui/$(id -u)/com.user.code-server`
 
 **Shared agent config** — canonical `~/.agent/AGENTS.md` with shared rules, also symlinked to `~/.cursor/rules/AGENTS.md` before Claude Code setup. `~/.claude/CLAUDE.md` imports it via `@~/.agent/AGENTS.md`.

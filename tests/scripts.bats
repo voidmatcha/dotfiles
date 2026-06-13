@@ -158,88 +158,9 @@ SH
   [ "$status" -eq 0 ]
   [[ "$output" == *"ln -sf $REPO_ROOT/scripts/agent-session-label.sh -> $home/.local/bin/agent-session-label"* ]]
   [[ "$output" == *"ln -sf $REPO_ROOT/scripts/claude-statusline.sh -> $home/.local/bin/claude-statusline"* ]]
-  [[ "$output" == *"ln -sf $REPO_ROOT/scripts/worktree-workspace.sh -> $home/.local/bin/agent-worktrees"* ]]
-  [[ "$output" == *"ln -sf $REPO_ROOT/scripts/worktree-workspace.sh -> $home/.local/bin/agent-worktrees-cmux"* ]]
-  [[ "$output" == *"ln -sf $REPO_ROOT/scripts/worktree-workspace.sh -> $home/.local/bin/agent-worktree-url"* ]]
-  [[ "$output" == *"ln -sf $REPO_ROOT/scripts/worktree-workspace.sh -> $home/.local/bin/agent-worktree-link"* ]]
-  [[ "$output" == *"ln -sf $REPO_ROOT/scripts/worktree-workspace.sh -> $home/.local/bin/agent-worktree-cmux"* ]]
   [ ! -e "$home/.local/bin" ]
 }
 
-
-@test "worktree workspace helper renders code-server workspace and branch URLs" {
-  repo="$TMPDIR_TEST/wt-main"
-  feature="$TMPDIR_TEST/wt-feature"
-  mkdir -p "$repo"
-  git -C "$repo" init -q
-  git -C "$repo" config user.name "Test User"
-  git -C "$repo" config user.email "test@example.com"
-  echo "main" > "$repo/README.md"
-  git -C "$repo" add README.md
-  git -C "$repo" commit -qm init
-  git -C "$repo" branch feature/demo
-  git -C "$repo" worktree add -q "$feature" feature/demo
-
-  run env XDG_CACHE_HOME="$TMPDIR_TEST/cache" CODE_SERVER_BASE_URL="http://127.0.0.1:8088" \
-    bash "$REPO_ROOT/scripts/worktree-workspace.sh" --repo "$repo" --print
-
-  [ "$status" -eq 0 ]
-  workspace="$output"
-  [ -f "$workspace" ]
-
-  python3 - "$workspace" "$repo" "$feature" <<'PY'
-import json
-import sys
-from pathlib import Path
-workspace, repo, feature = sys.argv[1:]
-data = json.load(open(workspace))
-paths = {str(Path(folder["path"]).resolve()) for folder in data["folders"]}
-names = " ".join(folder["name"] for folder in data["folders"])
-assert str(Path(repo).resolve()) in paths
-assert str(Path(feature).resolve()) in paths
-assert "feature/demo" in names
-assert data["settings"]["git.openRepositoryInParentFolders"] == "always"
-PY
-
-  run env XDG_CACHE_HOME="$TMPDIR_TEST/cache" CODE_SERVER_BASE_URL="http://127.0.0.1:8088" \
-    bash "$REPO_ROOT/scripts/worktree-workspace.sh" --repo "$repo" --folder-url feature/demo
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == "http://127.0.0.1:8088/?folder="* ]]
-  [[ "$output" == *"wt-feature"* ]]
-}
-
-
-@test "worktree cmux helper opens code-server URL in cmux browser split" {
-  repo="$TMPDIR_TEST/cmux-wt-main"
-  feature="$TMPDIR_TEST/cmux-wt-feature"
-  bin="$TMPDIR_TEST/cmux-bin"
-  mkdir -p "$repo" "$bin"
-  git -C "$repo" init -q
-  git -C "$repo" config user.name "Test User"
-  git -C "$repo" config user.email "test@example.com"
-  echo "main" > "$repo/README.md"
-  git -C "$repo" add README.md
-  git -C "$repo" commit -qm init
-  git -C "$repo" branch feature/demo
-  git -C "$repo" worktree add -q "$feature" feature/demo
-
-  cat > "$bin/cmux" <<'SH'
-#!/bin/sh
-printf '%s\n' "$*" > "$TMPDIR_TEST/cmux-args.txt"
-SH
-  chmod +x "$bin/cmux"
-
-  run env TMPDIR_TEST="$TMPDIR_TEST" XDG_CACHE_HOME="$TMPDIR_TEST/cache" \
-    CODE_SERVER_BASE_URL="http://127.0.0.1:8088" PATH="$bin:/usr/bin:/bin" \
-    bash "$REPO_ROOT/scripts/worktree-workspace.sh" --repo "$repo" --cmux-folder feature/demo
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == "http://127.0.0.1:8088/?folder="* ]]
-  args="$(cat "$TMPDIR_TEST/cmux-args.txt")"
-  [[ "$args" == browser\ open-split\ http://127.0.0.1:8088/?folder=* ]]
-  [[ "$args" == *"--focus true"* ]]
-}
 
 @test "code-server setup dry-run installs worktree-focused extensions" {
   home="$TMPDIR_TEST/code-server-home"
@@ -343,6 +264,13 @@ SH
   grep -q 'command omx --direct --xhigh --madmax' "$zshrc"
   grep -q '__dotfiles_codex_base' "$zshrc"
   grep -q 'missing owl-rs should not' "$zshrc"
+}
+
+@test "zshrc cmux-deck adoption focuses newly opened surfaces by default" {
+  zshrc="$REPO_ROOT/configs/.zshrc"
+
+  grep -q 'CMUX_DECK_FOCUS_ON_ADOPT:-1' "$zshrc"
+  grep -q 'cmux focus-panel --panel "\$CMUX_SURFACE_ID"' "$zshrc"
 }
 
 @test "dev setup runs headroom installer before agent-browser" {
@@ -834,7 +762,10 @@ TOML
 
 @test "Codex config declares first-class defaults and MCP" {
   python3 - <<PY
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib
 from pathlib import Path
 
 cfg = tomllib.loads((Path('$REPO_ROOT') / 'configs/codex/config.toml').read_text())
@@ -850,8 +781,9 @@ assert cfg['notify'][8] == 'omx-notify'
 assert cfg['features']['goals'] is True
 assert cfg['features']['child_agents_md'] is True
 assert cfg['features']['multi_agent'] is True
-assert cfg['tui']['status_line'][0] == 'thread-title'
-assert cfg['tui']['terminal_title'] == ['thread-title', 'project-name', 'git-branch']
+assert cfg['tui']['status_line'][0] == 'model-with-reasoning'
+assert 'thread-title' not in cfg['tui']['status_line']
+assert cfg['tui']['terminal_title'] == ['project-name', 'git-branch']
 yolo = cfg['profiles']['yolo']
 assert yolo['approval_policy'] == 'never'
 assert yolo['sandbox_mode'] == 'danger-full-access'
@@ -899,12 +831,83 @@ assert claude_market['plugins'][0]['name'] == 'local-skills'
 assert claude_market['plugins'][0]['source'] == './plugins/local-skills'
 assert codex['name'] == 'local-skills'
 assert codex['skills'] == './skills/'
+for manifest in (claude, codex):
+    assert 'worktree' in manifest['description']
+    assert 'code-server' in manifest['description']
+    assert 'worktree' in manifest['keywords']
+assert codex['interface']['shortDescription'].startswith('Local dotfiles verification, worktree links')
+assert any('Tailscale code-server link' in prompt for prompt in codex['interface']['defaultPrompt'])
 assert codex_market['name'] == 'dotfiles-local'
 assert codex_market['plugins'][0]['name'] == 'local-skills'
 assert codex_market['plugins'][0]['source'] == {'source': 'local', 'path': './plugins/local-skills'}
-for skill in ['dotfiles-verify', 'agent-usage-audit', 'code-intel-doctor', 'work-scope-guard', 'source-provenance']:
+for skill in ['dotfiles-verify', 'agent-usage-audit', 'code-intel-doctor', 'worktree-open', 'work-scope-guard', 'source-provenance']:
     assert (root / 'plugins/local-skills/skills' / skill / 'SKILL.md').exists(), skill
 PY
+}
+
+@test "worktree-open skill prefers Tailscale Serve links before local fallback" {
+  skill="$REPO_ROOT/plugins/local-skills/skills/worktree-open/SKILL.md"
+  helper="$REPO_ROOT/plugins/local-skills/skills/worktree-open/scripts/worktree_open.py"
+
+  grep -q 'CODE_SERVER_BASE_URL' "$skill"
+  grep -q 'CODE_SERVER_TAILSCALE_HOST' "$skill"
+  grep -q 'CODE_SERVER_TAILSCALE_PORT' "$skill"
+  grep -q 'tailscale ip -4' "$skill"
+  grep -q 'scripts/worktree_open.py' "$skill"
+  [ -x "$helper" ]
+}
+
+@test "worktree-open helper renders tailnet folder and workspace URLs" {
+  repo="$TMPDIR_TEST/wt-main"
+  feature="$TMPDIR_TEST/wt-feature"
+  mkdir -p "$repo"
+  git -C "$repo" init -q
+  git -C "$repo" config user.name "Test User"
+  git -C "$repo" config user.email "test@example.com"
+  echo "main" > "$repo/README.md"
+  git -C "$repo" add README.md
+  git -C "$repo" commit -qm init
+  git -C "$repo" branch feature/demo
+  git -C "$repo" worktree add -q "$feature" feature/demo
+
+  helper="$REPO_ROOT/plugins/local-skills/skills/worktree-open/scripts/worktree_open.py"
+  run env CODE_SERVER_TAILSCALE_HOST="testnode.tailnet.ts.net" PATH="/usr/bin:/bin" \
+    python3 "$helper" "$feature"
+  [ "$status" -eq 0 ]
+  [[ "$output" == "https://testnode.tailnet.ts.net:8443/?folder="* ]]
+  [[ "$output" == *"%2Fwt-feature"* ]]
+
+  run env XDG_CACHE_HOME="$TMPDIR_TEST/cache" CODE_SERVER_BASE_URL="http://127.0.0.1:8088/" PATH="/usr/bin:/bin" \
+    python3 "$helper" --all "$repo"
+  [ "$status" -eq 0 ]
+  [[ "$output" == "http://127.0.0.1:8088/?workspace="* ]]
+  workspace="${output#*?workspace=}"
+  python3 - "$TMPDIR_TEST/cache/agent-worktrees/wt-main.worktrees.code-workspace" "$repo" "$feature" <<'PY'
+import json
+import sys
+from pathlib import Path
+workspace, repo, feature = sys.argv[1:]
+data = json.load(open(workspace))
+paths = {str(Path(folder["path"]).resolve()) for folder in data["folders"]}
+names = {folder["name"] for folder in data["folders"]}
+assert str(Path(repo).resolve()) in paths
+assert str(Path(feature).resolve()) in paths
+assert "wt-main [master]" in names or "wt-main [main]" in names
+assert "wt-feature [feature/demo]" in names
+PY
+}
+
+@test "worktree-open helper falls back to local bind when tailscale is unavailable" {
+  helper="$REPO_ROOT/plugins/local-skills/skills/worktree-open/scripts/worktree_open.py"
+  home="$TMPDIR_TEST/worktree-open-home"
+  mkdir -p "$home/.config/code-server"
+  cat > "$home/.config/code-server/config.yaml" <<'YAML'
+bind-addr: 0.0.0.0:9090
+YAML
+
+  run env HOME="$home" PATH="/usr/bin:/bin" python3 "$helper" --base
+  [ "$status" -eq 0 ]
+  [ "$output" = "http://127.0.0.1:9090" ]
 }
 
 @test "skills.sh installs Matt Pocock grill-me as standalone upstream skill" {
@@ -1131,7 +1134,13 @@ from pathlib import Path
 cfg = json.loads((Path('$REPO_ROOT') / 'configs/claude-settings.json').read_text())
 mcp = json.loads((Path('$REPO_ROOT') / 'configs/mcp.json').read_text())
 assert cfg['enableAllProjectMcpServers'] is False
-assert cfg['enabledMcpjsonServers'] == ['chrome-devtools', 'serena', 'codegraph', 'context7']
+assert cfg['enabledMcpjsonServers'] == [
+    'chrome-devtools',
+    'serena',
+    'codegraph',
+    'context7',
+    'figma-developer-mcp',
+]
 assert cfg['disabledMcpjsonServers'] == []
 assert cfg['allowManagedMcpServersOnly'] is True
 assert cfg['allowedMcpServers'] == [
@@ -1141,6 +1150,7 @@ assert cfg['allowedMcpServers'] == [
     {'serverName': 'context7'},
     {'serverName': 'exa'},
     {'serverName': 'linkedin'},
+    {'serverName': 'figma-developer-mcp'},
 ]
 assert {'serverName': 'filesystem'} in cfg['deniedMcpServers']
 assert 'chrome-devtools' in mcp['mcpServers']
@@ -1643,4 +1653,115 @@ assert pattern.search(first["run_dir"]), first["run_dir"]
 assert pattern.search(second["run_dir"]), second["run_dir"]
 assert first["run_dir"] != second["run_dir"]
 PY
+}
+
+extract_key_value() {
+  printf '%s\n' "$2" | awk -F= -v key="$1" '$1 == key { print substr($0, index($0, "=") + 1); exit }'
+}
+
+free_tcp_port() {
+  python3 - <<'PY'
+import socket
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.bind(("127.0.0.1", 0))
+print(sock.getsockname()[1])
+sock.close()
+PY
+}
+
+@test "local-preview-server skill is exposed in local plugin metadata" {
+  skill="$REPO_ROOT/plugins/local-skills/skills/local-preview-server/SKILL.md"
+  helper="$REPO_ROOT/plugins/local-skills/skills/local-preview-server/scripts/local-preview-server.sh"
+
+  [ -f "$skill" ]
+  [ -x "$helper" ]
+  run bash -n "$helper"
+  [ "$status" -eq 0 ]
+
+  grep -q 'local-preview-server' "$REPO_ROOT/README.md"
+  grep -q 'local-preview-server' "$REPO_ROOT/docs/agent-reference.md"
+
+  python3 - <<PY
+import json
+from pathlib import Path
+root = Path('$REPO_ROOT')
+for path in [
+    root / 'plugins/local-skills/.claude-plugin/plugin.json',
+    root / 'plugins/local-skills/.codex-plugin/plugin.json',
+]:
+    data = json.loads(path.read_text())
+    blob = json.dumps(data)
+    assert 'local preview' in data['description'].lower() or 'preview' in data['description'].lower()
+    assert 'local-preview' in data['keywords']
+    assert 'server' in data['keywords']
+    assert 'tailscale' in data['keywords']
+    assert 'local-preview-server' in (root / 'plugins/local-skills/skills/local-preview-server/SKILL.md').read_text()
+PY
+}
+
+@test "local-preview-server helper serves a single HTML file, restarts, and stops" {
+  helper="$REPO_ROOT/plugins/local-skills/skills/local-preview-server/scripts/local-preview-server.sh"
+  preview_dir="$TMPDIR_TEST/local-preview-file"
+  mkdir -p "$preview_dir"
+  report="$preview_dir/report file.html"
+  printf '<h1>first preview</h1>\n' > "$report"
+  port="$(free_tcp_port)"
+
+  run env PATH="/usr/bin:/bin" "$helper" start --path "$report" --port "$port"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"STATUS=ok"* ]]
+  actual_port="$(extract_key_value PORT "$output")"
+  local_url="$(extract_key_value LOCAL_URL "$output")"
+  [ -n "$actual_port" ]
+  [ "$local_url" = "http://127.0.0.1:$actual_port/report%20file.html" ]
+  [ "$(extract_key_value LOCAL_VERIFY "$output")" = "ok" ]
+  [ "$(extract_key_value TAILNET_VERIFY "$output")" = "unavailable" ]
+
+  run curl -fsS "$local_url"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"first preview"* ]]
+
+  printf '<h1>second preview</h1>\n' > "$report"
+  run env PATH="/usr/bin:/bin" "$helper" start --path "$report" --port "$actual_port"
+  [ "$status" -eq 0 ]
+  [ "$(extract_key_value PORT "$output")" = "$actual_port" ]
+  [ "$(extract_key_value LOCAL_VERIFY "$output")" = "ok" ]
+
+  run curl -fsS "$local_url"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"second preview"* ]]
+
+  run env PATH="/usr/bin:/bin" "$helper" status --port "$actual_port"
+  [ "$status" -eq 0 ]
+  [ "$(extract_key_value STATUS "$output")" = "ok" ]
+
+  run env PATH="/usr/bin:/bin" "$helper" stop --port "$actual_port"
+  [ "$status" -eq 0 ]
+  [ "$(extract_key_value STATUS "$output")" = "ok" ]
+
+  run env PATH="/usr/bin:/bin" "$helper" status --port "$actual_port"
+  [ "$status" -eq 0 ]
+  [ "$(extract_key_value STATUS "$output")" = "stopped" ]
+}
+
+@test "local-preview-server helper serves a static directory index" {
+  helper="$REPO_ROOT/plugins/local-skills/skills/local-preview-server/scripts/local-preview-server.sh"
+  site="$TMPDIR_TEST/local-preview-dist"
+  mkdir -p "$site"
+  printf '<h1>directory preview</h1>\n' > "$site/index.html"
+  port="$(free_tcp_port)"
+
+  run env PATH="/usr/bin:/bin" "$helper" start --path "$site" --port "$port"
+  [ "$status" -eq 0 ]
+  actual_port="$(extract_key_value PORT "$output")"
+  local_url="$(extract_key_value LOCAL_URL "$output")"
+  [ "$local_url" = "http://127.0.0.1:$actual_port/" ]
+  [ "$(extract_key_value LOCAL_VERIFY "$output")" = "ok" ]
+
+  run curl -fsS "$local_url"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"directory preview"* ]]
+
+  run env PATH="/usr/bin:/bin" "$helper" stop --port "$actual_port"
+  [ "$status" -eq 0 ]
 }

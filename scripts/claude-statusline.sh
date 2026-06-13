@@ -18,7 +18,7 @@ resolve_script_dir() {
 
 script_dir="$(resolve_script_dir)"
 label_script="${AGENT_SESSION_LABEL_COMMAND:-$script_dir/agent-session-label.sh}"
-worktree_script="${AGENT_WORKTREE_LINK_COMMAND:-$script_dir/worktree-workspace.sh}"
+worktree_script="${AGENT_WORKTREE_LINK_COMMAND:-}"
 self_path="$script_dir/claude-statusline.sh"
 label=""
 worktree_link=""

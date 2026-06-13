@@ -11,22 +11,10 @@ install_statusline_helpers() {
   local helpers=(
     agent-session-label
     claude-statusline
-    agent-worktrees
-    agent-worktrees-cmux
-    agent-worktree-url
-    agent-worktree-link
-    agent-worktree-cmux
   )
   if $DRY_RUN; then
     for name in "${helpers[@]}"; do
-      case "$name" in
-        agent-worktrees|agent-worktrees-cmux|agent-worktree-url|agent-worktree-link|agent-worktree-cmux)
-          src="$DOTFILES_DIR/scripts/worktree-workspace.sh"
-          ;;
-        *)
-          src="$DOTFILES_DIR/scripts/${name}.sh"
-          ;;
-      esac
+      src="$DOTFILES_DIR/scripts/${name}.sh"
       info "[dry-run] ln -sf $src -> $STATUSLINE_BIN_DIR/$name"
     done
     return 0
@@ -34,14 +22,7 @@ install_statusline_helpers() {
 
   ensure_dir "$STATUSLINE_BIN_DIR"
   for name in "${helpers[@]}"; do
-    case "$name" in
-      agent-worktrees|agent-worktrees-cmux|agent-worktree-url|agent-worktree-link|agent-worktree-cmux)
-        src="$DOTFILES_DIR/scripts/worktree-workspace.sh"
-        ;;
-      *)
-        src="$DOTFILES_DIR/scripts/${name}.sh"
-        ;;
-    esac
+    src="$DOTFILES_DIR/scripts/${name}.sh"
     chmod +x "$src"
     ln -sf "$src" "$STATUSLINE_BIN_DIR/$name"
     info "Installed statusline helper: $STATUSLINE_BIN_DIR/$name"
@@ -49,4 +30,4 @@ install_statusline_helpers() {
 }
 
 install_statusline_helpers
-info "Agent statusline/worktree helpers installed"
+info "Agent statusline helpers installed"

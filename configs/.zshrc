@@ -39,6 +39,8 @@ export HEADROOM_MODE="${HEADROOM_MODE:-cache}"
 # Keep plain OMX launches direct by default. Codex already exposes the
 # useful session details via [tui].status_line, so the managed OMX tmux
 # HUD pane is opt-in (`omx --tmux` or OMX_LAUNCH_POLICY=tmux).
+# NOTE: 절반은 취향(status_line 중복 회피), 절반은 아래 WORKAROUND의 발생원 차단.
+# 업스트림 픽스 후에도 유지 가능하지만, HUD를 다시 기본으로 쓰려면 이 줄만 빼면 됨.
 export OMX_LAUNCH_POLICY="${OMX_LAUNCH_POLICY:-direct}"
 
 __headroom_default_enabled() {
@@ -126,7 +128,19 @@ fi
 # Guard raw OMX HUD watches so repeated shells/commands do not stack panes/processes.
 # `omx hud --tmux` remains the preferred managed HUD surface; this only catches
 # accidental raw `omx hud --watch` invocations before they fork another watcher.
+# NOTE: 위 WORKAROUND와 같은 증상군이지만 이쪽은 사용자 실수 방지 보험이라
+# 업스트림 픽스 후에도 잔류 무해 (제거 의무 없음).
 
+# WORKAROUND(oh-my-codex@0.18.11, 소스 검증 2026-06-12):
+# 1) 확인된 업스트림 결함 — hooks/extensibility/dispatcher.js가 process.env를
+#    통째 상속해 훅이 OMX_TMUX_HUD_* 를 물려받아 pane을 재생성할 수 있음
+#    (team/tmux-session.js의 scrubTeamWorkerHudOwnershipEnv와 비대칭 = 누락).
+#    이슈 등록 대상: https://github.com/Yeachan-Heo/oh-my-codex/issues (TBD)
+# 2) 정상 종료 시 정리는 업스트림이 이미 함(cli finally) — 고아 pane은 강제
+#    종료(cmux 탭 강제 닫기 등, finally 미실행)에서만 생김. 이 함수는 그 보험.
+# 비용: 매 프롬프트(precmd) 전체 pane 스캔 + pane당 ps 2회.
+# 롤백 조건: 훅 env scrub이 업스트림에 들어가면 재생성 경로가 사라지므로
+# precmd 등록을 빼고, 강제 종료 잔존만 감수하거나 수동 정리로 격하 검토.
 __dotfiles_cleanup_orphan_hud_panes() {
   [[ -n "${TMUX:-}" ]] || return 0
   command -v tmux >/dev/null 2>&1 || return 0
@@ -340,11 +354,6 @@ alias gd="git diff"
 alias gl="git log --oneline --graph"
 alias gp="git push"
 alias gc="git commit"
-alias wtcode="agent-worktrees --open"
-alias wturl="agent-worktree-url"
-alias wtlink="agent-worktree-link"
-alias wtdeck="agent-worktree-cmux"
-alias wtdeckall="agent-worktrees-cmux"
 
 # Enable 1h prompt-cache TTL (vs 5min default) for Anthropic API
 export ENABLE_PROMPT_CACHING_1H=1
@@ -370,3 +379,24 @@ alias rerr='rtk err'
 # Keep mode unset here so existing launchers can choose cache vs token explicitly.
 export HEADROOM_CODE_AWARE_ENABLED=1
 # <<< headroom token-saving config <<<
+# >>> cmux-deck adopt >>>
+# Self-adopt each cmux surface into a deck-socket tmux session so cmux-deck
+# can attach it full-fidelity. Guarded: interactive zsh, inside a cmux
+# surface, not already multiplexed, tmux present. `new-session -A` attaches
+# the existing adopted session or creates it — either order converges.
+# Focus the newly opened cmux surface before adoption by default; cmux layout
+# commands are focus-neutral unless callers pass `--focus true`. Set
+# CMUX_DECK_FOCUS_ON_ADOPT=0 to keep background-created surfaces backgrounded.
+# Run (not exec): if tmux fails to start, fall through to a normal shell
+# instead of the tab closing silently; on a clean tmux exit, close the tab.
+if [[ -o interactive && -n "$CMUX_SURFACE_ID" && -z "$TMUX" ]] && command -v tmux >/dev/null 2>&1; then
+  if [[ "${CMUX_DECK_FOCUS_ON_ADOPT:-1}" != "0" ]] && command -v cmux >/dev/null 2>&1; then
+    cmux focus-panel --panel "$CMUX_SURFACE_ID" >/dev/null 2>&1 || true
+  fi
+  if tmux -S "$HOME/.cmux-deck/tmux.sock" -f "$HOME/.cmux-deck/tmux.conf" new-session -A -s "cmux-$CMUX_SURFACE_ID"; then
+    exit
+  else
+    echo "cmux-deck: tmux adopt failed ($?); continuing in a plain shell" >&2
+  fi
+fi
+# <<< cmux-deck adopt <<<

@@ -107,8 +107,8 @@ max_depth = 2
 # OMX TUI StatusLine (Codex CLI v0.101.0+)
 [tui]
 # omx:managed-status-line
-status_line = ["thread-title", "model-with-reasoning", "git-branch", "context-remaining", "total-input-tokens", "total-output-tokens", "five-hour-limit", "weekly-limit"]
-terminal_title = ["thread-title", "project-name", "git-branch"]
+status_line = ["model-with-reasoning", "git-branch", "context-remaining", "total-input-tokens", "total-output-tokens", "five-hour-limit", "weekly-limit"]
+terminal_title = ["project-name", "git-branch"]
 
 # ============================================================
 # End oh-my-codex

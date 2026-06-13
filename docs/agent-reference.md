@@ -137,8 +137,9 @@ are `scripts/dev.sh`, `Brewfile`, and `configs/mcp.json`.
   `agent-session-label` and `claude-statusline` into `~/.local/bin`. Claude's
   `statusLine` should call the wrapper so existing Owl/HUD output is prefixed
   with the current cmux workspace/surface, tmux session/window/pane, agent
-  session ID, or project fallback. Codex/OMX uses built-in `thread-title` in
-  `[tui].status_line` and `terminal_title` for terminal/cmux tab naming.
+  session ID, or project fallback. Codex/OMX omits `thread-title` from
+  `[tui].status_line` so UUID fallback session IDs do not leak into the HUD;
+  terminal/cmux names stay project/branch based.
 - **ccusage** — `ccusage` CLI for analyzing your token usage from local JSONL.
 - **agentsview** — local-first session intelligence for Claude Code, Codex,
   Hermes, and other agent logs. Use `agentsview serve` for the browser UI,
@@ -200,16 +201,30 @@ trailers.
 
 ## code-server worktree workspace
 
-- `scripts/worktree-workspace.sh` is installed by `scripts/statusline.sh` as
-  `agent-worktrees`, `agent-worktrees-cmux`, `agent-worktree-url`,
-  `agent-worktree-link`, and `agent-worktree-cmux`.
-- `agent-worktrees --open` builds a multi-root `.code-workspace` from
-  `git worktree list` and opens the code-server workspace URL.
-- `agent-worktree-url [branch]` returns a code-server `?folder=` URL for the
-  matching worktree. `agent-worktree-link [branch]` wraps that URL as an OSC-8
-  terminal hyperlink for HUD/statusline surfaces that support clickable links.
-- Codex's built-in `git-branch` status item remains text-only; use the helper
-  output in custom HUD surfaces when click behavior is required.
-- For cmux-deck/web, prefer `agent-worktree-cmux [branch]` or
-  `agent-worktrees-cmux`; these call `cmux browser open-split` directly and do
-  not depend on OSC-8 terminal hyperlink rendering.
+- Skill entrypoint: `worktree-open` (repo path:
+  `plugins/local-skills/skills/worktree-open`). Use `scripts/worktree_open.py`
+  from that skill to produce Tailscale-first code-server links for a folder
+  or all git worktrees.
+- Opening a git worktree in browser VS Code is a skill, not an installed
+  binary: `local-skills/worktree-open`. The agent builds the code-server
+  `?folder=` or `?workspace=` URL directly, preferring the Tailscale Serve
+  endpoint (`https://<tailnet-host-or-ip>:8443`) before local fallback.
+  It opens the URL with `cmux browser open-split` or `open` only when
+  explicitly asked to open it.
+- code-server truth source: `~/.config/code-server/config.yaml` (`bind-addr`,
+  default `127.0.0.1:8088`), Tailscale Serve on `:8443`, LaunchAgent
+  `com.user.code-server`.
+
+## local preview server
+
+- Skill entrypoint: `local-preview-server` (repo path:
+  `plugins/local-skills/skills/local-preview-server`). Use
+  `scripts/local-preview-server.sh` from that skill to serve a single HTML file,
+  generated report, static directory, dashboard export, or build artifact.
+- Default access is private/local/tailnet: localhost is always reported, LAN and
+  Tailscale URLs are detected when available, and public tunnels/deploys are not
+  used unless explicitly requested.
+- The helper prefers tmux, falls back to a managed PID file when tmux is absent,
+  writes `/tmp/local-preview-PORT.log`, verifies the exact URL with curl before
+  reporting `STATUS=ok`, and stops only the known `local-preview-PORT` session
+  or PID.
