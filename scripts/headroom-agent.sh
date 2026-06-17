@@ -100,7 +100,7 @@ run_headroom_wrap() {
   local -a args
 
   if ! command -v headroom >/dev/null 2>&1; then
-    warn "headroom not found. Run: bash ~/work/dotfiles/scripts/headroom.sh"
+    warn "headroom not found. Run scripts/headroom.sh from your dotfiles checkout."
     exit 127
   fi
 
@@ -151,7 +151,7 @@ run_codex_config_wrapped() {
   label="${target}h"
   upper="$(printf '%s' "$target" | tr '[:lower:]' '[:upper:]')"
   if ! command -v headroom >/dev/null 2>&1; then
-    warn "headroom not found. Run: bash ~/work/dotfiles/scripts/headroom.sh"
+    warn "headroom not found. Run scripts/headroom.sh from your dotfiles checkout."
     exit 127
   fi
   if ! command -v "$command_name" >/dev/null 2>&1; then

@@ -3,7 +3,7 @@
 Keep this file short: it is symlinked to `~/.agent/AGENTS.md` and imported by
 Claude via `~/.claude/CLAUDE.md`, so it is always-loaded guidance. For detailed
 tool-routing tables and exact one-liners, open this dotfiles repo's
-`docs/agent-reference.md` on demand instead of memorizing them here.
+`README.md` on demand instead of memorizing detailed routing here.
 
 ## Core operating rules
 

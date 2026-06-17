@@ -243,9 +243,9 @@ SH
   grep -q 'Codex plugin validator dependency' "$REPO_ROOT/scripts/dev.sh"
 }
 
-@test "shared references point to the compact AGENTS and detailed docs" {
-  grep -q "docs/agent-reference.md" "$REPO_ROOT/scripts/dev.sh"
-  grep -q "docs/agent-reference.md" "$REPO_ROOT/configs/RTK.md"
+@test "shared references point to compact AGENTS and README" {
+  grep -q "README.md" "$REPO_ROOT/scripts/dev.sh"
+  grep -q "README.md" "$REPO_ROOT/configs/RTK.md"
   ! grep -q 'Refer to CLAUDE.md for full command reference' "$REPO_ROOT/configs/RTK.md"
   ! grep -q 'configs/AGENTS.md for the one-liners' "$REPO_ROOT/scripts/dev.sh"
 }
@@ -795,7 +795,7 @@ assert 'spreadsheets@openai-primary-runtime' not in cfg.get('plugins', {})
 assert 'presentations@openai-primary-runtime' not in cfg.get('plugins', {})
 mcp = cfg['mcp_servers']['chrome-devtools']
 assert mcp['command'] == 'npx'
-assert mcp['args'] == ['-y', 'chrome-devtools-mcp@0.23.0']
+assert mcp['args'] == ['-y', 'chrome-devtools-mcp@1.2.0']
 assert cfg['mcp_servers']['context7']['url'] == 'https://mcp.context7.com/mcp'
 PY
 }
@@ -974,22 +974,29 @@ PY
 }
 
 @test "README documents Codex as first-class setup" {
-  grep -q 'Codex CLI:' "$REPO_ROOT/README.md"
+  grep -q 'Codex (with OMX)' "$REPO_ROOT/README.md"
   grep -q 'scripts/codex.sh' "$REPO_ROOT/README.md"
   grep -q '~/.codex/config.toml' "$REPO_ROOT/README.md"
-  grep -q 'codex login' "$REPO_ROOT/README.md"
-  grep -q 'codex login --device-auth' "$REPO_ROOT/README.md"
   grep -q '\[features\] goals = true' "$REPO_ROOT/README.md"
-  grep -q 'codex --profile yolo' "$REPO_ROOT/README.md"
   grep -q 'scripts/skills.sh codex' "$REPO_ROOT/README.md"
   grep -q 'dotfiles-verify' "$REPO_ROOT/README.md"
-  # README describes the Codex MCP entries by name without hardcoding the exact
+
+  # README stays focused on repo-owned setup, not per-machine auth/profile steps.
+  ! grep -q 'codex login' "$REPO_ROOT/README.md"
+  ! grep -q 'codex login --device-auth' "$REPO_ROOT/README.md"
+  ! grep -q 'codex --profile yolo' "$REPO_ROOT/README.md"
+  ! grep -q 'claude setup-token' "$REPO_ROOT/README.md"
+  ! grep -q 'claude --dangerously-skip-permissions' "$REPO_ROOT/README.md"
+
+  # README describes Codex MCP entries by name without hardcoding exact
   # [mcp_servers.*] token — the prose moves when entries are added/removed.
   grep -q 'mcp_servers' "$REPO_ROOT/README.md"
   grep -q 'chrome-devtools' "$REPO_ROOT/README.md"
   grep -q 'serena' "$REPO_ROOT/README.md"
   grep -q 'codegraph' "$REPO_ROOT/README.md"
-  grep -q 'context7' "$REPO_ROOT/README.md"
+  grep -q 'personal/default \[Figma hosted MCP\]' "$REPO_ROOT/README.md"
+  grep -q 'Company Figma context is separate' "$REPO_ROOT/README.md"
+  grep -q 'figma-developer-mcp' "$REPO_ROOT/README.md"
 }
 
 @test "Claude plugin install settings and docs stay aligned" {
@@ -1308,13 +1315,17 @@ assert 'malformed hook input' in hook['permissionDecisionReason']
 PY
 }
 
-@test "README documents Claude security and secret workflows" {
+@test "README documents actual operational tripwires" {
+  grep -q 'Claude Code operational tripwires, not security controls' "$REPO_ROOT/README.md"
+  grep -q 'Claude Code tripwires' "$REPO_ROOT/README.md"
+  grep -Fq 'do not protect a separate [Codex] `danger-full-access` session' "$REPO_ROOT/README.md"
+  grep -q 'not a security boundary' "$REPO_ROOT/README.md"
   grep -q 'pretool-guard' "$REPO_ROOT/README.md"
   grep -q 'skill-md-edit-warn' "$REPO_ROOT/README.md"
   grep -q 'permissions.deny' "$REPO_ROOT/README.md"
   grep -q 'MCP governance' "$REPO_ROOT/README.md"
-  grep -q 'op run --env-file .env -- <command>' "$REPO_ROOT/README.md"
-  grep -q "sops exec-env secrets.enc.env '<command>'" "$REPO_ROOT/README.md"
+  ! grep -q 'op run --env-file .env -- <command>' "$REPO_ROOT/README.md"
+  ! grep -q "sops exec-env secrets.enc.env '<command>'" "$REPO_ROOT/README.md"
 }
 
 @test "Claude PreToolUse guard fails open on empty stdin (timeout safety)" {
@@ -1394,15 +1405,18 @@ JSON
   grep -q 'configs/agents/git-master.md' "$REPO_ROOT/install.sh"
 }
 
-@test "AGENTS.md stays compact while detailed routing lives in docs" {
+@test "AGENTS.md stays compact while detailed routing lives in README" {
   grep -q '<10 enabled' "$REPO_ROOT/configs/AGENTS.md"
   grep -q "dotfiles repo's" "$REPO_ROOT/configs/AGENTS.md"
   grep -q 'Commit message protocol' "$REPO_ROOT/configs/AGENTS.md"
   grep -q 'Confidence:' "$REPO_ROOT/configs/AGENTS.md"
   grep -q 'Rejected:' "$REPO_ROOT/configs/AGENTS.md"
-  grep -q 'Tool routing' "$REPO_ROOT/docs/agent-reference.md"
-  grep -q 'Jina Reader' "$REPO_ROOT/docs/agent-reference.md"
-  grep -q 'codegraph' "$REPO_ROOT/docs/agent-reference.md"
+  grep -q 'Tool routing' "$REPO_ROOT/README.md"
+  grep -q 'Jina Reader' "$REPO_ROOT/README.md"
+  grep -q 'codegraph' "$REPO_ROOT/README.md"
+  grep -q 'agent-browser' "$REPO_ROOT/README.md"
+  grep -q 'qualitative token-pressure control' "$REPO_ROOT/README.md"
+  grep -q 'targeted browser observation' "$REPO_ROOT/README.md"
 }
 
 @test "Claude wrapper documents the actual shared AGENTS import path" {
@@ -1679,7 +1693,6 @@ PY
   [ "$status" -eq 0 ]
 
   grep -q 'local-preview-server' "$REPO_ROOT/README.md"
-  grep -q 'local-preview-server' "$REPO_ROOT/docs/agent-reference.md"
 
   python3 - <<PY
 import json
@@ -1764,4 +1777,224 @@ PY
 
   run env PATH="/usr/bin:/bin" "$helper" stop --port "$actual_port"
   [ "$status" -eq 0 ]
+}
+
+@test "Claude MCP dry-run redacts env secrets" {
+  home="$TMPDIR_TEST/claude-redact-home"
+  bin="$TMPDIR_TEST/claude-redact-bin"
+  mkdir -p "$home" "$bin"
+  cat > "$home/.dev.secrets.env" <<'EOF'
+FIGMA_API_KEY=FIGMA_SECRET_SHOULD_NOT_PRINT
+EXA_API_KEY=EXA_SECRET_SHOULD_NOT_PRINT
+EOF
+  cat > "$bin/claude" <<'SH'
+#!/bin/sh
+[ "$1" = "--version" ] && { echo "claude-test"; exit 0; }
+exit 0
+SH
+  chmod +x "$bin/claude"
+
+  run env HOME="$home" DOTFILES_DIR="$REPO_ROOT" DRY_RUN=true PATH="$bin:$PATH" bash "$REPO_ROOT/scripts/claude.sh"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"figma-developer-mcp"* ]]
+  [[ "$output" == *"<redacted>"* ]]
+  [[ "$output" != *"FIGMA_SECRET_SHOULD_NOT_PRINT"* ]]
+  [[ "$output" != *"EXA_SECRET_SHOULD_NOT_PRINT"* ]]
+}
+
+@test "Claude PreToolUse guard blocks wrapped shared pkill variants" {
+  commands=(
+    '/usr/bin/pkill -f "headroom wrap claude --port 8787"'
+    'env FOO=bar pkill -f "headroom wrap claude --port 8787"'
+    'command killall headroom --port 8787'
+  )
+
+  index=0
+  for command in "${commands[@]}"; do
+    input="$TMPDIR_TEST/pretool-shared-kill-$index.json"
+    output_file="$TMPDIR_TEST/pretool-shared-kill-$index-output.json"
+    python3 - "$input" "$command" <<'PY'
+import json
+import sys
+from pathlib import Path
+Path(sys.argv[1]).write_text(json.dumps({
+    'hook_event_name': 'PreToolUse',
+    'tool_name': 'Bash',
+    'tool_input': {'command': sys.argv[2]},
+}))
+PY
+
+    run bash -c "'$REPO_ROOT/configs/hooks/pretool-guard.sh' < '$input' > '$output_file'"
+
+    [ "$status" -eq 0 ]
+    python3 - "$output_file" <<'PY'
+import json
+import sys
+from pathlib import Path
+payload = json.loads(Path(sys.argv[1]).read_text())
+assert payload['hookSpecificOutput']['permissionDecision'] == 'deny'
+PY
+    index=$((index + 1))
+  done
+}
+
+@test "Claude PreToolUse guard allows parent-scoped shared pkill" {
+  input="$TMPDIR_TEST/pretool-parent-pkill.json"
+  output_file="$TMPDIR_TEST/pretool-parent-pkill-output.json"
+  python3 - "$input" <<'PY'
+import json
+import sys
+from pathlib import Path
+Path(sys.argv[1]).write_text(json.dumps({
+    'hook_event_name': 'PreToolUse',
+    'tool_name': 'Bash',
+    'tool_input': {'command': 'pkill -P 123 -f "headroom wrap claude --port 8787"'},
+}))
+PY
+
+  run bash -c "'$REPO_ROOT/configs/hooks/pretool-guard.sh' < '$input' > '$output_file'"
+
+  [ "$status" -eq 0 ]
+  if [ -s "$output_file" ]; then
+    python3 - "$output_file" <<'PY'
+import json
+import sys
+from pathlib import Path
+payload = json.loads(Path(sys.argv[1]).read_text())
+assert payload.get('hookSpecificOutput', {}).get('permissionDecision') != 'deny'
+PY
+  fi
+}
+
+@test "Codex config declares hosted MCPs with safe defaults" {
+  python3 - <<PY
+from pathlib import Path
+import tomllib
+cfg = tomllib.loads((Path('$REPO_ROOT') / 'configs/codex/config.toml').read_text())
+servers = cfg['mcp_servers']
+assert servers['openaiDeveloperDocs']['url'] == 'https://developers.openai.com/mcp'
+assert servers['figma']['url'] == 'https://mcp.figma.com/mcp'
+assert servers['figma']['tool_timeout_sec'] == 120
+assert servers['figma-desktop']['url'] == 'http://127.0.0.1:3845/mcp'
+assert servers['figma-desktop']['enabled'] is False
+text = (Path('$REPO_ROOT') / 'configs/codex/config.toml').read_text()
+assert 'Figma hosted — personal/default Codex/OMX design-context path' in text
+assert 'Company overlay disables this hosted server by default' in text
+assert 'Figma Desktop — local-only fallback' in text
+assert 'company/local fallback' not in text
+PY
+}
+
+@test "skills.sh installs pinned Figma Codex skill in dry-run" {
+  home="$TMPDIR_TEST/figma-skill-home"
+  codex_home="$TMPDIR_TEST/figma-skill-codex"
+  mkdir -p "$home" "$codex_home"
+
+  run env HOME="$home" CODEX_HOME="$codex_home" DOTFILES_DIR="$REPO_ROOT" DRY_RUN=true PATH="/usr/bin:/bin" bash "$REPO_ROOT/scripts/skills.sh" codex
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"figma-implement-design"* ]]
+  grep -q 'OPENAI_SKILLS_REF=.*a8924c2a35cfa290458852c4fad17c9133054c2e' "$REPO_ROOT/scripts/skills.sh"
+}
+
+@test "services make tailnet exposure opt-in and wrappers parse" {
+  bash -n "$REPO_ROOT/scripts/services.sh" "$REPO_ROOT/scripts/agentwatch-launch.sh" "$REPO_ROOT/scripts/caffeinate-launch.sh"
+  grep -q 'ENABLE_TAILSCALE_SERVE=1' "$REPO_ROOT/scripts/services.sh"
+  grep -q 'agentwatch_stable_path' "$REPO_ROOT/scripts/services.sh"
+  grep -q 'CAFFEINATE_ARGS:--s' "$REPO_ROOT/scripts/caffeinate-launch.sh"
+}
+
+@test "company overlay disables hosted Codex MCPs by default" {
+  grep -q 'disable_company_codex_hosted_mcps' "$REPO_ROOT/company/install.sh"
+  grep -q 'COMPANY_ENABLE_HOSTED_CODEX_MCPS' "$REPO_ROOT/company/install.sh"
+  grep -q 'mcp_servers.figma' "$REPO_ROOT/company/install.sh"
+  grep -q 'mcp_servers.openaiDeveloperDocs' "$REPO_ROOT/company/install.sh"
+}
+
+@test "company hosted Codex MCP patcher rewrites config" {
+  cfg="$TMPDIR_TEST/company-codex-config.toml"
+  patcher="$TMPDIR_TEST/company-codex-mcp-patcher.py"
+
+  cat > "$cfg" <<'TOML'
+[mcp_servers.figma]
+url = "https://mcp.figma.com/mcp"
+
+[mcp_servers.openaiDeveloperDocs]
+url = "https://developers.openai.com/mcp"
+enabled = true
+
+[mcp_servers.context7]
+url = "https://mcp.context7.com/mcp"
+TOML
+
+  awk '/<<'\''PYCODex'\''/{capture=1; next} /^PYCODex$/{capture=0} capture' \
+    "$REPO_ROOT/company/install.sh" > "$patcher"
+
+  run python3 "$patcher" "$cfg"
+  [ "$status" -eq 0 ]
+
+  python3 - "$cfg" <<'PY'
+import sys
+import tomllib
+from pathlib import Path
+
+cfg = tomllib.loads(Path(sys.argv[1]).read_text())
+servers = cfg["mcp_servers"]
+assert servers["figma"]["enabled"] is False
+assert servers["openaiDeveloperDocs"]["enabled"] is False
+assert "enabled" not in servers["context7"]
+PY
+}
+
+@test "local-preview-server defaults to localhost and documents tailnet-first exposure" {
+  helper="$REPO_ROOT/plugins/local-skills/skills/local-preview-server/scripts/local-preview-server.sh"
+  skill="$REPO_ROOT/plugins/local-skills/skills/local-preview-server/SKILL.md"
+
+  grep -q 'LOCAL_PREVIEW_BIND_ADDR:-127.0.0.1' "$helper"
+  grep -q -- '--tailscale-serve' "$helper"
+  grep -q -- '--tailscale-serve' "$skill"
+  grep -q 'The default bind address is `127.0.0.1`' "$REPO_ROOT/README.md"
+  run grep -F 'python3 -m http.server -b 0.0.0.0' "$helper"
+  [ "$status" -eq 1 ]
+}
+
+@test "local-preview-server tailnet mode keeps localhost bind and owns serve rule" {
+  helper="$REPO_ROOT/plugins/local-skills/skills/local-preview-server/scripts/local-preview-server.sh"
+  preview_dir="$TMPDIR_TEST/local-preview-tailnet"
+  bin="$TMPDIR_TEST/local-preview-bin"
+  tailscale_log="$TMPDIR_TEST/tailscale.log"
+  mkdir -p "$preview_dir" "$bin"
+  printf 'tailnet preview' > "$preview_dir/index.html"
+
+  cat > "$bin/tailscale" <<'SH'
+#!/bin/sh
+printf '%s\n' "$*" >> "$TAILSCALE_LOG"
+if [ "$1" = "serve" ]; then
+  exit 0
+fi
+if [ "$1" = "status" ] && [ "$2" = "--json" ]; then
+  printf '{"Self":{"DNSName":""}}'
+  exit 0
+fi
+if [ "$1" = "ip" ] && [ "$2" = "-4" ]; then
+  printf '127.0.0.1\n'
+  exit 0
+fi
+exit 1
+SH
+  chmod +x "$bin/tailscale"
+
+  port="$(free_tcp_port)"
+  run env TAILSCALE_LOG="$tailscale_log" PATH="$bin:/usr/bin:/bin" \
+    "$helper" start --path "$preview_dir" --port "$port" --tailscale-serve
+
+  [ "$status" -eq 0 ]
+  [ "$(extract_key_value BIND_ADDR "$output")" = "127.0.0.1" ]
+  [ "$(extract_key_value TAILNET_URL "$output")" = "http://127.0.0.1:$port/" ]
+  grep -q -- "serve --bg --http=$port --set-path=/ http://127.0.0.1:$port" "$tailscale_log"
+
+  run env TAILSCALE_LOG="$tailscale_log" PATH="$bin:/usr/bin:/bin" "$helper" stop --port "$port"
+  [ "$status" -eq 0 ]
+  grep -q -- "serve --http=$port off" "$tailscale_log"
 }

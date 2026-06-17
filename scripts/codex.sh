@@ -4,6 +4,35 @@ TAG="codex"
 # shellcheck source=scripts/lib/common.sh
 source "$(cd "$(dirname "$0")" && pwd)/lib/common.sh"
 
+usage() {
+  cat <<'USAGE'
+Usage: scripts/codex.sh [--dry-run] [--non-interactive]
+
+Installs/normalizes Codex CLI + oh-my-codex config and Codex skills.
+USAGE
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --dry-run)
+      DRY_RUN=true
+      ;;
+    --non-interactive)
+      NON_INTERACTIVE=true
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      warn "unknown argument: $1"
+      usage >&2
+      exit 2
+      ;;
+  esac
+  shift
+done
+
 info "Setting up Codex CLI + oh-my-codex (omx)..."
 
 CODEX_CONFIG_DIR="${CODEX_HOME:-$HOME/.codex}"

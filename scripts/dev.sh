@@ -13,7 +13,7 @@ else
     info "[dry-run] Skipping nvm install"
   else
     NVM_VERSION=$(curl -fsSL https://api.github.com/repos/nvm-sh/nvm/releases/latest 2>/dev/null | grep '"tag_name"' | cut -d'"' -f4)
-    NVM_VERSION="${NVM_VERSION:-v0.40.3}"
+    NVM_VERSION="${NVM_VERSION:-v0.40.5}"
     curl -o- "https://raw.githubusercontent.com/nvm-sh/nvm/${NVM_VERSION}/install.sh" | bash
   fi
 fi
@@ -328,7 +328,7 @@ else
 fi
 
 # ── Social-platform read tools (Agent-Reach upstream tools) ──
-# Install the upstream CLIs directly. See docs/agent-reference.md for the one-liners
+# Install the upstream CLIs directly. See README.md for the one-liners
 # agents should call.
 # - yt-dlp: YouTube/Bilibili/1800+ sites — installed via Brewfile (no auth)
 # - twitter-cli (public-clis/twitter-cli): X/Twitter via cookie auth — `twitter search/tweet/user`

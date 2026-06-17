@@ -15,6 +15,8 @@ CLAUDE_KNOWN_MARKETPLACES_JSON="$HOME/.claude/plugins/known_marketplaces.json"
 CLAUDE_INSTALLED_PLUGINS_JSON="$HOME/.claude/plugins/installed_plugins.json"
 MATT_POCOCK_SKILLS_REF="${MATT_POCOCK_SKILLS_REF:-2bf70051928429983de3b5718d277150926f8c89}"
 GRILL_ME_SKILL_URL="https://raw.githubusercontent.com/mattpocock/skills/${MATT_POCOCK_SKILLS_REF}/skills/productivity/grill-me/SKILL.md"
+OPENAI_SKILLS_REF="${OPENAI_SKILLS_REF:-a8924c2a35cfa290458852c4fad17c9133054c2e}"
+FIGMA_IMPLEMENT_DESIGN_SKILL_URL="https://raw.githubusercontent.com/openai/skills/${OPENAI_SKILLS_REF}/skills/.curated/figma-implement-design/SKILL.md"
 
 usage() {
   cat <<'USAGE'
@@ -99,6 +101,7 @@ install_claude_upstream_skills() {
 
 install_codex_upstream_skills() {
   install_upstream_skill_from_url "Codex" "$CODEX_CONFIG_DIR/skills" "grill-me" "$GRILL_ME_SKILL_URL"
+  install_upstream_skill_from_url "Codex" "$CODEX_CONFIG_DIR/skills" "figma-implement-design" "$FIGMA_IMPLEMENT_DESIGN_SKILL_URL"
 }
 
 install_codex_local_skills() {

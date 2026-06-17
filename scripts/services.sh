@@ -4,7 +4,7 @@ TAG="services"
 # shellcheck source=scripts/lib/common.sh
 source "$(cd "$(dirname "$0")" && pwd)/lib/common.sh"
 
-# Installs LaunchAgents for purplemux and code-server, but skips loading LaunchAgents when dependencies are missing.
+# Installs LaunchAgents for purplemux, code-server, agentwatch, and caffeinate, but skips loading LaunchAgents when dependencies are missing.
 # Each installed service runs at
 # login and is auto-restarted (KeepAlive=true). code-server binds to 127.0.0.1 (kernel-
 # level isolation). purplemux binds to *:8022 (no --bind flag upstream), so this
@@ -141,25 +141,72 @@ else
   warn "Skipping code-server LaunchAgent because code-server is not available."
 fi
 
-info "services setup done"
+# ── agentwatch: ensure global install (bun preferred), run supervise loop ──
+# bun is preferred because `bun install -g` uses a single stable bin
+# (~/.bun/bin), avoiding nvm's per-Node-version global-bin fragility. npm is the
+# fallback when bun is absent. bun is already a managed dependency (Brewfile).
+agentwatch_ready=false
+agentwatch_launch_path=""
+agentwatch_stable_path="/opt/homebrew/bin:/usr/local/bin:$HOME/.bun/bin:$HOME/.local/bin:/usr/bin:/bin"
+if $DRY_RUN; then
+  info "[dry-run] would check agentwatch and install @voidmatcha/agentwatch (bun preferred, npm fallback)"
+  agentwatch_ready=true
+elif agentwatch_launch_path=$(PATH="$agentwatch_stable_path" command -v agentwatch 2>/dev/null); then
+  info "Found agentwatch ($($agentwatch_launch_path --version 2>/dev/null || echo unknown))"
+  agentwatch_ready=true
+elif command -v bun >/dev/null 2>&1; then
+  info "Installing @voidmatcha/agentwatch via bun..."
+  if bun install -g @voidmatcha/agentwatch; then
+    agentwatch_ready=true
+  fi
+elif command -v npm >/dev/null 2>&1; then
+  info "Installing @voidmatcha/agentwatch via npm..."
+  if npm install -g @voidmatcha/agentwatch; then
+    agentwatch_ready=true
+  fi
+else
+  warn "Neither bun nor npm found — run 'brew bundle' / scripts/dev.sh first, then re-run."
+fi
+
+if $agentwatch_ready; then
+  install_agent "com.user.agentwatch"                 "$DOTFILES_DIR/configs/com.user.agentwatch.plist"                 "$DOTFILES_DIR/scripts/agentwatch-launch.sh"
+else
+  warn "Skipping agentwatch LaunchAgent because agentwatch is not available in launchd's stable PATH."
+fi
+
+# ── caffeinate: keep the Mac awake on AC for remote access ──
+# caffeinate is built into macOS (no install, no sudo). `-s` prevents system sleep
+# only on AC power (battery still sleeps), and the assertion exists only while the
+# process runs — so this LaunchAgent keeps Tailscale SSH / code-server / agentwatch
+# reachable without any persistent pmset change. (Lid-closed sleep is not covered;
+# that needs `sudo pmset -c disablesleep 1`.)
+install_agent "com.user.caffeinate" \
+              "$DOTFILES_DIR/configs/com.user.caffeinate.plist" \
+              "$DOTFILES_DIR/scripts/caffeinate-launch.sh"
 
 # ── Auto-attach to tailnet via tailscale serve ──
-# `tailscale serve` config is persisted by tailscaled, so this is idempotent —
-# re-running with the same args is a no-op. We only attempt this if tailscale
-# is installed AND the daemon is logged in (status is non-error).
+# `tailscale serve` config is persisted by tailscaled, so re-running with the
+# same args is a no-op. Because it exposes local services to the tailnet, it is
+# opt-in and should only be enabled after confirming Tailscale ACLs.
 if $DRY_RUN; then
+  info "[dry-run] tailscale serve opt-in is ENABLE_TAILSCALE_SERVE=1"
   info "[dry-run] tailscale serve --bg --https=443  --set-path=/ http://localhost:8022"
   info "[dry-run] tailscale serve --bg --https=8443 --set-path=/ http://localhost:8088"
-elif command -v tailscale >/dev/null 2>&1 && tailscale status >/dev/null 2>&1; then
-  tailscale serve --bg --https=443  --set-path=/ http://localhost:8022 \
-    || warn "tailscale serve (purplemux) failed — run manually after login"
-  tailscale serve --bg --https=8443 --set-path=/ http://localhost:8088 \
-    || warn "tailscale serve (code-server) failed — run manually after login"
+elif [ "${ENABLE_TAILSCALE_SERVE:-0}" = "1" ] && command -v tailscale >/dev/null 2>&1 && tailscale status >/dev/null 2>&1; then
+  tailscale serve --bg --https=443  --set-path=/ http://localhost:8022     || warn "tailscale serve (purplemux) failed — run manually after login"
+  tailscale serve --bg --https=8443 --set-path=/ http://localhost:8088     || warn "tailscale serve (code-server) failed — run manually after login"
   info "Tailnet exposure: purplemux on :443, code-server on :8443 (HTTPS via *.ts.net cert)"
 else
-  warn "Tailscale not installed or not logged in — skipping serve config."
-  warn "After 'tailscale up', re-run this script or invoke manually:"
-  warn "  tailscale serve --bg --https=443  --set-path=/ http://localhost:8022   # purplemux"
-  warn "  tailscale serve --bg --https=8443 --set-path=/ http://localhost:8088   # code-server"
+  if [ "${ENABLE_TAILSCALE_SERVE:-0}" != "1" ]; then
+    warn "Skipping tailscale serve config; set ENABLE_TAILSCALE_SERVE=1 after confirming ACLs."
+  else
+    warn "Tailscale not installed or not logged in — skipping serve config."
+  fi
+  warn "Run after login if desired:"
+  warn "  ENABLE_TAILSCALE_SERVE=1 bash scripts/services.sh"
+  warn "  tailscale serve --bg --https=443 --set-path=/ http://localhost:8022"
+  warn "  tailscale serve --bg --https=8443 --set-path=/ http://localhost:8088"
+  warn "Restrict Tailscale Serve access via ACL; do not expose purplemux's local :8022 listener directly."
 fi
-warn "Restrict Tailscale Serve access via ACL; do not expose purplemux's local :8022 listener directly."
+
+info "services setup done"

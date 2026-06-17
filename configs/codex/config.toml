@@ -55,7 +55,7 @@ sandbox_mode = "danger-full-access"
 
 [mcp_servers.chrome-devtools]
 command = "npx"
-args = ["-y", "chrome-devtools-mcp@0.23.0"]
+args = ["-y", "chrome-devtools-mcp@1.2.0"]
 startup_timeout_sec = 60
 
 # serena — LSP-backed semantic code navigation + editing (cross-file rename,
@@ -85,6 +85,28 @@ startup_timeout_sec = 15
 [mcp_servers.context7]
 url = "https://mcp.context7.com/mcp"
 startup_timeout_sec = 15
+
+# OpenAI Docs — official docs MCP used by the openai-docs Codex skill.
+[mcp_servers.openaiDeveloperDocs]
+url = "https://developers.openai.com/mcp"
+startup_timeout_sec = 15
+
+# Figma hosted — personal/default Codex/OMX design-context path.
+# Company overlay disables this hosted server by default and uses company
+# figma-developer-mcp instead. Authenticate once per machine with:
+# codex mcp login figma
+[mcp_servers.figma]
+url = "https://mcp.figma.com/mcp"
+startup_timeout_sec = 15
+tool_timeout_sec = 120
+
+# Figma Desktop — local-only fallback when hosted Figma is inappropriate.
+# Enable manually after turning on the MCP server in the Figma desktop app.
+[mcp_servers.figma-desktop]
+url = "http://127.0.0.1:3845/mcp"
+enabled = false
+startup_timeout_sec = 5
+tool_timeout_sec = 120
 
 [tui.model_availability_nux]
 "gpt-5.5" = 4

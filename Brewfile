@@ -27,7 +27,7 @@ brew "whisper-cpp"
 brew "tmux"                     # terminal multiplexer
 brew "mosh"                     # mobile shell — resilient UDP terminal sessions over SSH (survives roaming/disconnects)
 brew "vercel-cli"               # Vercel deployment CLI
-brew "postgresql"               # PostgreSQL database
+brew "postgresql@18"            # PostgreSQL database (pinned major; keg-only — link/PATH as needed)
 brew "mole"
 brew "bats-core"                # Bash Automated Testing System
 brew "pipx"                     # isolated Python CLI installer (used for twitter-cli, rdt-cli)

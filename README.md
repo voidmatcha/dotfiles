@@ -1,305 +1,412 @@
 # dotfiles
 
-My opinionated macOS dev setup. Three goals: AI-assisted by default (Claude Code, hermes-agent, codex CLI side-by-side), remote access via Tailscale (private mesh, no public ports) with both OpenSSH and Tailscale SSH enabled side-by-side, and reproducible (idempotent scripts, `--dry-run`, CI-checked with shellcheck + `bash -n` + Brewfile validation + bats).
+A reproducible macOS setup for AI-assisted development. The scripts install tools, but the repository is mainly an operating model: one shared agent contract, explicit MCP/tool surfaces, measured token behavior, private remote access, and verification for the workflow code itself.
 
-Run `bootstrap.sh` (one curl line on a fresh Mac) or clone + `./install.sh`
-manually. Either way it asks for confirmation before doing anything, then
-prompts for git name/email when it gets to that step.
+The design bet: agent cost is shaped less by prompt wording than by what enters context, how stable the cache prefix stays, and when a long session should hand off.
 
-## Quick start (fresh machine, one-shot)
+## Design at a glance
+
+| Design choice | What it does | Evidence |
+| --- | --- | --- |
+| Shared agent contract | [Claude Code], [Codex], and [OMX] route through one AGENTS.md contract instead of separate rulebooks | [`configs/CLAUDE.md`](configs/CLAUDE.md), [`configs/codex/config.toml`](configs/codex/config.toml), [`configs/AGENTS.md`](configs/AGENTS.md) |
+| Explicit tool surfaces | MCP servers, hosted readers, and destructive-command tripwires are documented instead of ambient | [`configs/mcp.json`](configs/mcp.json), [`configs/codex/config.toml`](configs/codex/config.toml), [`configs/hooks/pretool-guard.sh`](configs/hooks/pretool-guard.sh) |
+| Tool-output compression | [RTK] compresses noisy shell output before it becomes transcript context | [`configs/RTK.md`](configs/RTK.md), [`configs/rtk-config.toml`](configs/rtk-config.toml), `rtk gain --history` |
+| Session lifecycle checks | Local skills make continue, compact, clear, handoff, preview, and verify decisions repeatable | [`plugins/local-skills/skills`](plugins/local-skills/skills) |
+| Private remote access | Local previews and browser IDEs default local, then use [Tailscale Serve] when exposure is intentional | [`scripts/services.sh`](scripts/services.sh), [`plugins/local-skills/skills/local-preview-server/SKILL.md`](plugins/local-skills/skills/local-preview-server/SKILL.md) |
+
+Current measured shape:
+
+| Signal | Latest value | Source |
+| --- | ---: | --- |
+| Reuse multiple | about 40.8× | [Tokscale] Cache Read divided by Cache Write |
+| New-content share | about 3.4% | [Tokscale] Input plus Cache Write divided by total tokens |
+| [RTK] tool-output compression | about 65.3% across two machine [RTK] histories | `rtk gain --history` exports below |
+
+The [RTK] percentage is a tool-output compression metric, not a total spend reduction. Cache Read share is dashboard context, not a personal efficiency score. [agent-browser] is a qualitative token-pressure control: it keeps authenticated browsing local and avoids turning whole pages into transcript text when a targeted browser observation is enough.
+
+## Engineering signals
+
+| Signal | What it shows |
+| --- | --- |
+| Measurement discipline | Token claims are scoped to their source and paired with explicit do-not-claim boundaries |
+| Systems thinking | [Claude Code], [Codex], and [OMX] share prompt contracts while keeping each tool's native workflow |
+| Cost-aware design | [RTK], [Headroom], [agent-browser], cache-prefix discipline, and lifecycle checks target repeated context cost |
+| Operational tripwires | High-permission local modes are allowed, so checks are framed as mistake catchers rather than security controls |
+| Developer experience | Local skills encode repeat decisions so sessions do not depend on memory or ad-hoc prompts |
+| Verification culture | `scripts/verify.sh --full` and [Bats] cover installers, config, hooks, plugins, and helper behavior |
+
+<details>
+<summary>How to read the token numbers</summary>
+
+Quantitative claims in this README come from [Tokscale] or from explicit `rtk gain --history` exports. Derived claims stay scoped to those sources; total-spend attribution is intentionally not stated without a matched control run.
+
+[Tokscale] source captured on 2026-06-17.
+
+| [Tokscale] category | Share | Tokens |
+| --- | ---: | ---: |
+| Input | 1.0% | 727.5M |
+| Output | 0.4% | 276.2M |
+| Cache Read | 96.2% | 69.4B |
+| Cache Write | 2.4% | 1.7B |
+| Reasoning | 0.02% | 16.8M |
+
+[Tokscale] window: 72.108946182B total tokens, $50,017.9449 total cost, 9,344 sessions, 185 active days, date range 2025-09-21 to 2026-06-17.
+
+| [RTK] export | Commands | Raw output | Delivered output | Saved | Compression |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Machine A [RTK] history | 26,092 | 101.4M | 27.9M | 73.6M | 72.6% |
+| Machine B [RTK] history | 103,434 | 96.1M | 40.9M | 55.4M | 57.6% |
+| Combined cross-machine snapshot | 129,526 | 197.5M | 68.8M | about 129.0M | about 65.3% |
+
+Combined [RTK] compression is weighted by raw output: `(73.6M + 55.4M) / (101.4M + 96.1M)`, not the average of `72.6%` and `57.6%`.
+
+Safe claims:
+
+- `about 40.8× reuse`
+- `about 3.4% new-content share`
+- `about 65.3% RTK tool-output compression across two machine histories`
+- `Cache Read about 96.2%`
+
+Do not claim:
+
+- `65.3% cost reduction`
+- `96.2% efficiency`
+- any exact total-spend contribution from [RTK] without a matched control run
+- `optimal`, `minimized`, or best-possible cost
+
+Open measurement items:
+
+- Treat the combined [RTK] row as a cross-machine snapshot from two history exports, not a central deduplicated database total.
+- Track [RTK] bypass rate to show compression did not cause reruns or information loss.
+- Align [Tokscale] and [RTK] windows before computing any total-spend attribution.
+
+</details>
+
+## Install
+
+Fresh macOS install:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/voidmatcha/dotfiles/main/bootstrap.sh | bash
 ```
 
-`bootstrap.sh` installs Xcode Command Line Tools if `git` is missing, clones
-this repo (with submodules) into `~/dotfiles`, and hands off to `./install.sh`.
-The `--recurse-submodules` step pulls the optional `company/` overlay if you
-have access to the internal git host; without access the submodule clone
-fails silently and `install.sh` proceeds normally.
-
-Pass-through args work too:
+Preview without changing the machine:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/voidmatcha/dotfiles/main/bootstrap.sh | bash -s -- --dry-run
 ```
 
-## Quick start (already cloned)
+Run from an existing clone:
 
 ```bash
 cd ~/dotfiles
 ./install.sh
 ```
 
+`bootstrap.sh` installs Xcode Command Line Tools when `git` is missing, clones this repo into `~/dotfiles`, and hands off to `./install.sh`. The `company/` overlay runs only when the submodule exists locally.
 
-## Browser worktree dashboard
+## What gets installed
 
-This setup uses code-server as the lightweight web UI for git worktrees.
-Opening worktrees in browser VS Code (code-server) is handled by the
-`local-skills/worktree-open` skill — agents build the `?folder=`/`?workspace=`
-URL directly (no installed helper binaries), preferring the Tailscale Serve
-endpoint (`https://<tailnet-host-or-ip>:8443`) before local fallback.
+| Area | Result | Source |
+| --- | --- | --- |
+| macOS defaults | Dock, Finder, keyboard, screenshots, firewall, Touch ID sudo | [`scripts/macos.sh`](scripts/macos.sh) |
+| CLI packages | [Homebrew] tools, [Bats], [uv], [gettext], [git-filter-repo], [Docker CLI] | [`Brewfile`](Brewfile) |
+| Language runtimes | [nvm], [Node.js] LTS, [Corepack], [pyenv], latest [Python] 3, [SDKMAN!], [OpenJDK] LTS, [Maven] | [`scripts/dev.sh`](scripts/dev.sh) |
+| Shell and Git | [Zsh] plugins, [direnv], personal/work Git identities, SSH signing via [OpenSSH] | [`scripts/shell.sh`](scripts/shell.sh), [`scripts/git.sh`](scripts/git.sh) |
+| Agent CLIs | [Claude Code], [Codex], [Hermes Agent], [OMX] | [`scripts/claude.sh`](scripts/claude.sh), [`scripts/codex.sh`](scripts/codex.sh), [`scripts/hermes.sh`](scripts/hermes.sh) |
+| Remote access | [Tailscale] (including [Tailscale SSH][Tailscale]), [OpenSSH], [code-server], [purplemux] | [`scripts/tailscale.sh`](scripts/tailscale.sh), [`scripts/services.sh`](scripts/services.sh) |
 
-`scripts/code-server.sh` installs the worktree-oriented code-server extensions
-`jackiotyu.git-worktree-manager`, `eamodio.gitlens`, and `mhutchie.git-graph`.
+Run one focused installer when you do not want the full setup:
 
-## Local preview server
+```bash
+./scripts/brew.sh
+./scripts/macos.sh
+./scripts/dev.sh
+./scripts/shell.sh
+./scripts/git.sh
+./scripts/codex.sh
+```
 
-Generated HTML reports, static build outputs, exported dashboards, and other
-local browser artifacts are served by the repo-local `local-preview-server`
-skill. It starts a durable `python3 -m http.server` process, prefers tmux when
-available, binds to `0.0.0.0`, verifies the exact reported URL, and reports
-localhost plus LAN/Tailscale URLs without creating public internet exposure by
-default.
+## Agent layer
 
-Typical agent-facing commands:
+The goal is not to make [Claude Code] and [Codex] identical. The goal is to keep their policies, skills, and MCP routing consistent while preserving each tool's native workflow.
+
+| Surface | Role | Source |
+| --- | --- | --- |
+| [Claude Code] | [Claude Code] execution with shared AGENTS.md rules, hooks, MCP, and [RTK] policy | [`scripts/claude.sh`](scripts/claude.sh), [`configs/CLAUDE.md`](configs/CLAUDE.md) |
+| [Codex (with OMX)][Codex] | [Codex] plus [OMX] workflows, goals, and native subagents | [`scripts/codex.sh`](scripts/codex.sh), [`configs/codex/config.toml`](configs/codex/config.toml) |
+| [Headroom] | Optional `claudeh`, `codexh`, and `omxh` wrappers for reversible compression and cache-aware routing | [`scripts/headroom-agent.sh`](scripts/headroom-agent.sh), [`scripts/headroom.sh`](scripts/headroom.sh) |
+| [RTK] | Command-output compression policy before noisy shell output enters context | [`configs/RTK.md`](configs/RTK.md), [`configs/rtk-config.toml`](configs/rtk-config.toml) |
+| Local skills | Repo-owned procedures for context pressure, handoff, verification, previews, cleanup, and provenance | [`plugins/local-skills/skills`](plugins/local-skills/skills) |
+
+<details>
+<summary><a href="https://docs.anthropic.com/en/docs/claude-code/overview">Claude Code</a> wiring</summary>
+
+| Piece | Source | What it contributes |
+| --- | --- | --- |
+| Shared prompt contract | [`configs/CLAUDE.md`](configs/CLAUDE.md) | imports ~/.agent/AGENTS.md through `@~/.agent/AGENTS.md` and imports `@RTK.md` |
+| Settings | [`configs/claude-settings.json`](configs/claude-settings.json) | Installs hooks, status line, permissions, plugins, and MCP config references |
+| MCP surface | [`configs/mcp.json`](configs/mcp.json) | Keeps approved servers explicit |
+| Local agents | [`configs/agents`](configs/agents) | Provides role prompts shared by [Claude Code] setup |
+
+Installed [Claude Code] plugins include [`claude-hud@claude-hud`][claude-hud], [`skills-janitor@skills-janitor`][skills-janitor], [`review-loop@hamel-review`][review-loop], [`local-skills@dotfiles-local`](plugins/local-skills), [`session-wrap`][session-wrap], and [`obsidian-skills`][obsidian-skills].
+
+</details>
+
+<details>
+<summary><a href="https://github.com/openai/codex">Codex</a> and <a href="https://yeachan-heo.github.io/oh-my-codex">OMX</a> wiring</summary>
+
+| Piece | Source | What it contributes |
+| --- | --- | --- |
+| Installer | [`scripts/codex.sh`](scripts/codex.sh) | Installs `@openai/codex`, `oh-my-codex`, and writes `~/.codex/config.toml` |
+| Prompt contract | [`configs/codex/config.toml`](configs/codex/config.toml) | Sets `developer_instructions` to the [Codex]/[OMX] AGENTS.md contract |
+| Skill installer | [`scripts/skills.sh`](scripts/skills.sh) | `scripts/skills.sh codex` installs repo-local [Codex] skills, including `dotfiles-verify` |
+| Goals | [`configs/codex/config.toml`](configs/codex/config.toml) | Keeps `[features] goals = true` enabled |
+| MCP | [`configs/codex/config.toml`](configs/codex/config.toml) | `mcp_servers` covers [Chrome DevTools MCP][chrome-devtools-mcp], [serena], [codegraph], [context7], [OpenAI Docs MCP], and personal/default [Figma hosted MCP][Figma MCP]. Company Figma context is separate: the company overlay uses `figma-developer-mcp` and disables hosted Codex Figma by default |
+
+Skills are procedural workflows under `.codex/skills`; native subagents are role files under `.codex/agents`. Hosted [Codex] MCP entries stay disabled unless the company overlay explicitly enables them.
+
+</details>
+
+## Local skills: decisions I wanted to stop re-explaining
+
+The local skills exist because these decisions were easy to get slightly wrong when they lived only in memory: whether to continue a long session, how to hand off work, how to preview generated files privately, how to verify dotfiles changes, and how to keep imported workflow assets traceable.
+
+| Decision | Skill | Result |
+| --- | --- | --- |
+| Continue, compact, clear, or hand off? | [`context-check`](plugins/local-skills/skills/context-check/SKILL.md) | Reads context, cache, idle, and headroom signals before recommending an action |
+| Move work to a fresh [Claude Code], [Codex], or [OMX] session? | [`handover`](plugins/local-skills/skills/handover/SKILL.md) | Writes handshake artifacts instead of relying on a pasted summary |
+| Claim an installer/config change is safe? | [`dotfiles-verify`](plugins/local-skills/skills/dotfiles-verify/SKILL.md) | Runs the repo verifier and [Bats] gate |
+| View generated output from another device? | [`local-preview-server`](plugins/local-skills/skills/local-preview-server/SKILL.md) | Defaults to localhost and uses [Tailscale Serve] only when requested |
+| Open a worktree in the browser IDE? | [`worktree-open`](plugins/local-skills/skills/worktree-open/SKILL.md) | Resolves local and [Tailscale] [code-server] URLs consistently |
+| Clean up stuck agent processes? | [`agent-reap`](plugins/local-skills/skills/agent-reap/SKILL.md) | Scans conservatively and requires explicit approval before killing |
+| Prune agents, commands, skills, or MCPs? | [`agent-usage-audit`](plugins/local-skills/skills/agent-usage-audit/SKILL.md) | Grounds pruning decisions in usage data |
+| Diagnose stale code intelligence? | [`code-intel-doctor`](plugins/local-skills/skills/code-intel-doctor/SKILL.md) | Checks MCP config, installed tools, and repo index health |
+| Avoid sending work data through the wrong surface? | [`work-scope-guard`](plugins/local-skills/skills/work-scope-guard/SKILL.md) | Keeps sensitive routing reminders fail-open and generic |
+| Track imported workflow assets? | [`source-provenance`](plugins/local-skills/skills/source-provenance/SKILL.md) | Records source, license, and local modifications |
+| Run a long handoff in cmux? | [`cmux-handoff-runner`](plugins/local-skills/skills/cmux-handoff-runner/SKILL.md) | Starts, polls, and recovers long [Claude Code]/[Codex]/[OMX] handoffs |
+
+`handover` produces the transferable state. `cmux-handoff-runner` is the terminal runner around that state: it preflights the pane, starts the session, watches for idle/stuck behavior, and records recovery markers.
+
+## Token-efficiency design
+
+The thesis is not “the numbers happen to look good.” The setup is efficient because the workflow is shaped around where token cost actually comes from: context ingress, cache-prefix stability, idle-time cache decay, long-session tradeoffs, and measurement.
+
+| Cost mechanism | Repo mechanism | Evidence |
+| --- | --- | --- |
+| Stateless billing makes ingress valuable | [RTK] compresses noisy command output before transcript ingress | [`configs/RTK.md`](configs/RTK.md), [`configs/rtk-config.toml`](configs/rtk-config.toml), `rtk gain --history` |
+| Cache prefixes need stability | [Claude Code] keeps a compact `CLAUDE.md`; [Codex] keeps one `developer_instructions` contract and a capped MCP surface | [`configs/CLAUDE.md`](configs/CLAUDE.md), [`configs/codex/config.toml`](configs/codex/config.toml) |
+| Cache has a clock | `context-check` watches idle, prompt, transcript, and [Headroom] pressure | [`plugins/local-skills/skills/context-check/SKILL.md`](plugins/local-skills/skills/context-check/SKILL.md) |
+| Long sessions are not free | `context-check` and `handover` make continue, compact, clear, and handoff explicit | [`plugins/local-skills/skills/handover/SKILL.md`](plugins/local-skills/skills/handover/SKILL.md) |
+| Optimization must survive real work | Hooks fail open; bypasses exist; the verifier covers hooks and skill helpers | [`configs/hooks`](configs/hooks), [`tests/scripts.bats`](tests/scripts.bats), [`scripts/verify.sh`](scripts/verify.sh) |
+
+<details>
+<summary>Why these five principles matter</summary>
+
+1. **Stateless billing means ingress matters.** A token admitted early can be re-read on later calls. [RTK] attacks the first factor by compressing tool output; search batching attacks the second factor by reducing call count.
+2. **Cache is a prefix machine.** Naive compression can break cache prefixes. This repo keeps prefix-forming files stable and uses [Headroom] only as an optional wrapper, not an invisible rewrite layer.
+3. **Cache has a clock.** Idle sessions can force repeated cache writes for content that looked reusable. `context-check` makes that pressure visible.
+4. **Long sessions are not free.** A high cache-read ratio helps only while reuse beats the cost of carrying context. `handover` exists so clearing context can be deliberate rather than lossy.
+5. **Unmeasured optimization is superstition.** [RTK] gain, [Tokscale] summaries, [Bats], and `scripts/verify.sh` keep the efficiency layer from becoming folklore.
+
+`about 65.3%` is a weighted tool-output compression claim across two machine [RTK] histories, not a total-cost claim.
+
+</details>
+
+## MCP governance and tool routing
+
+| Surface | Config | Policy |
+| --- | --- | --- |
+| [Claude Code] MCP | [`configs/mcp.json`](configs/mcp.json) | `permissions.deny` blocks risky paths and hosted-sensitive routes |
+| [Codex] MCP | [`configs/codex/config.toml`](configs/codex/config.toml) | `mcp_servers` covers [Chrome DevTools MCP][chrome-devtools-mcp], [serena], [codegraph], [context7], [OpenAI Docs MCP], and personal/default [Figma hosted MCP][Figma MCP]. Company Figma context is separate: the company overlay uses `figma-developer-mcp` and disables hosted Codex Figma by default |
+| Company overlay | [`company/install.sh`](company/install.sh) | Hosted [Codex] MCPs require explicit opt-in |
+
+Do not route internal URLs through hosted tools such as [Exa], [Jina Reader], or the personal/default [Figma hosted MCP][Figma MCP]. For company design context, use the company overlay's `figma-developer-mcp` or a local browser surface.
+
+<details>
+<summary>Tool routing reference</summary>
+
+| Need | Tool | Why |
+| --- | --- | --- |
+| Explain code flow, route to handler, or trace symbols | [codegraph] | Pre-indexed code graph for architecture and call-path questions |
+| Rename, edit, or inspect references | [serena] | LSP-backed code intelligence and symbol-aware edits |
+| Clean public web page extraction | [Jina Reader] | Fast Markdown extraction for public pages |
+| Broad public web research | [Exa] | External search when local/repo evidence is not enough |
+| Fetch a sensitive or authenticated page | [agent-browser] with local Chrome profile | Keeps auth and internal URLs local, and avoids dumping full page/source text when a targeted browser observation is enough |
+| Throwaway browser automation | [Chrome DevTools MCP][chrome-devtools-mcp] | Clean browser session without auth carryover |
+| API or framework docs | [context7] MCP or [OpenAI Docs MCP] | Versioned docs are better than memory |
+| [Figma][Figma MCP] design context | [Figma MCP] | Personal/default [Codex]/[OMX] can use hosted [Figma][Figma MCP] context. Company design context is a separate path through the company overlay's `figma-developer-mcp`; hosted Codex Figma is disabled there by default |
+| Browse [Claude Code], [Codex], or local agent sessions | [agentsview] | Shows duration, peak context, cache economics, tool/model mix, and session spikes |
+| Current session context/cache policy | [`context-check`](plugins/local-skills/skills/context-check/SKILL.md) | Returns continue, compact, clear, or handoff advice |
+| Plan or PR interrogation before handoff | [grill-me] | Runs one-question-at-a-time interrogation with recommended answers |
+
+Decision shortcut: for “explain”, “understand”, or “trace”, use [codegraph] first. For “rename”, “edit”, or “refactor”, use [serena] first.
+
+Hard rules:
+
+- Do not recommend tools or installs that are not configured here or linked to a source.
+- Do not send sensitive or internal URLs through hosted readers such as [Jina Reader] or [Exa].
+- Do not bulk-scrape X, Reddit, LinkedIn, [Jina Reader], or [Exa].
+- Keep enabled MCPs lean per project: aim for fewer than 10 enabled servers and fewer than 80 active tools.
+- Do not create stray top-level Markdown files without explicit request.
+
+</details>
+
+## Claude Code operational tripwires, not security controls
+
+This repo is often used in trusted high-permission local modes. These checks are Claude Code tripwires, not a security boundary, and they do not protect a separate [Codex] `danger-full-access` session. They reduce common mistakes; they do not replace sandboxing, review, or secret management.
+
+| Tripwire | Keep? | What it catches |
+| --- | --- | --- |
+| `permissions.deny` in [`configs/claude-settings.json`](configs/claude-settings.json) | Yes — cheap hard deny | Secret-like reads and hosted-sensitive routes: `.env*`, `secrets/**`, `WebFetch`, `mcp__filesystem` |
+| [`pretool-guard`](configs/hooks/pretool-guard.sh) | Yes — highest value | Broad destructive Bash patterns and stray Markdown writes before the tool call runs |
+| [`skill-md-edit-warn`](configs/hooks/skill-md-edit-warn.sh) | Yes, but narrow | Warns when `SKILL.md` changes mid-session, because already-loaded skill instructions are stale until restart |
+
+## Remote work and local previews
+
+Remote work should prefer private tailnet exposure over broad LAN binding. Local previews default to localhost; tailnet exposure is explicit.
+
+Use [`worktree-open`](plugins/local-skills/skills/worktree-open/SKILL.md) to build [code-server] URLs for one worktree or all worktrees in a repo. It prefers the [Tailscale Serve] endpoint at `https://<tailnet-host-or-ip>:8443`, then falls back to the local [code-server] URL.
+
+Use [`local-preview-server`](plugins/local-skills/skills/local-preview-server/SKILL.md) for generated HTML reports, static build outputs, exported dashboards, and other local browser artifacts. The default bind address is `127.0.0.1`. Use `--tailscale-serve` when the preview should be reachable from another device on the tailnet. Use `--lan` or `--bind 0.0.0.0` only when trusted LAN exposure is intentional.
 
 ```bash
 plugins/local-skills/skills/local-preview-server/scripts/local-preview-server.sh start --path ./report.html --port 8377
-plugins/local-skills/skills/local-preview-server/scripts/local-preview-server.sh start --path ./dist
+plugins/local-skills/skills/local-preview-server/scripts/local-preview-server.sh start --path ./dist --tailscale-serve
 plugins/local-skills/skills/local-preview-server/scripts/local-preview-server.sh status --port 8377
 plugins/local-skills/skills/local-preview-server/scripts/local-preview-server.sh stop --port 8377
 ```
 
-## What gets installed
+<details>
+<summary>LaunchAgent services</summary>
 
-**Homebrew + apps** — packages from `Brewfile`, including the usual CLI tools (ripgrep/fd/bat/eza/fzf/zoxide/atuin/direnv/jq/delta/tmux) plus `bats-core` for shell-script tests, `uv` (Python tool installer used by serena), `gettext` (envsubst, used by company overlay), `git-filter-repo` (surgical history rewrites), and `docker` CLI (no Docker Desktop — pair with Rancher Desktop on hosts with licensing restrictions).
+[`scripts/services.sh`](scripts/services.sh) installs LaunchAgent services and skips loading LaunchAgents when dependencies are missing.
 
-**macOS settings** — dock autohide, Finder tweaks, keyboard repeat rates, CapsLock → Escape, three-finger drag, screenshots to `~/Screenshots`.
+| Service | Purpose | Exposure |
+| --- | --- | --- |
+| `com.user.purplemux` | Web terminal multiplexer for [Claude Code] | Listens on `*:8022`; access is [Tailscale Serve] plus macOS firewall |
+| `com.user.code-server` | VS Code in the browser | Binds to `127.0.0.1:8088`; optional tailnet exposure on `:8443` |
+| `com.user.agentwatch` | Local agent session supervisor | No network listener |
+| `com.user.caffeinate` | Keeps the Mac awake on AC power for remote access | No network listener |
 
-**Dev tools:**
-- nvm + Node.js LTS, corepack (pnpm + yarn)
-- pyenv + latest Python 3
-- SDKMAN + Java LTS + Maven
-- Playwright CLI (for coding agents)
-- whisper-cpp model (~1.5GB, large-v3-turbo)
-- ccusage, agentsview, rtk, agent-browser
-- defuddle — free local web extraction tool for LLM-friendly Markdown
-- [serena](https://github.com/oraios/serena) — MCP server for semantic code navigation + **editing** (LSP-backed). Installed via `uv tool install`, registered in `configs/mcp.json` with `--context claude-code --project-from-cwd`. `.zshrc` wraps `claude` to inject serena's system-prompt-override (counters Opus's bias toward built-in tools)
-- [codegraph](https://github.com/colbymchenry/codegraph) — read-only MCP server for **exploring** large codebases via a pre-indexed knowledge graph (tree-sitter + SQLite, watcher auto-syncs on save). Installed via `npm install -g @colbymchenry/codegraph`. Complementary to serena: codegraph wins on "how does X reach Y" / architecture / framework-route mapping / iOS+RN cross-language bridges; serena wins on symbol-level edits and refactors. Run `codegraph init -i` once per project. Personal user-scope only — not in the NAVER MCP catalog, so excluded from company project-scope (`~/work/.mcp.json`).
-- [headroom](https://github.com/chopratejas/headroom) — default context compression wrapper installed via `scripts/headroom.sh` (`uv tool install -p 3.13 'headroom-ai[proxy,mcp,code]'`). When `headroom` + wrapper symlinks exist, `.zshrc` routes `claude`, `codex`, and `omx` through Headroom automatically; explicit `claudeh`, `codexh`, and `omxh` remain available. Bypass with `HEADROOM_DEFAULT=0`, per-tool `HEADROOM_CLAUDE=0` / `HEADROOM_CODEX=0` / `HEADROOM_OMX=0`, or `command claude|codex|omx`. `codexh`/`omxh` share a lock/refcount around Codex's default `~/.codex/config.toml` Headroom provider so the config is only unwrapped after the last wrapped Codex/OMX session exits; the tracked Codex template intentionally leaves `model_provider` unset because Headroom injects a temporary provider at runtime. Default `HEADROOM_MODE=cache` preserves provider prefix-cache behavior; set `HEADROOM_MODE=token` for maximum compression. Owl is optional; context-check treats missing `owl-rs` as advisory, not a blocker.
-- Agent status labels — `scripts/statusline.sh` installs `~/.local/bin/agent-session-label` and `~/.local/bin/claude-statusline`. Claude Code's `statusLine` command prefixes the existing Owl/HUD output with a cmux workspace/surface label, tmux session/window/pane label, agent session ID, or project fallback. Codex/OMX uses built-in status_line items without `thread-title` so UUID fallback session IDs do not leak into the HUD; terminal titles stay project/branch based.
-- [graphify](https://github.com/safishamsi/graphify) — Claude/Codex skill (`/graphify`) that turns any folder into a queryable knowledge graph. For pure code, codegraph is more specialized; reach for graphify on mixed content (PDFs, docs, papers). Installed via `python3 -m pip install --user graphifyy && graphify install --platform claude && graphify install --platform codex`
-- [agentsview](https://github.com/kenn-io/agentsview) — local-first Claude/Codex session browser and usage analytics dashboard. Installed via Homebrew cask (`brew install --cask agentsview`); CLI one-liners include `agentsview serve`, `agentsview usage daily --all --json`, `agentsview stats --format json`, and `agentsview session usage <id> --format json`.
-- [wrangler](https://developers.cloudflare.com/workers/wrangler/) — Cloudflare Workers/Pages/R2/D1 CLI
-- Social / web read CLIs (subset of what [agent-reach](https://github.com/Panniantong/Agent-Reach) bundles, installed directly to keep the dependency surface small):
-  - `yt-dlp` — YouTube/Bilibili/1800+ sites, metadata + subtitles, no auth
-  - `twitter` ([public-clis/twitter-cli](https://github.com/public-clis/twitter-cli), via pipx) — X/Twitter read/search/timeline/profile; auto-reads browser cookies (Chrome/Firefox), no API key required — matches Agent-Reach upstream
-  - `rdt` (rdt-cli, via pipx) — Reddit search/read; `rdt login` once (Reddit requires auth since 2024)
-  - `feedparser` (Python lib) — RSS/Atom feeds (blog/YouTube channel/GitHub releases/Hacker News etc.)
-  - For any other URL, `curl https://r.jina.ai/<URL>` returns clean Markdown (Jina Reader, no install)
-  - See `docs/agent-reference.md` for exact one-liners agents should call.
-- MCP servers wired up by `configs/mcp.json` (registered via `claude mcp add-json --scope user`):
-  - **chrome-devtools** — browser control
-  - **serena** — semantic code intelligence (LSP edit/refactor)
-  - **codegraph** — pre-indexed code graph (read-only; exploration / trace / architecture)
-  - **linkedin** (`linkedin-scraper-mcp` via `uvx`) — LinkedIn profiles/companies/jobs (browser auth on first call). Excluded on internal NAVER machines — not yet security-reviewed.
-  - **exa** — semantic web search + `web_fetch_exa` URL reader. Connects to Exa's provider-hosted endpoint (`https://mcp.exa.ai/mcp`) anonymously — no API key needed for free-plan usage. Add `x-api-key` header (key from https://dashboard.exa.ai/) only if you hit the rate limit. On company overlay machines it is not hard-pruned because it is provider-official, but it remains user-scope only and must never receive internal data.
-  - **context7** — up-to-date library/framework docs lookup. Connects to Context7's hosted endpoint (`https://mcp.context7.com/mcp`) anonymously for basic usage. The company overlay sources `CONTEXT7_API_KEY` from `~/.company.secrets.env` to lift rate limits when working under `~/work/`.
-  - GitHub Operations on the public dotfiles use the `gh` CLI directly. The company overlay (if configured) can add a `github-enterprise` MCP for the corporate GitHub Enterprise host — see `company/configs/AGENTS-company.md`.
+Tailnet exposure is opt-in:
 
-**Shell** — Oh My Zsh with zsh-autosuggestions, zsh-syntax-highlighting, zsh-completions.
-
-**Git** — separate personal/work accounts via `includeIf` with **remote-URL-based** routing (see "Separate Git accounts" below). Commits and tags are SSH-signed by default — register the public key as a Signing Key on GitHub to get a verified badge. A global `~/.gitignore_global` (symlink to `configs/.gitignore_global`) catches `.DS_Store`, editor leftovers, and local `.env*` files while leaving shared `.envrc` files trackable for direnv.
-
-**Claude Code:**
-- Install — native build via `scripts/claude.sh`, which downloads the official `claude.ai/install.sh` (to `~/.local`) and runs it from disk (no curl-pipe-bash); thereafter it self-updates with `claude update`. Deliberately **not** Homebrew — the cask lags upstream and gets shadowed by `~/.local/bin` on PATH, so a brew-installed `claude` is never the one that actually runs.
-- Skills — agent-skills, ai-slop-cleaner, clarify, code-review, doc-coauthoring, e2e-skills, frontend-design, humanizer, im-not-ai, internal-comms, karpathy-guidelines, mcp-builder, obsidian-skills, project-session-manager (`/oh-my-claudecode:psm`), security-best-practices, skill-creator, ui-clone-skills, webapp-testing, Matt Pocock's upstream `grill-me` installed as a pinned standalone skill by `scripts/skills.sh`, plus repo-local skills (`dotfiles-verify`, `agent-usage-audit`, `code-intel-doctor`, `worktree-open`, `local-preview-server`, `work-scope-guard`, `context-check`, `source-provenance`, `cmux-handoff-runner`, `handover`, `agent-reap`) exposed from `plugins/local-skills/skills/` via `scripts/skills.sh`
-- Local agents — scout, critic, debugger, test-engineer, security-reviewer, and git-master are symlinked from `configs/agents/` into `~/.claude/agents/` so core review/debug/test/git lanes work even before optional plugin marketplaces are available.
-- Plugins (enabled by default) — `local-skills@dotfiles-local` (this repo as a local Claude skill plugin; Codex gets the same repo-local skills through `scripts/skills.sh codex` symlinks), [claude-hud@claude-hud](https://github.com/jarrodwatts/claude-hud) (context/tool/agent/todo statusline; run `/claude-hud:setup` once; personal machines only), [skills-janitor@skills-janitor](https://github.com/khendzel/skills-janitor) (skill inventory, duplicates, token value, cleanup), security-guidance, superpowers, claude-md-management (`/claude-md-management:revise-claude-md` + `claude-md-improver` audit skill), hookify, session-wrap, [claude-mem@thedotmack](https://github.com/thedotmack/claude-mem) (persistent memory + cross-session search), plus comprehensive-review and documentation-generation from the [wshobson/agents](https://github.com/wshobson/agents) marketplace. Plugin slash command names follow each plugin's manifest: many use `/<plugin-name>:<command>`; standalone skills (`/graphify`, etc.) don't take the prefix.
-- Plugins (parked — installed/cached but `enabledPlugins: false`; largely superseded by native Claude Code features such as workflows/ultracode, `/simplify`, `/code-review`, `/security-review`, and worktrees; revive with one settings flip) — ralph-loop, [autoresearch@autoresearch](https://github.com/uditgoenka/autoresearch), [review-loop@hamel-review](https://github.com/hamelsmu/claude-review-loop) (`REVIEW_LOOP_CODEX_FLAGS="--sandbox workspace-write"` stays set so a revival never inherits the plugin's dangerous default), rust-analyzer-lsp, fakechat, vercel, session-report, and the remaining [wshobson/agents](https://github.com/wshobson/agents) packs (javascript-typescript, python-development, frontend-mobile-development, security-scanning, unit-testing, tdd-workflows, git-pr-workflows, error-debugging, ui-design, accessibility-compliance, content-marketing, seo-*).
-- Hooks — `rtk hook claude` (in-place PreToolUse hook registered via `rtk init --global`; compresses Bash output 60–90%), pretool-guard (structured PreToolUse deny for risky Bash), skill-md-edit-warn (PostToolUse reminder after editing `SKILL.md`), work-scope-guard (SessionStart advisory when cwd is under configured work roots), context-check (UserPromptSubmit advisory for continue/compact/clear/handover pressure; never auto-clears), plus security-guidance plugin hooks (edit/stop security review; the Stop-hook code-review pass is disabled via `ENABLE_CODE_SECURITY_REVIEW=0`). Hooks from parked plugins (autoresearch, review-loop) stay dormant while those plugins are disabled.
-- MCP — chrome-devtools (browser control via Chrome DevTools Protocol), serena (semantic code intelligence, LSP edit/refactor), codegraph (read-only pre-indexed code graph for exploration), context7 (version-aware docs lookup). Defined in `configs/mcp.json`; `scripts/claude.sh` registers each entry via `claude mcp add-json --scope user` (writes to `~/.claude.json`, not the older `.mcp.json` symlink path), while Claude settings pin the approved managed servers.
-- Codex CLI — first-class `scripts/codex.sh` setup owns `@openai/codex` install/auth, installs the official cmux Codex skill, Matt Pocock's upstream `grill-me`, plus repo-local skills into `~/.codex/skills/` (including `$context-check` for continue/compact/clear/handover advice), and copies the portable `configs/codex/config.toml` template to `~/.codex/config.toml` so Codex's machine-local trust/runtime entries don't dirty the repo.
-- Token saving — settings calibrated against [spilist's checklist gist](https://gist.github.com/spilist/c468cbf1ed0ffc91100f813aabdcd520) (verified against official docs). Claude Code: `includeGitInstructions: false` drops the built-in git workflow instructions + git status snapshot from the system prompt. `autoInstallIdeExtension: false` keeps Claude Code as a pure terminal tool — no auto-install of VS Code/JetBrains extensions. Codex: `web_search = "disabled"` drops the web_search tool definition (re-enable per-invocation with `codex --search`). `[features].apps = false` drops ChatGPT-connector tool definitions. Session-level compression is on by default in interactive shells when Headroom is installed; use `HEADROOM_DEFAULT=0` or `command codex`/`command claude`/`command omx` for a direct session.
-
-**Codex CLI:**
-- CLI — `scripts/codex.sh` installs `@openai/codex` with npm when `codex` is missing; upstream also supports `brew install --cask codex`
-- Config — `configs/codex/config.toml` is copied to `~/.codex/config.toml`; it sets `gpt-5.5`, leaves `model_provider` unset so Codex uses its OpenAI default and Headroom can inject a temporary provider without duplicate TOML keys, sets `approval_policy = "on-request"`, `sandbox_mode = "workspace-write"`, `web_search = "disabled"`, `[features] apps = false`, `[features] goals = true`, and four `[mcp_servers.*]` entries: `chrome-devtools`, `serena` (LSP code intelligence), `codegraph` (read-only code graph), `context7` (current docs lookup)
-- Skills — `scripts/codex.sh` installs the cmux skill from `manaflow-ai/cmux` (`skills/cmux`) into `~/.codex/skills/cmux` and calls `scripts/skills.sh codex` to install pinned upstream standalone skills such as `grill-me` plus repo-local symlinks into `~/.codex/skills/`.
-- Profile — `codex --profile yolo` is available as an explicit opt-in profile (`approval_policy = "never"`, `sandbox_mode = "danger-full-access"`); don't use it outside an isolated environment
-- Auth — `codex.sh` checks `codex login status`; run `codex login` for ChatGPT sign-in, `codex login --device-auth` for a headless device-code flow, or `printenv OPENAI_API_KEY | codex login --with-api-key` for API-key auth
-
-**[Hermes Agent](https://github.com/NousResearch/hermes-agent):** Nous Research's self-improving AI agent. `hermes.sh` runs the upstream one-shot installer (`curl … | bash`) — idempotent, skips if `hermes` is already on PATH. Configure with `hermes setup` after a shell reload.
-
-**tmux** — minimal `~/.tmux.conf` (symlinked from `configs/.tmux.conf`): `C-Space` prefix, mouse on, vi-mode copy, `|`/`-` splits that keep CWD, 100k scrollback, true-color.
-
-**Auto-launched browser dev services (LaunchAgents):**
-Installed services run at every login with `KeepAlive=true` (throttle 60s); `services.sh` skips loading LaunchAgents when dependencies are missing. Both services are reached over the tailnet via `tailscale serve` (HTTPS via Tailscale's `*.ts.net` cert; configured automatically by `services.sh`). code-server binds to `127.0.0.1` (kernel-level isolation). purplemux binds to `*:8022`, so this setup relies on Tailscale Serve plus the macOS firewall rather than an app-level tailnet filter. Defense-in-depth: `macos.sh` already enables the macOS firewall in stealth mode, so a hostile-wifi attacker should see stealthed ports.
-
-- `com.user.purplemux` — [purplemux](https://github.com/subicura/purplemux), web-native terminal multiplexer for Claude Code
-  - Installed via `npm install -g purplemux` (services.sh handles this)
-  - Listens on `*:8022` (no `--bind` flag upstream); access is intended through Tailscale Serve, not an app-level IP filter. Logs at `~/Library/Logs/purplemux.{out,err}.log`
-  - Tailnet exposure: `tailscale serve --bg --https=443 --set-path=/ http://localhost:8022`
-  - Restart: `launchctl kickstart -k gui/$(id -u)/com.user.purplemux`
-- `com.user.code-server` — [code-server](https://github.com/coder/code-server), VS Code in the browser
-  - Installed via Brewfile (`brew "code-server"`)
-  - Reads `~/.config/code-server/config.yaml` (services.sh scaffolds with a random password and enforces `chmod 600`)
-  - Binds to `127.0.0.1:8088`. Logs at `~/Library/Logs/code-server.{out,err}.log`
- - Tailnet exposure: `tailscale serve --bg --https=8443 --set-path=/ http://localhost:8088`;
-   worktree links prefer `https://<tailnet-host-or-ip>:8443`
-  - Restart: `launchctl kickstart -k gui/$(id -u)/com.user.code-server`
-
-**Shared agent config** — canonical `~/.agent/AGENTS.md` with shared rules, also symlinked to `~/.cursor/rules/AGENTS.md` before Claude Code setup. `~/.claude/CLAUDE.md` imports it via `@~/.agent/AGENTS.md`.
-
-**Dotfiles symlinks** — zshrc, tmux.conf, gitconfig, gitignore_global, Claude Code settings, pretool-guard hook, skill-md-edit-warn hook, work-scope-guard hook. Codex config is copied as a mutable local file. `configs/mcp.json` is read by `scripts/claude.sh` for user-scope MCP registration.
-
-**Web extraction** — use `defuddle parse <url> --markdown` for article-style extraction (local, LLM-friendly Markdown). For JS-heavy or auth-gated pages, use `agent-browser open <url> --profile "Default"` to reuse your logged-in Chrome session; if an agent-browser daemon is already running under another profile, close it first with `agent-browser close --all`.
-
-**Agent safety and secrets** — Claude settings include `permissions.deny` for `.env*`, `secrets/`, `WebFetch`, and filesystem MCP access; MCP governance approves `chrome-devtools`, `serena`, and `codegraph` from the shared MCP config and denies filesystem servers by `serverName`. `pretool-guard` is a PreToolUse Bash hook that emits structured JSON `permissionDecision: "deny"` for destructive commands such as `git reset --hard`, force push, root `rm -rf`, curl/wget piped to shell, and direct dotenv reads. `skill-md-edit-warn` is a PostToolUse hook that reminds you to restart Claude after editing a skill file mid-session. Prefer ephemeral secret injection: `op run --env-file .env -- <command>` for 1Password or `sops exec-env secrets.enc.env '<command>'` for SOPS.
-
-**Tailscale + Tailscale SSH** — private mesh VPN for remote access. Each device gets a stable `100.x.x.x` IP and `*.ts.net` hostname; no port forwarding, no public exposure. `tailscale.sh` runs `tailscale set --ssh` so inbound shell access can go through Tailscale (identity from the tailnet, ACL-gated in the admin console). Persistent sessions: `tailscale ssh user@<host> -- tmux attach`. OpenSSH (`systemsetup -setremotelogin on`, set in `macos.sh`) is enabled in parallel — Tailscale SSH is the primary path, OpenSSH stays as a fallback for tooling that doesn't speak the Tailscale layer. Free tier covers personal use.
-
-**mosh** — UDP-based shell that survives network changes / roaming / disconnects. Bootstraps over SSH for auth (so OpenSSH must stay enabled) then switches to UDP ports 60000–61000. Useful on mobile hotspots or unstable links. Connect with `mosh user@host` or `mosh --ssh="tailscale ssh" user@host` to layer mosh on top of Tailscale SSH. The macOS Application Firewall is in stealth mode, so the first `mosh` session may need a manual exception for `mosh-server` (System Settings → Network → Firewall → Options).
-
-**Tests** — bats-core suites under `tests/` cover `scripts/lib/common.sh` helpers, script syntax/conventions, config drift, GitHub Actions pinning, JSON/TOML validation, and `Brewfile` parsing. Run with `bats tests/`.
-
-## Structure
-
+```bash
+ENABLE_TAILSCALE_SERVE=1 bash scripts/services.sh
 ```
+
+That command configures:
+
+```bash
+tailscale serve --bg --https=443 --set-path=/ http://localhost:8022
+tailscale serve --bg --https=8443 --set-path=/ http://localhost:8088
+```
+
+</details>
+
+## Web and research tooling
+
+| Task | Tool | Usage |
+| --- | --- | --- |
+| Clean web page extraction | [defuddle] | `defuddle parse <url> --markdown`; installed with `npm install -g defuddle` |
+| Video metadata and subtitles | [yt-dlp] | Use metadata and subtitle modes, not bulk scraping |
+| Knowledge graph exploration | [graphify] | Claude/Codex skill for [Claude Code] and [Codex], installed with `graphify install --platform claude` and `graphify install --platform codex` |
+| Browser automation | [Chrome DevTools MCP][chrome-devtools-mcp] and [agent-browser] | Use local browser surfaces for sensitive data |
+| API docs | [context7] MCP | Public host works anonymously; company overlay can raise rate limits |
+
+## Verification
+
+Run the full verifier before claiming installer behavior:
+
+```bash
+bash scripts/verify.sh --full
+```
+
+Useful focused checks:
+
+```bash
+bats tests/
+bash scripts/verify.sh --quick
+```
+
+Tests cover shell syntax, JSON/TOML/plist parsing, plugin manifests, hook behavior, [Codex] TOML validation, `Brewfile` parsing, and local skill helpers.
+
+## Repository map
+
+```text
 dotfiles/
-├── install.sh              # main entry point
-├── Brewfile                # Homebrew package list
+├── install.sh
+├── Brewfile
+├── README.md
 ├── scripts/
-│   ├── brew.sh             # Homebrew install
-│   ├── macos.sh            # macOS system settings
-│   ├── dev.sh              # nvm, pyenv, Java, etc.
-│   ├── shell.sh            # Oh My Zsh + plugins
-│   ├── git.sh              # Git config + SSH keys
-│   ├── claude.sh           # Claude Code skills, plugins, tools
-│   ├── codex.sh            # Codex CLI config + cmux skill + auth prompt
-│   ├── headroom.sh         # Headroom CLI installer + claudeh/codexh/omxh symlinks
-│   ├── headroom-agent.sh   # Headroom wrapper dispatcher
-│   ├── statusline.sh       # Claude/Codex-visible session label helpers
-│   ├── skills.sh           # repo-local skills/plugin installer
-│   ├── verify.sh           # repo smoke verifier
-│   ├── lib/
-│   │   └── common.sh       # shared helpers (info/warn/error/run_or_dry/link_file)
-│   ├── hermes.sh           # Hermes Agent (Nous Research) installer wrapper
-│   ├── services.sh         # purplemux + code-server LaunchAgent installer
-│   ├── purplemux-launch.sh # LaunchAgent wrapper for purplemux (PATH + node resolution)
-├── plugins/
-│   └── local-skills/       # local Claude/Codex skill bundle
-│   ├── code-server-launch.sh # LaunchAgent wrapper for code-server
-│   └── tailscale.sh        # Tailscale VPN + `tailscale set --ssh`
 ├── configs/
-│   ├── .zshrc
-│   ├── .tmux.conf
-│   ├── .gitconfig
-│   ├── .gitconfig-personal
-│   ├── .gitconfig-work
-│   ├── .gitignore_global
-│   ├── AGENTS.md           # canonical shared agent rules
-│   ├── CLAUDE.md           # Claude Code wrapper (imports ~/.agent/AGENTS.md)
-│   ├── claude-settings.json
-│   ├── mcp.json            # shared Claude MCP servers
-│   ├── codex/
-│   │   └── config.toml     # Codex CLI defaults + MCP servers
-│   ├── com.user.purplemux.plist     # LaunchAgent template (sed-substituted at install)
-│   ├── com.user.code-server.plist   # LaunchAgent template (sed-substituted at install)
-│   ├── rtk-config.toml
-│   └── hooks/
-│       ├── pretool-guard.sh     # structured PreToolUse deny hook
-│       ├── work-scope-guard.sh  # SessionStart advisory for work roots
-│       └── skill-md-edit-warn.sh # PostToolUse reminder after editing skills
-├── tests/                  # bats-core suites: run `bats tests/`
-│   ├── common.bats
-│   └── scripts.bats
-└── company/                # (gitignored) optional company overlay — see company/README.md
+├── plugins/local-skills/
+├── tests/
+└── company/
 ```
 
-## Company overlay (optional)
+## Company overlay
 
-For environments that require company-internal configuration (private plugin
-marketplaces, image registries, scoped npm registries, team-issued API keys),
-`install.sh` automatically invokes `company/install.sh` if that path exists.
+For environments with internal package registries, private plugin marketplaces, or scoped MCP configuration, `install.sh` invokes `company/install.sh` when the `company/` submodule exists. Keep company repos under `~/work/` so project-scoped MCP and work-scope guidance apply.
 
-`company/` is a **git submodule** pointing at a separate, internally-hosted
-repo (URL listed in `.gitmodules`). The submodule URL is visible publicly but
-the repository itself is only accessible over the internal network with proper
-auth — clone fails gracefully outside the company.
+Clone with overlay:
 
-On a new machine:
 ```bash
 git clone --recurse-submodules https://github.com/voidmatcha/dotfiles.git ~/dotfiles
-# or, if already cloned:
+```
+
+If you cloned first, initialize the overlay later:
+
+```bash
 git -C ~/dotfiles submodule update --init
 ```
 
-See `company/README.md` for what lives in the overlay and how to maintain it.
+See [`company/README.md`](company/README.md) for overlay maintenance.
 
-## Run individual scripts
-
-```bash
-./scripts/brew.sh     # Homebrew only
-./scripts/macos.sh    # macOS settings only
-./scripts/dev.sh      # dev tools only
-./scripts/shell.sh    # shell only
-./scripts/git.sh      # Git only
-./scripts/codex.sh    # Codex CLI only
-```
-
-## Dry run
-
-Preview without making changes:
-
-```bash
-./install.sh --dry-run
-```
-
-## Separate Git accounts
-
-Account selection is **remote-URL-based**, not directory-based — a repo's
-location on disk doesn't matter, only its `remote.origin.url`:
-
-- Remote matches the corporate git host → work account
-  (`~/.gitconfig-work`)
-- Anything else (or no remote yet) → personal account
-  (`~/.gitconfig-personal`)
-
-The exact host(s) that route to "work" live in `configs/.gitconfig`'s
-`includeIf "hasconfig:remote.*.url:..."` blocks (currently set for the
-maintainer's employer; fork and edit those patterns to match your own
-internal git host — `https://`, `git@`, and `ssh://` URL forms are
-each their own line). Requires **git 2.36+**.
-
-The two account files (`configs/.gitconfig-personal` and `.gitconfig-work`)
-carry only `user.name` and `user.email`. SSH `signingkey` paths are
-**machine-specific** so they live in `~/.gitconfig.local` (gitignored),
-with an optional `~/.gitconfig.local-work` for a separate work-account
-signing key. `configs/.gitconfig` loads `~/.gitconfig.local` last, so it
-always wins for signing/keys.
-
-Run `git.sh` — it prompts for names and emails, then writes the two
-account configs plus `~/.gitconfig.local` (default signing key path) and
-`~/.gitconfig.local-work` (work signing key path).
-
-### Where to put company repos: `~/work/`
-
-Git identity routes by remote URL (above), but **MCP loading routes by
-directory**. The company overlay writes its MCP config to
-`~/work/.mcp.json` (project scope), and Claude Code picks it up only when
-started inside `~/work/<repo>/`. So:
-
-- **Keep company repos under `~/work/`** → company MCP servers
-  (e.g. `github-enterprise`) auto-load on top of the personal set, and the
-  overlay provides company MCP secrets such as `CONTEXT7_API_KEY` for
-  `context7` rate limits.
-- Any other location → company project MCPs are absent. On company overlay
-  machines, clearly unapproved MCPs such as the `linkedin` scraper are pruned;
-  provider-official MCPs such as Exa may remain user-scope only, but must not
-  receive internal terms, URLs, source snippets, credentials, customer data, or
-  personal information. Git author/signing still routes correctly via remote
-  URL.
-
-`git.sh` creates `~/work/` and `~/personal/` for you.
-
-## SSH keys
-
-`git.sh` generates separate keys for personal and work.
-Add the public keys to GitHub after:
-
-```bash
-cat ~/.ssh/id_ed25519_personal.pub  # personal
-cat ~/.ssh/id_ed25519_work.pub      # work
-```
+[agent-browser]: https://github.com/vercel-labs/agent-browser
+[agentsview]: https://www.agentsview.io/
+[Bats]: https://github.com/bats-core/bats-core
+[chrome-devtools-mcp]: https://github.com/ChromeDevTools/chrome-devtools-mcp
+[Claude Code]: https://docs.anthropic.com/en/docs/claude-code/overview
+[claude-hud]: https://github.com/jarrodwatts/claude-hud
+[code-server]: https://coder.com/docs/code-server/latest
+[codegraph]: https://www.npmjs.com/package/@colbymchenry/codegraph
+[Codex]: https://github.com/openai/codex
+[context7]: https://github.com/upstash/context7
+[Corepack]: https://nodejs.org/api/corepack.html
+[defuddle]: https://github.com/kepano/defuddle
+[direnv]: https://direnv.net/
+[Docker CLI]: https://docs.docker.com/reference/cli/docker/
+[Exa]: https://exa.ai/
+[Figma MCP]: https://help.figma.com/hc/en-us/articles/32132100833559-Guide-to-the-Dev-Mode-MCP-Server
+[gettext]: https://www.gnu.org/software/gettext/
+[git-filter-repo]: https://github.com/newren/git-filter-repo
+[graphify]: https://github.com/safishamsi/graphify
+[grill-me]: https://github.com/mattpocock/skills/blob/2bf70051928429983de3b5718d277150926f8c89/skills/productivity/grill-me/SKILL.md
+[Headroom]: https://pypi.org/project/headroom-ai/
+[Hermes Agent]: https://github.com/NousResearch/hermes-agent
+[Homebrew]: https://brew.sh/
+[Jina Reader]: https://jina.ai/reader/
+[Maven]: https://maven.apache.org/
+[nvm]: https://github.com/nvm-sh/nvm
+[Node.js]: https://nodejs.org/
+[obsidian-skills]: https://github.com/kepano/obsidian-skills
+[OMX]: https://yeachan-heo.github.io/oh-my-codex
+[OpenAI Docs MCP]: https://developers.openai.com/mcp
+[OpenJDK]: https://openjdk.org/
+[OpenSSH]: https://www.openssh.com/
+[purplemux]: https://github.com/subicura/purplemux
+[pyenv]: https://github.com/pyenv/pyenv
+[Python]: https://www.python.org/
+[review-loop]: https://github.com/hamelsmu/claude-review-loop
+[RTK]: https://www.rtk-ai.app/
+[SDKMAN!]: https://sdkman.io/
+[serena]: https://github.com/oraios/serena
+[session-wrap]: https://github.com/team-attention/plugins-for-claude-natives
+[skills-janitor]: https://github.com/khendzel/skills-janitor
+[Tailscale]: https://tailscale.com/
+[Tailscale Serve]: https://tailscale.com/kb/1242/tailscale-serve/
+[Tokscale]: https://tokscale.ai/u/voidmatcha
+[uv]: https://docs.astral.sh/uv/
+[yt-dlp]: https://github.com/yt-dlp/yt-dlp
+[Zsh]: https://www.zsh.org/

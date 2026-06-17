@@ -354,7 +354,7 @@ register_mcp_from_file() {
   local names
   local envsubst_allowlist
   # shellcheck disable=SC2016 # envsubst receives a variable allowlist.
-  envsubst_allowlist='${EXA_API_KEY}'
+  envsubst_allowlist='${EXA_API_KEY} ${FIGMA_API_KEY}'
   names=$(jq -r '.mcpServers | keys[]' "$mcp_file" 2>/dev/null)
   while IFS= read -r name; do
     [ -z "$name" ] && continue
@@ -366,7 +366,25 @@ register_mcp_from_file() {
     entry=$(jq -c --arg n "$name" '.mcpServers[$n]' "$mcp_file" \
       | envsubst "$envsubst_allowlist")
     if $DRY_RUN; then
-      info "[dry-run] claude mcp add-json --scope user $name '$entry'"
+      redacted_entry=$(printf '%s' "$entry" | jq -c '
+        if (.env | type) == "object" then
+          .env |= with_entries(.value = "<redacted>")
+        else
+          .
+        end
+        | if (.headers | type) == "object" then
+          .headers |= with_entries(
+            if (.key | test("(?i)(authorization|token|key|secret|password)")) then
+              .value = "<redacted>"
+            else
+              .
+            end
+          )
+        else
+          .
+        end
+      ' 2>/dev/null || printf '%s' "$entry")
+      info "[dry-run] claude mcp add-json --scope user $name '$redacted_entry'"
       continue
     fi
     # Already registered with the exact same config → leave it alone. This is
