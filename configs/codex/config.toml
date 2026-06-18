@@ -46,9 +46,21 @@ apps = false
 # Source: https://developers.openai.com/codex/use-cases/follow-goals
 goals = true
 
+# Built-in Codex Memories. Keeps cross-session recall local under ~/.codex/memories.
+# External-context sessions stay out of memory generation to avoid persisting
+# hosted MCP/web/tool-search material.
+# Source: https://developers.openai.com/codex/memories
+memories = true
+
 multi_agent = true
 child_agents_md = true
 hooks = true
+
+[memories]
+generate_memories = true
+use_memories = true
+disable_on_external_context = true
+min_rate_limit_remaining_percent = 20
 [profiles.yolo]
 approval_policy = "never"
 sandbox_mode = "danger-full-access"

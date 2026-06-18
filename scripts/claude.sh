@@ -71,7 +71,10 @@ SKILL_REPOS=(
   "forrestchang/andrej-karpathy-skills@karpathy-guidelines"
   # obra/superpowers: removed — already installed via `superpowers@claude-plugins-official`
   # plugin (which pins to a tested sha, more stable than tracking main).
-  "vercel-labs/agent-skills"
+  # vercel-labs/agent-skills currently publishes PromptScript skills (Vercel
+  # patterns, deploy, optimization, and writing/design guidelines). The skills
+  # CLI rejects PromptScript global installs, so keep this repo out of the
+  # global bootstrap loop.
   "anthropics/skills@frontend-design"
   "anthropics/skills@doc-coauthoring"        # handover docs / specs
   "anthropics/skills@internal-comms"         # status reports / FAQs
@@ -81,15 +84,15 @@ SKILL_REPOS=(
   # supercent-io/skills-template: removed — repository deleted/private on GitHub
   # (clone now fails with auth prompt). Built-in /code-review and
   # /security-review cover the same ground.
-  "yeachan-heo/oh-my-claudecode@project-session-manager"  # worktree + tmux + gh/jira issue pipeline (psm fix/review/feature)
-  "yeachan-heo/oh-my-claudecode@ai-slop-cleaner"           # regression-safe deletion-first cleanup of AI-generated code
+  # yeachan-heo/oh-my-claudecode@project-session-manager and @ai-slop-cleaner
+  # are PromptScript skills. The skills CLI rejects PromptScript global
+  # installs, so keep them out of the global SKILL_REPOS bootstrap path.
 )
 
 SKILL_URLS=(
-  # pbakaus/impeccable: upstream consolidated its standalone skills (clarify
-  # et al.) into one `impeccable` skill; clarify is now `/impeccable clarify`.
-  "https://github.com/pbakaus/impeccable"
-  "https://github.com/kepano/obsidian-skills"
+  # pbakaus/impeccable and kepano/obsidian-skills currently publish
+  # PromptScript skills. The skills CLI rejects PromptScript global installs,
+  # so do not feed them to the global `skills add --global` loop.
 )
 
 for repo in "${SKILL_REPOS[@]}"; do

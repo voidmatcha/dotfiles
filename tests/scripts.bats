@@ -42,6 +42,12 @@ teardown() {
   [ "$status" -eq 0 ]
 }
 
+@test "brew setup trusts Bun formula without trusting the whole tap" {
+  grep -q 'brew "oven-sh/bun/bun"' "$REPO_ROOT/Brewfile"
+  grep -q 'brew trust --formula oven-sh/bun/bun' "$REPO_ROOT/scripts/brew.sh"
+  ! grep -q 'brew trust --tap oven-sh/bun' "$REPO_ROOT/scripts/brew.sh"
+}
+
 @test "services password generation avoids pipefail-prone tr head pipeline" {
   run grep -E 'tr -dc .*\| head -c' "$REPO_ROOT/scripts/services.sh"
   [ "$status" -eq 1 ]
@@ -779,6 +785,11 @@ assert cfg['notify'][6] == '-lc'
 assert 'npm root -g' in cfg['notify'][7]
 assert cfg['notify'][8] == 'omx-notify'
 assert cfg['features']['goals'] is True
+assert cfg['features']['memories'] is True
+assert cfg['memories']['generate_memories'] is True
+assert cfg['memories']['use_memories'] is True
+assert cfg['memories']['disable_on_external_context'] is True
+assert cfg['memories']['min_rate_limit_remaining_percent'] == 20
 assert cfg['features']['child_agents_md'] is True
 assert cfg['features']['multi_agent'] is True
 assert cfg['tui']['status_line'][0] == 'model-with-reasoning'
@@ -1080,6 +1091,10 @@ PY
 }
 
 @test "company gp marketplace URL stays aligned" {
+  [ -f "$REPO_ROOT/company/configs/claude-settings.json" ] || skip "company overlay not present"
+  [ -f "$REPO_ROOT/company/plugins.sh" ] || skip "company overlay not present"
+  [ -f "$REPO_ROOT/company/README.md" ] || skip "company overlay not present"
+
   grep -q 'https://oss.navercorp.com/GP/claude-hud.git' "$REPO_ROOT/company/configs/claude-settings.json"
   grep -q 'https://oss.navercorp.com/GP/claude-hud.git' "$REPO_ROOT/company/plugins.sh"
   grep -q 'https://oss.navercorp.com/GP/claude-hud.git' "$REPO_ROOT/company/README.md"
@@ -1444,6 +1459,23 @@ JSON
   grep -q 'github.com/voidmatcha/ui-clone-skills.git' "$REPO_ROOT/scripts/claude.sh"
   grep -q 'UI_CLONE_DIR' "$REPO_ROOT/scripts/claude.sh"
   grep -q 'install.sh' "$REPO_ROOT/scripts/claude.sh"
+}
+
+@test "claude.sh keeps PromptScript skills out of global skills CLI installs" {
+  # The skills CLI rejects PromptScript when `--global` is used. These entries
+  # must stay documented but excluded from SKILL_REPOS to avoid bootstrap noise.
+  grep -q 'PromptScript skills' "$REPO_ROOT/scripts/claude.sh"
+  grep -q 'project-session-manager' "$REPO_ROOT/scripts/claude.sh"
+  grep -q 'ai-slop-cleaner' "$REPO_ROOT/scripts/claude.sh"
+  grep -q 'pbakaus/impeccable' "$REPO_ROOT/scripts/claude.sh"
+  grep -q 'kepano/obsidian-skills' "$REPO_ROOT/scripts/claude.sh"
+  grep -q 'vercel-labs/agent-skills' "$REPO_ROOT/scripts/claude.sh"
+  run grep -E '^\s*"yeachan-heo/oh-my-claudecode@(project-session-manager|ai-slop-cleaner)"' "$REPO_ROOT/scripts/claude.sh"
+  [ "$status" -ne 0 ]
+  run grep -E '^\s*"https://github.com/(pbakaus/impeccable|kepano/obsidian-skills)"' "$REPO_ROOT/scripts/claude.sh"
+  [ "$status" -ne 0 ]
+  run grep -E '^\s*"vercel-labs/agent-skills"' "$REPO_ROOT/scripts/claude.sh"
+  [ "$status" -ne 0 ]
 }
 
 @test "claude.sh installs Claude Code via native installer, not Homebrew cask" {
@@ -1906,6 +1938,8 @@ PY
 }
 
 @test "company overlay disables hosted Codex MCPs by default" {
+  [ -f "$REPO_ROOT/company/install.sh" ] || skip "company overlay not present"
+
   grep -q 'disable_company_codex_hosted_mcps' "$REPO_ROOT/company/install.sh"
   grep -q 'COMPANY_ENABLE_HOSTED_CODEX_MCPS' "$REPO_ROOT/company/install.sh"
   grep -q 'mcp_servers.figma' "$REPO_ROOT/company/install.sh"
@@ -1913,6 +1947,8 @@ PY
 }
 
 @test "company hosted Codex MCP patcher rewrites config" {
+  [ -f "$REPO_ROOT/company/install.sh" ] || skip "company overlay not present"
+
   cfg="$TMPDIR_TEST/company-codex-config.toml"
   patcher="$TMPDIR_TEST/company-codex-mcp-patcher.py"
 

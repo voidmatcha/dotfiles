@@ -1,8 +1,8 @@
 # dotfiles
 
-A reproducible macOS setup for AI-assisted development. The scripts install tools, but the repository is mainly an operating model: one shared agent contract, explicit MCP/tool surfaces, measured token behavior, private remote access, and verification for the workflow code itself.
+A reproducible macOS setup for AI-assisted development. The scripts install tools; the repo documents the operating model around them: one shared agent contract, explicit MCP/tool surfaces, measured token behavior, private remote access, and tests for the workflow code itself.
 
-The design bet: agent cost is shaped less by prompt wording than by what enters context, how stable the cache prefix stays, and when a long session should hand off.
+The cost model behind the repo: optimize what enters context, keep cache prefixes stable, and hand off long sessions before carrying context costs more than reuse is worth.
 
 ## Design at a glance
 
@@ -14,7 +14,7 @@ The design bet: agent cost is shaped less by prompt wording than by what enters 
 | Session lifecycle checks | Local skills make continue, compact, clear, handoff, preview, and verify decisions repeatable | [`plugins/local-skills/skills`](plugins/local-skills/skills) |
 | Private remote access | Local previews and browser IDEs default local, then use [Tailscale Serve] when exposure is intentional | [`scripts/services.sh`](scripts/services.sh), [`plugins/local-skills/skills/local-preview-server/SKILL.md`](plugins/local-skills/skills/local-preview-server/SKILL.md) |
 
-Current measured shape:
+Current measured snapshot:
 
 | Signal | Latest value | Source |
 | --- | ---: | --- |
@@ -22,17 +22,17 @@ Current measured shape:
 | New-content share | about 3.4% | [Tokscale] Input plus Cache Write divided by total tokens |
 | [RTK] tool-output compression | about 65.3% across two machine [RTK] histories | `rtk gain --history` exports below |
 
-The [RTK] percentage is a tool-output compression metric, not a total spend reduction. Cache Read share is dashboard context, not a personal efficiency score. [agent-browser] is a qualitative token-pressure control: it keeps authenticated browsing local and avoids turning whole pages into transcript text when a targeted browser observation is enough.
+The [RTK] percentage is a tool-output compression metric, not a total-spend reduction. Cache Read share is dashboard context, not a personal efficiency score. [agent-browser] is a qualitative token-pressure control, not a numeric savings claim: it keeps authenticated browsing local and avoids turning whole pages into transcript text when a targeted browser observation is enough.
 
-## Engineering signals
+## What this repo demonstrates
 
 | Signal | What it shows |
 | --- | --- |
 | Measurement discipline | Token claims are scoped to their source and paired with explicit do-not-claim boundaries |
 | Systems thinking | [Claude Code], [Codex], and [OMX] share prompt contracts while keeping each tool's native workflow |
-| Cost-aware design | [RTK], [Headroom], [agent-browser], cache-prefix discipline, and lifecycle checks target repeated context cost |
-| Operational tripwires | High-permission local modes are allowed, so checks are framed as mistake catchers rather than security controls |
-| Developer experience | Local skills encode repeat decisions so sessions do not depend on memory or ad-hoc prompts |
+| Cost-aware design | [RTK], [Headroom], [agent-browser], cache-prefix discipline, and lifecycle checks target places where repeated context cost appears |
+| Operational tripwires | High-permission local modes stay available; checks catch common mistakes but are not security controls |
+| Developer experience | Local skills encode repeat decisions so sessions do not depend on human recall or ad-hoc prompts |
 | Verification culture | `scripts/verify.sh --full` and [Bats] cover installers, config, hooks, plugins, and helper behavior |
 
 <details>
@@ -129,7 +129,7 @@ Run one focused installer when you do not want the full setup:
 
 ## Agent layer
 
-The goal is not to make [Claude Code] and [Codex] identical. The goal is to keep their policies, skills, and MCP routing consistent while preserving each tool's native workflow.
+The point is not to make [Claude Code] and [Codex] identical. It is to keep policies, skills, and MCP routing consistent while each tool keeps its native workflow.
 
 | Surface | Role | Source |
 | --- | --- | --- |
@@ -162,15 +162,16 @@ Installed [Claude Code] plugins include [`claude-hud@claude-hud`][claude-hud], [
 | Prompt contract | [`configs/codex/config.toml`](configs/codex/config.toml) | Sets `developer_instructions` to the [Codex]/[OMX] AGENTS.md contract |
 | Skill installer | [`scripts/skills.sh`](scripts/skills.sh) | `scripts/skills.sh codex` installs repo-local [Codex] skills, including `dotfiles-verify` |
 | Goals | [`configs/codex/config.toml`](configs/codex/config.toml) | Keeps `[features] goals = true` enabled |
+| Memories | [`configs/codex/config.toml`](configs/codex/config.toml) | Enables [Codex Memories] with local recall and excludes external-context sessions from memory generation |
 | MCP | [`configs/codex/config.toml`](configs/codex/config.toml) | `mcp_servers` covers [Chrome DevTools MCP][chrome-devtools-mcp], [serena], [codegraph], [context7], [OpenAI Docs MCP], and personal/default [Figma hosted MCP][Figma MCP]. Company Figma context is separate: the company overlay uses `figma-developer-mcp` and disables hosted Codex Figma by default |
 
 Skills are procedural workflows under `.codex/skills`; native subagents are role files under `.codex/agents`. Hosted [Codex] MCP entries stay disabled unless the company overlay explicitly enables them.
 
 </details>
 
-## Local skills: decisions I wanted to stop re-explaining
+## Local skills: recurring decisions
 
-The local skills exist because these decisions were easy to get slightly wrong when they lived only in memory: whether to continue a long session, how to hand off work, how to preview generated files privately, how to verify dotfiles changes, and how to keep imported workflow assets traceable.
+The local skills exist because these choices kept recurring: whether to continue a long session, how to hand off work, how to preview generated files privately, how to verify dotfiles changes, and how to keep imported workflow assets traceable. Encoding them as skills keeps the decision path visible and repeatable.
 
 | Decision | Skill | Result |
 | --- | --- | --- |
@@ -190,24 +191,34 @@ The local skills exist because these decisions were easy to get slightly wrong w
 
 ## Token-efficiency design
 
-The thesis is not “the numbers happen to look good.” The setup is efficient because the workflow is shaped around where token cost actually comes from: context ingress, cache-prefix stability, idle-time cache decay, long-session tradeoffs, and measurement.
+This setup targets token cost at five points: what enters context, whether cache prefixes stay stable, how long idle sessions wait, when a session should hand off, and whether optimizations are measured.
 
 | Cost mechanism | Repo mechanism | Evidence |
 | --- | --- | --- |
-| Stateless billing makes ingress valuable | [RTK] compresses noisy command output before transcript ingress | [`configs/RTK.md`](configs/RTK.md), [`configs/rtk-config.toml`](configs/rtk-config.toml), `rtk gain --history` |
-| Cache prefixes need stability | [Claude Code] keeps a compact `CLAUDE.md`; [Codex] keeps one `developer_instructions` contract and a capped MCP surface | [`configs/CLAUDE.md`](configs/CLAUDE.md), [`configs/codex/config.toml`](configs/codex/config.toml) |
-| Cache has a clock | `context-check` watches idle, prompt, transcript, and [Headroom] pressure | [`plugins/local-skills/skills/context-check/SKILL.md`](plugins/local-skills/skills/context-check/SKILL.md) |
-| Long sessions are not free | `context-check` and `handover` make continue, compact, clear, and handoff explicit | [`plugins/local-skills/skills/handover/SKILL.md`](plugins/local-skills/skills/handover/SKILL.md) |
-| Optimization must survive real work | Hooks fail open; bypasses exist; the verifier covers hooks and skill helpers | [`configs/hooks`](configs/hooks), [`tests/scripts.bats`](tests/scripts.bats), [`scripts/verify.sh`](scripts/verify.sh) |
+| Context ingress | [RTK] compresses noisy command output before transcript ingress | [`configs/RTK.md`](configs/RTK.md), [`configs/rtk-config.toml`](configs/rtk-config.toml), `rtk gain --history` |
+| Cache prefix stability | [Claude Code] keeps a compact `CLAUDE.md`; [Codex] keeps one `developer_instructions` contract and explicit MCP entries | [`configs/CLAUDE.md`](configs/CLAUDE.md), [`configs/codex/config.toml`](configs/codex/config.toml) |
+| Idle and context pressure | `context-check` reads idle, prompt, transcript, and [Headroom] pressure before recommending continue, compact, clear, or handoff | [`plugins/local-skills/skills/context-check/SKILL.md`](plugins/local-skills/skills/context-check/SKILL.md) |
+| Long-session handoff | `handover` carries distilled state into fresh [Claude Code], [Codex], or [OMX] sessions | [`plugins/local-skills/skills/handover/SKILL.md`](plugins/local-skills/skills/handover/SKILL.md) |
+| Survival under real work | Hook failure paths and bypasses are tested; the verifier covers hooks and skill helpers | [`configs/hooks`](configs/hooks), [`tests/scripts.bats`](tests/scripts.bats), [`scripts/verify.sh`](scripts/verify.sh) |
+
+Only [RTK] and [Tokscale] get numeric claims. Everything else is a control, not a measured savings claim:
+
+- [Headroom] and `context-check` decide when long sessions should continue, compact, clear, or hand off.
+- [codegraph] and [serena] keep code lookup narrow.
+- [agent-browser], [Jina Reader], and [defuddle] avoid full page/source dumps when targeted extraction is enough.
+- `handover` carries distilled state into a fresh session.
+- `local-preview-server` keeps browser artifacts out of chat.
+
+The README does not assign a cost-saving percentage to those controls.
 
 <details>
 <summary>Why these five principles matter</summary>
 
-1. **Stateless billing means ingress matters.** A token admitted early can be re-read on later calls. [RTK] attacks the first factor by compressing tool output; search batching attacks the second factor by reducing call count.
+1. **Stateless billing means ingress matters.** A token admitted early can be re-read on later calls. [RTK] reduces the first factor by compressing tool output; search batching reduces the second factor by lowering call count.
 2. **Cache is a prefix machine.** Naive compression can break cache prefixes. This repo keeps prefix-forming files stable and uses [Headroom] only as an optional wrapper, not an invisible rewrite layer.
-3. **Cache has a clock.** Idle sessions can force repeated cache writes for content that looked reusable. `context-check` makes that pressure visible.
+3. **Cache entries expire.** Idle sessions can force repeated cache writes for content that looked reusable. `context-check` makes that pressure visible.
 4. **Long sessions are not free.** A high cache-read ratio helps only while reuse beats the cost of carrying context. `handover` exists so clearing context can be deliberate rather than lossy.
-5. **Unmeasured optimization is superstition.** [RTK] gain, [Tokscale] summaries, [Bats], and `scripts/verify.sh` keep the efficiency layer from becoming folklore.
+5. **Unmeasured optimization is a guess.** [RTK] gain, [Tokscale] summaries, [Bats], and `scripts/verify.sh` keep the efficiency layer tied to evidence.
 
 `about 65.3%` is a weighted tool-output compression claim across two machine [RTK] histories, not a total-cost claim.
 
@@ -254,17 +265,17 @@ Hard rules:
 
 ## Claude Code operational tripwires, not security controls
 
-This repo is often used in trusted high-permission local modes. These checks are Claude Code tripwires, not a security boundary, and they do not protect a separate [Codex] `danger-full-access` session. They reduce common mistakes; they do not replace sandboxing, review, or secret management.
+Some local sessions run with broad filesystem permissions. These checks are Claude Code tripwires, not a security boundary, and they do not protect a separate [Codex] `danger-full-access` session. They catch common mistakes; sandboxing, review, and secret management still do the security work.
 
-| Tripwire | Keep? | What it catches |
+| Tripwire | Scope | What it catches |
 | --- | --- | --- |
-| `permissions.deny` in [`configs/claude-settings.json`](configs/claude-settings.json) | Yes — cheap hard deny | Secret-like reads and hosted-sensitive routes: `.env*`, `secrets/**`, `WebFetch`, `mcp__filesystem` |
-| [`pretool-guard`](configs/hooks/pretool-guard.sh) | Yes — highest value | Broad destructive Bash patterns and stray Markdown writes before the tool call runs |
-| [`skill-md-edit-warn`](configs/hooks/skill-md-edit-warn.sh) | Yes, but narrow | Warns when `SKILL.md` changes mid-session, because already-loaded skill instructions are stale until restart |
+| `permissions.deny` in [`configs/claude-settings.json`](configs/claude-settings.json) | Claude permission deny list | Secret-like reads and hosted-sensitive routes: `.env*`, `secrets/**`, `WebFetch`, `mcp__filesystem` |
+| [`pretool-guard`](configs/hooks/pretool-guard.sh) | Claude `PreToolUse` hook for Bash and Write | Broad destructive Bash patterns and stray Markdown writes before the tool call runs |
+| [`skill-md-edit-warn`](configs/hooks/skill-md-edit-warn.sh) | Claude `PostToolUse` warning | `SKILL.md` edits made after the session already loaded skill instructions |
 
 ## Remote work and local previews
 
-Remote work should prefer private tailnet exposure over broad LAN binding. Local previews default to localhost; tailnet exposure is explicit.
+Prefer private tailnet exposure over broad LAN binding for remote work. Local previews default to localhost; tailnet exposure is explicit.
 
 Use [`worktree-open`](plugins/local-skills/skills/worktree-open/SKILL.md) to build [code-server] URLs for one worktree or all worktrees in a repo. It prefers the [Tailscale Serve] endpoint at `https://<tailnet-host-or-ip>:8443`, then falls back to the local [code-server] URL.
 
@@ -312,7 +323,7 @@ tailscale serve --bg --https=8443 --set-path=/ http://localhost:8088
 | Video metadata and subtitles | [yt-dlp] | Use metadata and subtitle modes, not bulk scraping |
 | Knowledge graph exploration | [graphify] | Claude/Codex skill for [Claude Code] and [Codex], installed with `graphify install --platform claude` and `graphify install --platform codex` |
 | Browser automation | [Chrome DevTools MCP][chrome-devtools-mcp] and [agent-browser] | Use local browser surfaces for sensitive data |
-| API docs | [context7] MCP | Public host works anonymously; company overlay can raise rate limits |
+| API docs | [context7] MCP | Public host works anonymously; company overlay passes `CONTEXT7_API_KEY` for authenticated use |
 
 ## Verification
 
@@ -372,6 +383,7 @@ See [`company/README.md`](company/README.md) for overlay maintenance.
 [code-server]: https://coder.com/docs/code-server/latest
 [codegraph]: https://www.npmjs.com/package/@colbymchenry/codegraph
 [Codex]: https://github.com/openai/codex
+[Codex Memories]: https://developers.openai.com/codex/memories
 [context7]: https://github.com/upstash/context7
 [Corepack]: https://nodejs.org/api/corepack.html
 [defuddle]: https://github.com/kepano/defuddle
