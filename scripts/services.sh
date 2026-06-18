@@ -14,6 +14,20 @@ source "$(cd "$(dirname "$0")" && pwd)/lib/common.sh"
 
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
 
+# Restore the latest nvm-managed Node bin for non-interactive service setup.
+# install.sh invokes scripts/dev.sh and scripts/services.sh as separate shells,
+# so nvm's PATH mutations from dev.sh do not automatically carry over.
+if [ -d "$HOME/.nvm/versions/node" ]; then
+  # Highest installed semver (sort -V), matching scripts/purplemux-launch.sh and
+  # scripts/agent-resumer-launch.sh. ls -dt sorts by mtime and can pick an older
+  # Node that a freshly built newer one was layered on top of.
+  latest_node="$(find "$HOME/.nvm/versions/node" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2>/dev/null | sort -V | tail -n1 || true)"
+  if [ -n "$latest_node" ] && [ -d "$HOME/.nvm/versions/node/$latest_node/bin" ]; then
+    latest_node_bin="$HOME/.nvm/versions/node/$latest_node/bin"
+    export PATH="$latest_node_bin:$PATH"
+  fi
+fi
+
 # Same ownership guard as in macos.sh (kept here too since services.sh can be
 # run standalone). See macos.sh for the rationale.
 if [ -d "$LAUNCH_AGENTS_DIR" ] && [ ! -w "$LAUNCH_AGENTS_DIR" ]; then
@@ -61,7 +75,7 @@ install_agent() {
         [ -n "$line" ] && warn "  $line"
       done <<< "$bootstrap_output"
       warn "Debug manually with: launchctl bootstrap gui/$(id -u) $plist_dst"
-      warn "Then check logs: tail -n 80 $HOME/Library/Logs/${label#com.user.}.err.log"
+      warn "Then check logs: tail -n 80 $HOME/Library/Logs/${label##*.}.err.log"
       return 0
     fi
   fi
@@ -172,6 +186,41 @@ if $agentwatch_ready; then
   install_agent "com.user.agentwatch"                 "$DOTFILES_DIR/configs/com.user.agentwatch.plist"                 "$DOTFILES_DIR/scripts/agentwatch-launch.sh"
 else
   warn "Skipping agentwatch LaunchAgent because agentwatch is not available in launchd's stable PATH."
+fi
+
+# ── agent-resumer: ensure global npm install, shims, and LaunchAgent watcher ──
+agent_resumer_ready=false
+agent_resumer_stable_path="/opt/homebrew/bin:/usr/local/bin:$HOME/.bun/bin:$HOME/.local/bin:/usr/bin:/bin"
+if [ -n "${latest_node_bin:-}" ]; then
+  agent_resumer_stable_path="$latest_node_bin:$agent_resumer_stable_path"
+fi
+
+if $DRY_RUN; then
+  info "[dry-run] would check agent-resumer and install agent-resumer@latest via npm if missing"
+  info "[dry-run] agent-resumer install-shims --force --no-profile"
+  agent_resumer_ready=true
+elif PATH="$agent_resumer_stable_path" command -v agent-resumer >/dev/null 2>&1; then
+  info "Found agent-resumer ($(PATH="$agent_resumer_stable_path" agent-resumer --version 2>/dev/null || echo unknown))"
+  agent_resumer_ready=true
+elif command -v npm >/dev/null 2>&1; then
+  info "Installing agent-resumer via npm..."
+  if npm install -g agent-resumer@latest; then
+    hash -r 2>/dev/null || true
+    agent_resumer_ready=true
+  fi
+else
+  warn "npm not found — install Node first (scripts/dev.sh), then run this script again."
+fi
+
+if $agent_resumer_ready; then
+  if ! $DRY_RUN && PATH="$agent_resumer_stable_path" command -v agent-resumer >/dev/null 2>&1; then
+    PATH="$agent_resumer_stable_path" agent-resumer install-shims --force --no-profile || warn "agent-resumer shim install failed — continuing with service setup"
+  fi
+  install_agent "com.voidmatcha.agent-resumer" \
+                "$DOTFILES_DIR/configs/com.voidmatcha.agent-resumer.plist" \
+                "$DOTFILES_DIR/scripts/agent-resumer-launch.sh"
+else
+  warn "Skipping agent-resumer LaunchAgent because agent-resumer is not available."
 fi
 
 # ── caffeinate: keep the Mac awake on AC for remote access ──

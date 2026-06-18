@@ -59,7 +59,7 @@ echo "  7. Claude Code setup (claude.sh)"
 echo "  8. Codex CLI setup (codex.sh)"
 echo "  9. Hermes Agent (hermes.sh)"
 echo " 10. Tailscale VPN + Tailscale SSH (tailscale.sh)"
-echo " 11. purplemux + code-server LaunchAgents (services.sh)"
+echo " 11. purplemux + code-server + agent watcher LaunchAgents (services.sh)"
 echo " 12. Company overlay (only if the company/ submodule is initialized)"
 echo ""
 
@@ -157,8 +157,8 @@ bash "$DOTFILES_DIR/scripts/hermes.sh"
 info "10/12 Setting up Tailscale (incl. Tailscale SSH)..."
 bash "$DOTFILES_DIR/scripts/tailscale.sh"
 
-# ── 11. purplemux + code-server services ──
-info "11/12 Configuring purplemux + code-server services..."
+# ── 11. purplemux + code-server + agent watcher services ──
+info "11/12 Configuring purplemux + code-server + agent watcher services..."
 bash "$DOTFILES_DIR/scripts/services.sh"
 
 # ── 회사용 overlay (옵션, git submodule) ──

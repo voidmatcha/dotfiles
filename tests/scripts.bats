@@ -72,6 +72,88 @@ teardown() {
   grep -q -- '--https=443 --set-path=/ http://localhost:8022' "$REPO_ROOT/scripts/purplemux-launch.sh"
 }
 
+@test "purplemux launcher bypasses launchd login-shell PATH probe" {
+  home="$TMPDIR_TEST/purplemux-home"
+  nvm_bin="$home/.nvm/versions/node/v1.0.0/bin"
+  mkdir -p "$nvm_bin"
+  cat > "$nvm_bin/purplemux" <<'SH'
+#!/bin/sh
+hook="$HOME/.local/share/dotfiles/purplemux-launch-hook.cjs"
+case "${NODE_OPTIONS:-}" in
+  *"--require=$hook"*) ;;
+  *)
+    printf 'missing purplemux launch hook in NODE_OPTIONS: %s\n' "${NODE_OPTIONS:-}" >&2
+    exit 42
+    ;;
+esac
+[ -f "$hook" ] || { printf 'missing hook file: %s\n' "$hook" >&2; exit 43; }
+grep -q 'child_process' "$hook" || exit 44
+grep -Fq 'echo -n "$PATH"' "$hook" || exit 45
+printf 'purplemux hook configured\n'
+SH
+  chmod +x "$nvm_bin/purplemux"
+
+  run env -i HOME="$home" PATH="/usr/bin:/bin" bash "$REPO_ROOT/scripts/purplemux-launch.sh"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"purplemux hook configured"* ]]
+}
+
+@test "purplemux launcher stabilizes git execFile preflight under launchd PATH" {
+  home="$TMPDIR_TEST/purplemux-home"
+  nvm_bin="$home/.nvm/versions/node/v1.0.0/bin"
+  bad_bin="$TMPDIR_TEST/bad-bin"
+  good_bin="$TMPDIR_TEST/good-bin"
+  node_bin="$(command -v node)"
+  mkdir -p "$nvm_bin" "$bad_bin" "$good_bin"
+  cat > "$bad_bin/git" <<'SH'
+#!/bin/sh
+printf 'bad git should not run\n' >&2
+exit 42
+SH
+  cat > "$good_bin/git" <<'SH'
+#!/bin/sh
+printf 'resolved git args: %s\n' "$*"
+SH
+  cat > "$nvm_bin/purplemux" <<SH
+#!/bin/sh
+hook="\$HOME/.local/share/dotfiles/purplemux-launch-hook.cjs"
+PATH="$bad_bin:/usr/bin:/bin" "$node_bin" - <<'NODE'
+const childProcess = require('child_process');
+function runGit(args) {
+  return new Promise((resolve, reject) => {
+    childProcess.execFile('git', args, (error, stdout, stderr) => {
+      if (error) {
+        error.output = String(stderr || error.message);
+        reject(error);
+        return;
+      }
+      resolve(stdout);
+    });
+  });
+}
+(async () => {
+  process.stdout.write(await runGit(['--version']));
+  process.stdout.write(await runGit(['status', '--short']));
+})().catch((error) => {
+  if (error) {
+    process.stderr.write(String(error.output || error.message));
+    process.exit(error.code || 1);
+  }
+});
+NODE
+SH
+  chmod +x "$bad_bin/git" "$good_bin/git" "$nvm_bin/purplemux"
+
+  run env -i HOME="$home" PATH="/usr/bin:/bin" PURPLEMUX_GIT_PATH="$good_bin/git" PURPLEMUX_GIT_VERSION="git version 9.9.9" \
+    bash "$REPO_ROOT/scripts/purplemux-launch.sh"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"git version 9.9.9"* ]]
+  [[ "$output" == *"resolved git args: status --short"* ]]
+  [[ "$output" != *"bad git should not run"* ]]
+}
+
 @test "install links Claude config before setup scripts" {
   settings_line=$(grep -n 'configs/claude-settings.json' "$REPO_ROOT/install.sh" | cut -d: -f1)
   claude_line=$(grep -n 'bash "\$DOTFILES_DIR/scripts/claude.sh"' "$REPO_ROOT/install.sh" | cut -d: -f1)
@@ -139,6 +221,18 @@ SH
   [ ! -e "$home/.codex" ]
 }
 
+@test "claude dry-run tolerates empty SKILL_URLS under bash nounset" {
+  home="$TMPDIR_TEST/claude-home"
+  mkdir -p "$home"
+
+  run env HOME="$home" DOTFILES_DIR="$REPO_ROOT" DRY_RUN=true PATH="/usr/bin:/bin" \
+    bash "$REPO_ROOT/scripts/claude.sh"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"SKILL_URLS[@]: unbound variable"* ]]
+  [[ "$output" == *"Claude Code setup done"* ]]
+}
+
 @test "headroom installer dry-run installs CLI and wrapper entrypoints" {
   home="$TMPDIR_TEST/headroom-home"
   mkdir -p "$home"
@@ -167,6 +261,12 @@ SH
   [ ! -e "$home/.local/bin" ]
 }
 
+
+@test "dev setup installs agent-resumer npm shims without profile mutation" {
+  grep -q 'npm install -g agent-resumer@latest' "$REPO_ROOT/scripts/dev.sh"
+  grep -q 'agent-resumer install-shims --force --no-profile' "$REPO_ROOT/scripts/dev.sh"
+  grep -q 'agent-resumer' "$REPO_ROOT/README.md"
+}
 
 @test "code-server setup dry-run installs worktree-focused extensions" {
   home="$TMPDIR_TEST/code-server-home"
@@ -270,6 +370,25 @@ SH
   grep -q 'command omx --direct --xhigh --madmax' "$zshrc"
   grep -q '__dotfiles_codex_base' "$zshrc"
   grep -q 'missing owl-rs should not' "$zshrc"
+}
+
+@test "zshrc prepends agent-resumer shims before agent wrappers and cmux adopt" {
+  zshrc="$REPO_ROOT/configs/.zshrc"
+
+  grep -q 'agent-resumer shims' "$zshrc"
+  grep -q '_agent_resumer_shim_dir="$HOME/.agent-resumer/shims"' "$zshrc"
+  run grep -F '/Users/yongjae/.agent-resumer/shims' "$zshrc"
+  [ "$status" -eq 1 ]
+
+  shim_line=$(grep -n '_agent_resumer_shim_dir=' "$zshrc" | head -1 | cut -d: -f1)
+  claude_wrapper_line=$(grep -n 'claude() {' "$zshrc" | head -1 | cut -d: -f1)
+  cmux_adopt_line=$(grep -n 'cmux-deck adopt' "$zshrc" | head -1 | cut -d: -f1)
+
+  [ -n "$shim_line" ]
+  [ -n "$claude_wrapper_line" ]
+  [ -n "$cmux_adopt_line" ]
+  [ "$shim_line" -lt "$claude_wrapper_line" ]
+  [ "$shim_line" -lt "$cmux_adopt_line" ]
 }
 
 @test "zshrc cmux-deck adoption focuses newly opened surfaces by default" {
@@ -420,11 +539,11 @@ SH
   [[ "$output" != *"hermes --version should not run"* ]]
 }
 
-@test "services dry-run does not execute purplemux or tailscale probes" {
+@test "services dry-run does not execute purplemux, agent-resumer, npm, or tailscale probes" {
   home="$TMPDIR_TEST/services-home"
   bin="$TMPDIR_TEST/bin"
   mkdir -p "$home" "$bin"
-  for cmd in purplemux tailscale; do
+  for cmd in purplemux agent-resumer npm tailscale; do
     cat > "$bin/$cmd" <<'SH'
 #!/bin/sh
 printf 'service probe should not run in dry-run\n' >&2
@@ -437,8 +556,27 @@ SH
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"would check purplemux"* ]]
+  [[ "$output" == *"would check agent-resumer"* ]]
+  [[ "$output" == *"agent-resumer install-shims --force --no-profile"* ]]
   [[ "$output" == *"tailscale serve --bg"* ]]
   [[ "$output" != *"service probe should not run"* ]]
+}
+
+@test "agent-resumer launcher restores latest nvm bin under launchd PATH" {
+  home="$TMPDIR_TEST/agent-resumer-home"
+  nvm_bin="$home/.nvm/versions/node/v99.0.0/bin"
+  mkdir -p "$nvm_bin"
+  cat > "$nvm_bin/agent-resumer" <<'SH'
+#!/bin/sh
+printf 'agent-resumer args: %s\n' "$*"
+SH
+  chmod +x "$nvm_bin/agent-resumer"
+
+  run env -i HOME="$home" PATH="/usr/bin:/bin" AGENT_RESUMER_INTERVAL=12345 \
+    bash "$REPO_ROOT/scripts/agent-resumer-launch.sh"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"agent-resumer args: watch --watch --interval 12345 --quiet"* ]]
 }
 
 @test "services does not abort when launchctl bootstrap fails" {
@@ -743,7 +881,7 @@ TOML
 @test "docs mention LaunchAgent dependency gating" {
   grep -q 'skips loading LaunchAgents when dependencies are missing' "$REPO_ROOT/README.md"
   grep -q 'skips loading LaunchAgents when dependencies are missing' "$REPO_ROOT/scripts/services.sh"
-  grep -q 'Configuring purplemux + code-server services' "$REPO_ROOT/install.sh"
+  grep -q 'Configuring purplemux + code-server + agent watcher services' "$REPO_ROOT/install.sh"
 }
 
 @test "CI validates JSON config files" {

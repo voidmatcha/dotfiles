@@ -113,7 +113,7 @@ cd ~/dotfiles
 | CLI packages | [Homebrew] tools, [Bats], [uv], [gettext], [git-filter-repo], [Docker CLI] | [`Brewfile`](Brewfile) |
 | Language runtimes | [nvm], [Node.js] LTS, [Corepack], [pyenv], latest [Python] 3, [SDKMAN!], [OpenJDK] LTS, [Maven] | [`scripts/dev.sh`](scripts/dev.sh) |
 | Shell and Git | [Zsh] plugins, [direnv], personal/work Git identities, SSH signing via [OpenSSH] | [`scripts/shell.sh`](scripts/shell.sh), [`scripts/git.sh`](scripts/git.sh) |
-| Agent CLIs | [Claude Code], [Codex], [Hermes Agent], [OMX] | [`scripts/claude.sh`](scripts/claude.sh), [`scripts/codex.sh`](scripts/codex.sh), [`scripts/hermes.sh`](scripts/hermes.sh) |
+| Agent CLIs | [Claude Code], [Codex], [Hermes Agent], [OMX], [agent-resumer] | [`scripts/claude.sh`](scripts/claude.sh), [`scripts/codex.sh`](scripts/codex.sh), [`scripts/hermes.sh`](scripts/hermes.sh), [`scripts/dev.sh`](scripts/dev.sh) |
 | Remote access | [Tailscale] (including [Tailscale SSH][Tailscale]), [OpenSSH], [code-server], [purplemux] | [`scripts/tailscale.sh`](scripts/tailscale.sh), [`scripts/services.sh`](scripts/services.sh) |
 
 Run one focused installer when you do not want the full setup:
@@ -136,6 +136,7 @@ The point is not to make [Claude Code] and [Codex] identical. It is to keep poli
 | [Claude Code] | [Claude Code] execution with shared AGENTS.md rules, hooks, MCP, and [RTK] policy | [`scripts/claude.sh`](scripts/claude.sh), [`configs/CLAUDE.md`](configs/CLAUDE.md) |
 | [Codex (with OMX)][Codex] | [Codex] plus [OMX] workflows, goals, and native subagents | [`scripts/codex.sh`](scripts/codex.sh), [`configs/codex/config.toml`](configs/codex/config.toml) |
 | [Headroom] | Optional `claudeh`, `codexh`, and `omxh` wrappers for reversible compression and cache-aware routing | [`scripts/headroom-agent.sh`](scripts/headroom-agent.sh), [`scripts/headroom.sh`](scripts/headroom.sh) |
+| [agent-resumer] | Pane-aware auto-resume supervisor for Claude/Codex/OMX/OpenCode usage-limit resets | [`scripts/dev.sh`](scripts/dev.sh), [`scripts/services.sh`](scripts/services.sh) |
 | [RTK] | Command-output compression policy before noisy shell output enters context | [`configs/RTK.md`](configs/RTK.md), [`configs/rtk-config.toml`](configs/rtk-config.toml) |
 | Local skills | Repo-owned procedures for context pressure, handoff, verification, previews, cleanup, and provenance | [`plugins/local-skills/skills`](plugins/local-skills/skills) |
 
@@ -298,6 +299,7 @@ plugins/local-skills/skills/local-preview-server/scripts/local-preview-server.sh
 | `com.user.purplemux` | Web terminal multiplexer for [Claude Code] | Listens on `*:8022`; access is [Tailscale Serve] plus macOS firewall |
 | `com.user.code-server` | VS Code in the browser | Binds to `127.0.0.1:8088`; optional tailnet exposure on `:8443` |
 | `com.user.agentwatch` | Local agent session supervisor | No network listener |
+| `com.voidmatcha.agent-resumer` | Auto-resume watcher for local agent limit resets | No network listener |
 | `com.user.caffeinate` | Keeps the Mac awake on AC power for remote access | No network listener |
 
 Tailnet exposure is opt-in:
@@ -375,6 +377,7 @@ git -C ~/dotfiles submodule update --init
 See [`company/README.md`](company/README.md) for overlay maintenance.
 
 [agent-browser]: https://github.com/vercel-labs/agent-browser
+[agent-resumer]: https://www.npmjs.com/package/agent-resumer
 [agentsview]: https://www.agentsview.io/
 [Bats]: https://github.com/bats-core/bats-core
 [chrome-devtools-mcp]: https://github.com/ChromeDevTools/chrome-devtools-mcp

@@ -74,7 +74,10 @@ SKILL_REPOS=(
   # vercel-labs/agent-skills currently publishes PromptScript skills (Vercel
   # patterns, deploy, optimization, and writing/design guidelines). The skills
   # CLI rejects PromptScript global installs, so keep this repo out of the
-  # global bootstrap loop.
+  # global bootstrap loop. Also keep the CLI target pinned to Claude Code below:
+  # when `--global --yes` is used without `--agent`, skills CLI auto-expands
+  # universal `.agents/skills` targets and currently includes PromptScript, which
+  # is project-only.
   "anthropics/skills@frontend-design"
   "anthropics/skills@doc-coauthoring"        # handover docs / specs
   "anthropics/skills@internal-comms"         # status reports / FAQs
@@ -97,9 +100,9 @@ SKILL_URLS=(
 
 for repo in "${SKILL_REPOS[@]}"; do
   if $DRY_RUN; then
-    info "[dry-run] skills add $repo --yes --global"
+    info "[dry-run] skills add $repo --yes --global --agent claude-code"
   else
-    if skills add "$repo" --yes --global 2> >(grep -v "invalid option" >&2); then
+    if skills add "$repo" --yes --global --agent claude-code 2> >(grep -v "invalid option" >&2); then
       info "Installed: $repo"
     else
       info "⚠️  Failed: $repo"
@@ -107,19 +110,21 @@ for repo in "${SKILL_REPOS[@]}"; do
   fi
 done
 
-for url_args in "${SKILL_URLS[@]}"; do
-  if $DRY_RUN; then
-    info "[dry-run] npx skills add $url_args --yes --global"
-  else
-    # shellcheck disable=SC2086
-    # url_args intentionally stores pre-tokenized flags.
-    if npx skills add $url_args --yes --global 2> >(grep -v "invalid option" >&2); then
-      info "Installed: $url_args"
+if [ "${#SKILL_URLS[@]}" -gt 0 ]; then
+  for url_args in "${SKILL_URLS[@]}"; do
+    if $DRY_RUN; then
+      info "[dry-run] npx skills add $url_args --yes --global --agent claude-code"
     else
-      info "⚠️  Failed: $url_args"
+      # shellcheck disable=SC2086
+      # url_args intentionally stores pre-tokenized flags.
+      if npx skills add $url_args --yes --global --agent claude-code 2> >(grep -v "invalid option" >&2); then
+        info "Installed: $url_args"
+      else
+        info "⚠️  Failed: $url_args"
+      fi
     fi
-  fi
-done
+  done
+fi
 
 # Repo-local skills/plugin bundle. This keeps locally-authored skills in this
 # repository and installs them through the same setup path instead of scattering

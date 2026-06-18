@@ -28,6 +28,29 @@ source "$ZSH/oh-my-zsh.sh"
 # ── Local bin (early — uv tool installs go here, serena check below needs it) ──
 export PATH="$HOME/.local/bin:$PATH"
 
+# ── agent-resumer shims ──
+# Keep claude/codex/opencode pane-aware in tmux. Install-time shims live here;
+# keep this before agent wrapper functions and before cmux-deck can exit.
+_agent_resumer_shim_dir="$HOME/.agent-resumer/shims"
+if [ -d "$_agent_resumer_shim_dir" ]; then
+  if command -v awk >/dev/null 2>&1; then
+    PATH="$(
+      printf '%s' "$PATH" | awk -v RS=: -v shim="$_agent_resumer_shim_dir" '
+        BEGIN { out = shim; seen[shim] = 1 }
+        $0 != "" && !($0 in seen) { seen[$0] = 1; out = out ":" $0 }
+        END { printf "%s", out }
+      '
+    )"
+  else
+    case ":$PATH:" in
+      *":$_agent_resumer_shim_dir:"*) ;;
+      *) PATH="$_agent_resumer_shim_dir:$PATH" ;;
+    esac
+  fi
+  export PATH
+fi
+unset _agent_resumer_shim_dir
+
 # ── Headroom default agent entrypoints ──
 # When installed, route normal Claude/Codex/OMX launches through Headroom's
 # cache/proxy wrappers. This is intentionally shell-level only: `command claude`,
