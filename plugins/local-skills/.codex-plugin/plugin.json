@@ -1,7 +1,7 @@
 {
   "name": "local-skills",
   "version": "0.1.0",
-  "description": "Local skills bundle for dotfiles verification, usage audits, code-intel readiness, worktree code-server links, verified local preview servers, work-scope safety, context/cache pressure checks, source provenance, cmux handoff coordination, verified cross-session handover, and runaway agent-process cleanup.",
+  "description": "Local skills bundle for dotfiles verification, usage audits, code-intel readiness, worktree code-server links, verified local preview servers, work-scope safety, context/cache pressure checks, source provenance, verified handover with optional cmux/purplemux display backends, and runaway agent-process cleanup.",
   "author": {
     "name": "YONGJAE LEE",
     "url": "https://github.com/voidmatcha"
@@ -25,13 +25,18 @@
     "server",
     "static-artifacts",
     "html",
-    "reports"
+    "reports",
+    "agent-reach",
+    "research",
+    "web-search",
+    "github",
+    "social"
   ],
   "skills": "./skills/",
   "interface": {
     "displayName": "Local Skills",
-    "shortDescription": "Local dotfiles verification, worktree links, local previews, audit, context-check, cmux, and handover skills.",
-    "longDescription": "Repo-local skills for verifying this dotfiles setup, opening git worktrees in browser VS Code, serving generated static artifacts through verified private localhost/LAN/Tailscale preview URLs, auditing local agent usage, checking code-intel readiness, guarding work-scope boundaries, deciding context/cache handoffs, coordinating cmux loops, and creating verified cross-session handovers.",
+    "shortDescription": "Local dotfiles verification, worktree links, public research, local previews, audit, context-check, handover, and display backend guardrails.",
+    "longDescription": "Repo-local skills for verifying this dotfiles setup, opening git worktrees in browser VS Code, serving generated static artifacts through verified private localhost/LAN/Tailscale preview URLs, auditing local agent usage, checking code-intel readiness, guarding work-scope boundaries, deciding context/cache handoffs, creating verified cross-session handovers, and using cmux or purplemux only as visible display/control backends when requested.",
     "developerName": "YONGJAE LEE",
     "category": "Developer Tools",
     "capabilities": [
@@ -46,8 +51,9 @@
       "Audit whether my local agents and skills are actually being used.",
       "Check codegraph and serena readiness for this repo.",
       "Check whether this agent session should continue, compact, clear, or hand over.",
-      "Coordinate a long-running Claude/Codex loop in cmux safely.",
-      "Hand over this task to fresh OMX and Claude tabs, verify ACK/READY, then close this tab."
+      "Use handover to coordinate a long-running Claude/Codex loop in a visible backend safely.",
+      "Hand over this task to fresh OMX and Claude tabs, verify ACK/READY, then close this tab.",
+      "Research this public topic with agent-reach and cite the checked sources."
     ],
     "brandColor": "#0F766E"
   }

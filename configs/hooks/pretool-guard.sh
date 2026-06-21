@@ -88,7 +88,7 @@ if tool_name == 'Bash':
         return targets
 
     def is_dotenv_token(token):
-        return token == '.env' or token.startswith('.env.') or '/.env' in token
+        return token == '.env' or token.startswith('.env.') or '/.env' in token or token.endswith('.secrets.env')
 
     read_commands = {
         'awk', 'cat', 'cp', 'grep', 'head', 'less', 'more', 'node', 'perl',

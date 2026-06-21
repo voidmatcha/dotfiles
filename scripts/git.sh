@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+# shellcheck disable=SC2034  # TAG is the log prefix consumed by lib/common.sh's info/warn/error helpers.
 TAG="git"
 # shellcheck source=scripts/lib/common.sh
 source "$(cd "$(dirname "$0")" && pwd)/lib/common.sh"

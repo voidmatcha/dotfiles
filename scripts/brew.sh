@@ -28,11 +28,9 @@ if $DRY_RUN; then
   info "[dry-run] Packages that would be installed:"
   cat "$DOTFILES_DIR/Brewfile"
 else
-  # Tap trust is intentionally formula-scoped. Bun is installed from the
-  # oven-sh tap for claude-mem hooks, and Homebrew refuses outdated checks for
-  # untrusted third-party formulae when tap trust enforcement is enabled.
+  # Trust only the Bun formula rather than the whole tap.
   if brew trust --help >/dev/null 2>&1; then
-    brew trust --formula oven-sh/bun/bun || warn "Failed to trust oven-sh/bun/bun; brew may warn during outdated checks"
+    brew trust --formula oven-sh/bun/bun || warn "Failed to trust oven-sh/bun/bun formula; brew may warn during outdated checks"
   fi
 
   brew update

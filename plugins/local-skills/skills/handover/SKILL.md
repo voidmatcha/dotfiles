@@ -1,11 +1,13 @@
 ---
 name: handover
-description: "Hand off current work to fresh cmux/OMX/Claude/Codex sessions with artifacts, readiness checks, and recovery tracking."
+description: "Hand off current work to fresh Claude/Codex/OMX sessions or visible cmux/purplemux display backends with durable artifacts, ACK/READY checks, optional source-tab closure, and fail-closed recovery."
 ---
 
 # Handover
 
-Use this when the user wants the current work moved to a new agent session/tab, especially phrases like `handover:omx`, `handover:claude`, `handover:codex`, "handover", "handoff", "새 세션", "새 탭에서 이어서", "omx/claude로 넘겨", or "넘어가면 현재 탭 닫아".
+Use this when the user wants current work moved to a new agent session/tab, Claude/Codex/OMX continuation, visible display-backed agent tabs, cross-agent coordination, or verified source-tab closure. Trigger phrases include `handover:omx`, `handover:claude`, `handover:codex`, "handover", "handoff", "새 세션", "새 탭에서 이어서", "Claude/Codex 번갈아", "서로 다른 LLM끼리 관찰", "교차 검증", "omx/claude로 넘겨", or "넘어가면 현재 탭 닫아".
+
+For ambiguous "continue/compact/clear/handoff?" questions, use `context-check` first; use this skill only after the decision is to hand off, self-refresh from a durable package, or launch a fresh/visible receiver.
 
 ## When to use this instead of compact/resume
 
@@ -17,12 +19,16 @@ Use this when the user wants the current work moved to a new agent session/tab, 
 Cache-aware rule:
 
 - If the current tool still has a warm prompt cache and the same session can continue, prefer staying put or `/compact`; a new handover target usually starts with a cold cache.
-- If a Claude/owl cache-expiry warning appears, treat handover as a **workflow transfer**, not as a cache fix. `/clear` is cheapest when old context can be dropped; `/compact` is better when old context must be retained and one cache rebuild is acceptable.
+- If a cache-expiry warning appears, treat handover as a **workflow transfer**, not as a cache fix. `/clear` is cheapest when old context can be dropped; `/compact` is better when old context must be retained and one cache rebuild is acceptable.
 - Handover becomes cheaper only when the receiver needs a small artifact-backed brief instead of rebuilding a large stale transcript, or when the current tab/tool must be replaced anyway.
 
 Efficient handover is not a raw transcript dump. Use a structured brief with pointers to durable artifacts: objective, completed work, remaining work, decisions, evidence, git state, risks, and a mutual handshake.
 
 For source-backed rationale, read `references/handover-patterns.md` only when the user asks about compact/resume tradeoffs or handover design.
+
+When launching, displaying, monitoring, or recovering Claude/Codex/OMX sessions in a visible display backend, read `references/display-adapter-contract.md` first. Select the backend by explicit user request > current attached surface (`CMUX_WORKSPACE_ID`/`CMUX_SURFACE_ID` or `PMUX_PORT`/`PMUX_TOKEN` plus a chosen workspace/tab) > available backend > artifact-only fallback. Then read the backend-specific guardrail before any send: `references/cmux-display.md` for cmux, `references/purplemux-display.md` for purplemux. Keep cmux and purplemux as topology/display backends; this skill owns the handoff package, ACK/READY markers, and loop decisions.
+
+When the request asks multiple LLMs or sessions to observe different surfaces, divide roles, or cross-check each other, read `references/cross-agent-coordination.md`. Treat it as a handover profile: one coordinator owns sequencing, targets receive bounded executor/reviewer/verifier/researcher roles, and agents exchange artifacts instead of raw transcripts.
 
 ## Contract
 
@@ -75,7 +81,7 @@ Never close the current tab/session before READY is validated for every target. 
 
    If using `--target-from`, omit `--target` unless you need to add an explicit target programmatically. `--target` is still useful for deterministic coordinator scripts.
 
-4. Launch a real cmux terminal for each target. Apply `cmux-handoff-runner` preflight/smoke checks when creating or reusing cmux surfaces.
+4. Launch a real display tab/surface for each target when visible continuation is needed. Before any backend send to an agent, you MUST read and apply `references/display-adapter-contract.md` plus the selected backend reference. For cmux, use `references/cmux-display.md`; for purplemux, use `references/purplemux-display.md`.
    - Use the generated `.omx/artifacts/handover-<UTC>-<random>/launch-commands.json` so targets start with the user's usual launch shape.
    - Rename target tabs/surfaces using the generated title, e.g. `handover-omx-a1b2c3`, so multiple handovers in one folder do not get confused.
    - Defaults:
@@ -85,7 +91,7 @@ Never close the current tab/session before READY is validated for every target. 
    - Override per run with exact command env vars: `HANDOVER_OMX_COMMAND`, `HANDOVER_CLAUDE_COMMAND`, `HANDOVER_CODEX_COMMAND`.
    - Or append args with: `HANDOVER_OMX_ARGS`, `HANDOVER_CLAUDE_ARGS`, `HANDOVER_CODEX_ARGS`.
    - Prefer a verified existing workspace/surface when available.
-   - Otherwise create a new cmux workspace or surface with `cwd` set to the repo root.
+   - Otherwise create a new target (cmux workspace/surface or purplemux tab) with `cwd` set to the repo root.
    - Start the target CLI in the foreground (`omx`, `claude`, or `codex`). Do not background TTY-bound agent CLIs.
    - Paste/send the generated `target-prompts/<target>.txt` as the first instruction to that session.
 
@@ -99,9 +105,9 @@ Never close the current tab/session before READY is validated for every target. 
    ```
 
 6. If `wait` reports missing/invalid ACK or READY:
-   - read the target screen/process state with cmux;
+   - read the target screen/process state with the selected backend (`cmux` or `purplemux`);
    - resend the target prompt if the agent never received it;
-   - recreate unhealthy cmux surfaces (`runtime=0`, no TTY, no shell process);
+   - recreate unhealthy display targets (cmux `runtime=0`, no TTY, no shell process; purplemux missing env/workspace/tab proof or failed smoke marker);
    - preserve local changes and never kill unrelated sessions;
    - keep retrying until `validate` is complete or a non-recoverable authority issue exists.
 
@@ -113,7 +119,7 @@ Never close the current tab/session before READY is validated for every target. 
      --execute
    ```
 
-   If the current surface cannot be identified (`CMUX_WORKSPACE_ID`/`CMUX_SURFACE_ID` missing), report the completed handover and leave the current session open.
+   If the current source cannot be identified (for cmux: `CMUX_WORKSPACE_ID`/`CMUX_SURFACE_ID`; for purplemux: explicit workspace id and tab id), report the completed handover and leave the current session open. `handover.py close-current` is cmux-only; for purplemux sources, close only the explicitly recorded workspace/tab id per `references/purplemux-display.md`, or leave it open.
 
 ## Target session instruction
 

@@ -1,9 +1,8 @@
----
-name: cmux-handoff-runner
-description: "Manage long-running Claude/Codex/OMX handoffs in cmux tabs: start, attach, monitor, recover idle or stuck sessions."
----
+# Cmux display and long-running loop guardrails
 
-# Cmux Handoff Runner
+For backend selection and shared adapter invariants, read `display-adapter-contract.md` first. This file is only the cmux-specific backend reference.
+
+Read this reference only when `handover` needs to launch, display, monitor, or recover Claude/Codex/OMX sessions in cmux surfaces. Keep `cmux` as the topology/display tool; `handover` owns the task packet, ACK/READY markers, and loop decisions.
 
 Use a shell coordinator for long-running loops. Do not rely on a single agent prompt to manage many future iterations.
 

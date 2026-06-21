@@ -121,18 +121,13 @@ PY
 
   home="$TMPDIR_TEST/company-home"
   bin="$TMPDIR_TEST/bin"
-  mkdir -p "$home/.claude" "$home/owl" "$bin"
+  mkdir -p "$home/.claude" "$bin"
   printf '{"legacy":true}\n' > "$home/.claude/.mcp.json"
   cat > "$home/.company.secrets.env" <<'EOF'
 export CONTEXT7_API_KEY=context7-live
 export OSS_NAVER_PAT=oss-live
 export FIGMA_API_KEY=figma-live
 EOF
-  cat > "$home/owl/setup.sh" <<'SH'
-#!/bin/sh
-exit 0
-SH
-  chmod +x "$home/owl/setup.sh"
   cat > "$bin/claude" <<'SH'
 #!/bin/sh
 printf '%s\n' "$*" >> "$HOME/claude-calls.log"

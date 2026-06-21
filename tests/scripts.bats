@@ -264,7 +264,7 @@ SH
 
 @test "dev setup installs agent-resumer npm shims without profile mutation" {
   grep -q 'npm install -g agent-resumer@latest' "$REPO_ROOT/scripts/dev.sh"
-  grep -q 'agent-resumer install-shims --force --no-profile' "$REPO_ROOT/scripts/dev.sh"
+  grep -q 'agent-resumer install-shims --force --auto-tmux --no-profile' "$REPO_ROOT/scripts/dev.sh"
   grep -q 'agent-resumer' "$REPO_ROOT/README.md"
 }
 
@@ -369,7 +369,7 @@ SH
   grep -q 'command omxh' "$zshrc"
   grep -q 'command omx --direct --xhigh --madmax' "$zshrc"
   grep -q '__dotfiles_codex_base' "$zshrc"
-  grep -q 'missing owl-rs should not' "$zshrc"
+  grep -q 'a missing probe should not' "$zshrc"
 }
 
 @test "zshrc prepends agent-resumer shims before agent wrappers and cmux adopt" {
@@ -507,15 +507,16 @@ SH
   [ "$(cat "$home/omx-args.txt")" = "--direct --xhigh --madmax" ]
 }
 
-@test "context-check treats Headroom as primary and owl as optional" {
+@test "context-check treats Headroom as primary" {
   skill="$REPO_ROOT/plugins/local-skills/skills/context-check/SKILL.md"
   script="$REPO_ROOT/plugins/local-skills/skills/context-check/scripts/context_check.py"
 
   grep -q 'Headroom active' "$skill"
-  grep -q 'Do not compact or' "$skill"
-  grep -q 'owl-rs not found", "info"' "$script"
   grep -q '_collect_headroom_signal' "$script"
   grep -q 'HEADROOM_AGENT_ACTIVE' "$script"
+  ! grep -qi 'owl' "$script"
+  ! grep -qi 'owl' "$skill"
+  ! grep -rinw 'owl' "$REPO_ROOT/plugins/local-skills/skills/handover" "$REPO_ROOT/README.md"
 }
 
 @test "hermes dry-run does not execute version probe" {
@@ -557,7 +558,7 @@ SH
   [ "$status" -eq 0 ]
   [[ "$output" == *"would check purplemux"* ]]
   [[ "$output" == *"would check agent-resumer"* ]]
-  [[ "$output" == *"agent-resumer install-shims --force --no-profile"* ]]
+  [[ "$output" == *"agent-resumer install-shims --force --auto-tmux --no-profile"* ]]
   [[ "$output" == *"tailscale serve --bg"* ]]
   [[ "$output" != *"service probe should not run"* ]]
 }
@@ -978,6 +979,10 @@ assert claude['skills'] == './skills/'
 assert claude_market['name'] == 'dotfiles-local'
 assert claude_market['plugins'][0]['name'] == 'local-skills'
 assert claude_market['plugins'][0]['source'] == './plugins/local-skills'
+claude_plugin = claude_market['plugins'][0]
+claude_market_blob = json.dumps(claude_plugin)
+assert 'agent-reach' in claude_plugin.get('description', '') or 'agent-reach' in claude_plugin.get('tags', []), 'agent-reach missing from marketplace local-skills'
+assert 'cmux coordination' not in claude_market_blob, 'cmux coordination should not appear in local-skills description/tags'
 assert codex['name'] == 'local-skills'
 assert codex['skills'] == './skills/'
 for manifest in (claude, codex):
@@ -989,8 +994,18 @@ assert any('Tailscale code-server link' in prompt for prompt in codex['interface
 assert codex_market['name'] == 'dotfiles-local'
 assert codex_market['plugins'][0]['name'] == 'local-skills'
 assert codex_market['plugins'][0]['source'] == {'source': 'local', 'path': './plugins/local-skills'}
-for skill in ['dotfiles-verify', 'agent-usage-audit', 'code-intel-doctor', 'worktree-open', 'work-scope-guard', 'source-provenance']:
+for skill in ['dotfiles-verify', 'agent-usage-audit', 'agent-reach', 'code-intel-doctor', 'worktree-open', 'work-scope-guard', 'source-provenance']:
     assert (root / 'plugins/local-skills/skills' / skill / 'SKILL.md').exists(), skill
+assert not (root / 'plugins/local-skills/skills/cmux-handoff-runner/SKILL.md').exists()
+handover = root / 'plugins/local-skills/skills/handover/SKILL.md'
+cmux_display = root / 'plugins/local-skills/skills/handover/references/cmux-display.md'
+handover_text = handover.read_text()
+assert 'visible cmux/purplemux display backends' in handover_text
+assert 'display-adapter-contract.md' in handover_text
+assert 'purplemux-display.md' in handover_text
+cmux_text = cmux_display.read_text()
+for required in ['runtime=1', 'ghostty', 'tty=', 'smoke marker', 'coordinator.lock']:
+    assert required in cmux_text, required
 PY
 }
 
@@ -1091,6 +1106,35 @@ YAML
 }
 
 
+@test "skills installer reports stale repo-local Codex skill symlinks" {
+  home="$TMPDIR_TEST/skills-stale-home"
+  codex_home="$TMPDIR_TEST/skills-stale-codex"
+  mkdir -p "$home" "$codex_home/skills"
+  ln -s "$REPO_ROOT/plugins/local-skills/skills/__nonexistent_stale__" "$codex_home/skills/cmux-handoff-runner"
+
+  run env HOME="$home" CODEX_HOME="$codex_home" DOTFILES_DIR="$REPO_ROOT" DRY_RUN=true PATH="/usr/bin:/bin" bash "$REPO_ROOT/scripts/skills.sh" codex
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"remove stale local Codex skill symlink"* ]]
+  [ -L "$codex_home/skills/cmux-handoff-runner" ]
+}
+
+
+@test "skills installer removes stale repo-local Codex skill symlinks in non-dry-run" {
+  home="$TMPDIR_TEST/skills-stale-exec-home"
+  codex_home="$TMPDIR_TEST/skills-stale-exec-codex"
+  mkdir -p "$home" "$codex_home/skills"
+  ln -s "$REPO_ROOT/plugins/local-skills/skills/__nonexistent_stale__" "$codex_home/skills/cmux-handoff-runner"
+
+  run env HOME="$home" CODEX_HOME="$codex_home" DOTFILES_DIR="$REPO_ROOT" DRY_RUN=false PATH="/usr/bin:/bin" bash "$REPO_ROOT/scripts/skills.sh" codex
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Removed stale local Codex skill symlink"* ]]
+  [ ! -L "$codex_home/skills/cmux-handoff-runner" ]
+  [ ! -e "$codex_home/skills/cmux-handoff-runner" ]
+}
+
+
 @test "CI validates Codex TOML config" {
   grep -q 'toml-config-check' "$REPO_ROOT/.github/workflows/lint.yml"
   grep -q 'tomllib' "$REPO_ROOT/.github/workflows/lint.yml"
@@ -1129,6 +1173,7 @@ PY
   grep -q '\[features\] goals = true' "$REPO_ROOT/README.md"
   grep -q 'scripts/skills.sh codex' "$REPO_ROOT/README.md"
   grep -q 'dotfiles-verify' "$REPO_ROOT/README.md"
+  grep -q 'agent-reach' "$REPO_ROOT/README.md"
 
   # README stays focused on repo-owned setup, not per-machine auth/profile steps.
   ! grep -q 'codex login' "$REPO_ROOT/README.md"
@@ -2171,4 +2216,214 @@ SH
   run env TAILSCALE_LOG="$tailscale_log" PATH="$bin:/usr/bin:/bin" "$helper" stop --port "$port"
   [ "$status" -eq 0 ]
   grep -q -- "serve --http=$port off" "$tailscale_log"
+}
+
+@test "rtk safety report counts fallback bypass and rerun candidates" {
+  events="$TMPDIR_TEST/rtk-events.jsonl"
+  cat > "$events" <<'JSONL'
+{"ts":"2026-06-19T10:00:00+00:00","status":"compressed","command_family":"git diff","command_hash":"sha256:cmd1","cwd_hash":"sha256:cwd1","raw_tokens":1000,"delivered_tokens":50,"saved_tokens":950}
+{"ts":"2026-06-19T10:05:00+00:00","status":"compressed","command_family":"git diff","command_hash":"sha256:cmd1","cwd_hash":"sha256:cwd1","raw_tokens":900,"delivered_tokens":90,"saved_tokens":810}
+{"ts":"2026-06-19T10:10:00+00:00","status":"fallback","command_family":"pytest","command_hash":"sha256:cmd2","cwd_hash":"sha256:cwd1","raw_tokens":300,"delivered_tokens":300,"saved_tokens":0}
+{"ts":"2026-06-19T10:11:00+00:00","status":"bypass","command_family":"rtk proxy","command_hash":"sha256:cmd3","cwd_hash":"sha256:cwd1","raw_tokens":200,"delivered_tokens":200,"saved_tokens":0}
+JSONL
+
+  run env -u LC_ALL -u LC_CTYPE python3 "$REPO_ROOT/scripts/rtk_safety_report.py" \
+    --events "$events" --since '2026-01-01T00:00:00+00:00' --no-rtk-gain
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Events loaded | 4"* ]]
+  [[ "$output" == *"Fallback | 1"* ]]
+  [[ "$output" == *"Explicit bypass | 1"* ]]
+  [[ "$output" == *"Repeat-after-compression candidates | 1"* ]]
+  [[ "$output" == *"RTK gain is a tool-output compression metric"* ]]
+}
+
+@test "agent usage session-report separates exact counters from estimated tool pressure" {
+  rtk_events="$TMPDIR_TEST/session-rtk-events.jsonl"
+  claude_dir="$TMPDIR_TEST/claude/projects/demo"
+  codex_dir="$TMPDIR_TEST/codex/sessions/demo"
+  mkdir -p "$claude_dir" "$codex_dir"
+
+  cat > "$rtk_events" <<'JSONL'
+{"ts":"2026-06-19T10:00:00+00:00","status":"compressed","command_family":"git diff","command_hash":"sha256:cmd1","cwd_hash":"sha256:cwd1","raw_tokens":1000,"delivered_tokens":100,"saved_tokens":900}
+JSONL
+
+  cat > "$claude_dir/session.jsonl" <<'JSONL'
+{"timestamp":"2026-06-19T10:01:00+00:00","message":{"usage":{"input_tokens":10,"cache_read_input_tokens":20,"cache_creation_input_tokens":0,"output_tokens":5}}}
+{"timestamp":"2026-06-19T10:02:00+00:00","type":"tool_result","tool_name":"mcp__codegraph.codegraph_context","content":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+JSONL
+
+  cat > "$codex_dir/session.jsonl" <<'JSONL'
+{"timestamp":"2026-06-19T10:03:00+00:00","payload":{"info":{"total_token_usage":{"input_tokens":80,"output_tokens":20,"total_tokens":100}}}}
+{"timestamp":"2026-06-19T10:04:00+00:00","payload":{"info":{"total_token_usage":{"input_tokens":200,"output_tokens":50,"total_tokens":250}}}}
+{"timestamp":"2026-06-19T10:05:00+00:00","type":"function_call_output","recipient_name":"mcp__chrome_devtools.take_snapshot","output":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
+JSONL
+
+  run env -u LC_ALL -u LC_CTYPE python3 "$REPO_ROOT/scripts/agent_usage_audit.py" session-report \
+    --since '2026-01-01T00:00:00+00:00' \
+    --rtk-events "$rtk_events" \
+    --claude-dir "$claude_dir" \
+    --codex-dir "$codex_dir" \
+    --format markdown
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Bash / RTK"* ]]
+  [[ "$output" == *"Claude usage"* ]]
+  [[ "$output" == *"Codex usage"* ]]
+  [[ "$output" == *"MCP: codegraph"* ]]
+  [[ "$output" == *"Browser / Chrome DevTools"* ]]
+  [[ "$output" == *"Exact tokens from provider/log counters: \`385\`"* ]]
+  [[ "$output" == *"Estimated tool-result pressure"* ]]
+  [[ "$output" == *"does not assign exact total spend"* ]]
+}
+
+@test "agent-reach skill documents public-only safety boundary" {
+  skill="$REPO_ROOT/plugins/local-skills/skills/agent-reach/SKILL.md"
+
+  [ -f "$skill" ]
+  grep -q '## Safety boundary' "$skill"
+  grep -q 'Public sources only by default' "$skill"
+  grep -q 'hosted readers/search tools' "$skill"
+  grep -q 'Do not bulk scrape' "$skill"
+}
+
+@test "agent usage session-report emits structured JSON" {
+  rtk_events="$TMPDIR_TEST/session-json-rtk-events.jsonl"
+  claude_dir="$TMPDIR_TEST/json-claude/projects/demo"
+  codex_dir="$TMPDIR_TEST/json-codex/sessions/demo"
+  mkdir -p "$claude_dir" "$codex_dir"
+
+  cat > "$rtk_events" <<'JSONL'
+{"ts":"2026-06-19T10:00:00+00:00","status":"compressed","command_family":"git diff","command_hash":"sha256:cmd1","cwd_hash":"sha256:cwd1","raw_tokens":1000,"delivered_tokens":100,"saved_tokens":900}
+JSONL
+
+  cat > "$claude_dir/session.jsonl" <<'JSONL'
+{"timestamp":"2026-06-19T10:01:00+00:00","message":{"usage":{"input_tokens":10,"cache_read_input_tokens":20,"cache_creation_input_tokens":0,"output_tokens":5}}}
+JSONL
+
+  run env -u LC_ALL -u LC_CTYPE python3 "$REPO_ROOT/scripts/agent_usage_audit.py" session-report \
+    --since '2026-01-01T00:00:00+00:00' \
+    --rtk-events "$rtk_events" \
+    --claude-dir "$claude_dir" \
+    --codex-dir "$codex_dir" \
+    --format json
+
+  [ "$status" -eq 0 ]
+  printf '%s' "$output" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert isinstance(d["sources"], list); assert "totals" in d; assert "since" in d; assert "notes" in d'
+}
+
+@test "rtk safety report emits structured JSON" {
+  events="$TMPDIR_TEST/rtk-json-events.jsonl"
+  cat > "$events" <<'JSONL'
+{"ts":"2026-06-19T10:00:00+00:00","status":"compressed","command_family":"git diff","command_hash":"sha256:cmd1","cwd_hash":"sha256:cwd1","raw_tokens":1000,"delivered_tokens":50,"saved_tokens":950}
+JSONL
+
+  run env -u LC_ALL -u LC_CTYPE python3 "$REPO_ROOT/scripts/rtk_safety_report.py" \
+    --events "$events" --since '2026-01-01T00:00:00+00:00' --no-rtk-gain --format json
+
+  [ "$status" -eq 0 ]
+  printf '%s' "$output" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert "events" in d; assert "total" in d["events"]; assert "since" in d; assert "notes" in d'
+}
+
+@test "handover display adapter docs cover cmux and purplemux fail-closed routing" {
+  skill="$REPO_ROOT/plugins/local-skills/skills/handover/SKILL.md"
+  contract="$REPO_ROOT/plugins/local-skills/skills/handover/references/display-adapter-contract.md"
+  cmux_ref="$REPO_ROOT/plugins/local-skills/skills/handover/references/cmux-display.md"
+  purple_ref="$REPO_ROOT/plugins/local-skills/skills/handover/references/purplemux-display.md"
+
+  [ -f "$contract" ]
+  [ -f "$purple_ref" ]
+
+  grep -q 'display-adapter-contract.md' "$skill"
+  grep -q 'PMUX_PORT' "$skill"
+  grep -q 'purplemux-display.md' "$skill"
+  grep -q 'artifact-only fallback' "$skill"
+
+  grep -q 'Explicit user request' "$contract"
+  grep -q 'Current attached surface' "$contract"
+  grep -q 'cmux-display.md' "$contract"
+  grep -q 'purplemux-display.md' "$contract"
+  grep -q 'Do not send an agent prompt' "$contract"
+
+  grep -q 'display-adapter-contract.md' "$cmux_ref"
+  grep -q 'PMUX_TOKEN' "$purple_ref"
+  grep -q 'x-pmux-token' "$purple_ref"
+  grep -q 'purplemux tab send' "$purple_ref"
+  grep -q 'purplemux tab result' "$purple_ref"
+  grep -q 'purplemux-smoke' "$purple_ref"
+}
+
+@test "README describes handover as session transfer with display backends" {
+  readme="$REPO_ROOT/README.md"
+
+  grep -q 'visible backend' "$readme"
+  grep -q 'display-adapter-contract.md' "$readme"
+  grep -q 'purplemux-display.md' "$readme"
+  grep -q '`handover` owns context/session transfer' "$readme"
+  grep -q '`cmux` and' "$readme"
+  grep -q '`purplemux` stay display/control backends' "$readme"
+}
+
+@test "handover close-current leaves source open without cmux ids" {
+  work="$TMPDIR_TEST/handover-close-no-cmux"
+  mkdir -p "$work"
+  helper="$REPO_ROOT/plugins/local-skills/skills/handover/scripts/handover.py"
+
+  run env -u CMUX_WORKSPACE_ID -u CMUX_SURFACE_ID python3 "$helper" init \
+    --cwd "$work" \
+    --run-id close-no-cmux \
+    --handshake fast \
+    --target codex \
+    --task "close no cmux smoke" \
+    --success "ready exists" \
+    --close-current
+  [ "$status" -eq 0 ]
+
+  run_dir="$work/.omx/artifacts/close-no-cmux"
+  run env -u CMUX_WORKSPACE_ID -u CMUX_SURFACE_ID python3 "$helper" ready \
+    --run-dir "$run_dir" \
+    --target codex \
+    --summary "ready" \
+    --next-action "none"
+  [ "$status" -eq 0 ]
+
+  run env -u CMUX_WORKSPACE_ID -u CMUX_SURFACE_ID python3 "$helper" close-current \
+    --run-dir "$run_dir" \
+    --execute
+  [ "$status" -eq 3 ]
+  [[ "$output" == *"leaving source session open"* ]]
+}
+
+@test "agent usage audit rejects unknown top-level options" {
+  run env -u LC_ALL -u LC_CTYPE python3 "$REPO_ROOT/scripts/agent_usage_audit.py" --format json
+
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"unrecognized arguments: --format"* ]]
+}
+
+@test "agent usage and RTK safety share default RTK event fallback paths" {
+  home="$TMPDIR_TEST/rtk-shared-default-home"
+  mkdir -p "$home/.local/share/rtk" "$home/claude" "$home/codex"
+  hook_log="$home/.local/share/rtk/hook-audit.log"
+  cat > "$hook_log" <<'JSONL'
+{"ts":"2026-06-19T10:00:00+00:00","status":"compressed","command_family":"git diff","command_hash":"sha256:cmd1","cwd_hash":"sha256:cwd1","raw_tokens":100,"delivered_tokens":25,"saved_tokens":75}
+JSONL
+
+  run env -u LC_ALL -u LC_CTYPE HOME="$home" python3 "$REPO_ROOT/scripts/agent_usage_audit.py" session-report \
+    --since '2026-01-01T00:00:00+00:00' \
+    --claude-dir "$home/claude" \
+    --codex-dir "$home/codex" \
+    --format markdown
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Bash / RTK"* ]]
+  [[ "$output" == *"loaded 1 RTK event(s): $hook_log"* ]]
+
+  run env -u LC_ALL -u LC_CTYPE HOME="$home" python3 "$REPO_ROOT/scripts/rtk_safety_report.py" \
+    --since '2026-01-01T00:00:00+00:00' \
+    --no-rtk-gain
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Events loaded | 1"* ]]
+  [[ "$output" == *"loaded 1 event(s): $hook_log"* ]]
 }

@@ -197,7 +197,7 @@ fi
 
 if $DRY_RUN; then
   info "[dry-run] would check agent-resumer and install agent-resumer@latest via npm if missing"
-  info "[dry-run] agent-resumer install-shims --force --no-profile"
+  info "[dry-run] agent-resumer install-shims --force --auto-tmux --no-profile"
   agent_resumer_ready=true
 elif PATH="$agent_resumer_stable_path" command -v agent-resumer >/dev/null 2>&1; then
   info "Found agent-resumer ($(PATH="$agent_resumer_stable_path" agent-resumer --version 2>/dev/null || echo unknown))"
@@ -214,7 +214,7 @@ fi
 
 if $agent_resumer_ready; then
   if ! $DRY_RUN && PATH="$agent_resumer_stable_path" command -v agent-resumer >/dev/null 2>&1; then
-    PATH="$agent_resumer_stable_path" agent-resumer install-shims --force --no-profile || warn "agent-resumer shim install failed — continuing with service setup"
+    PATH="$agent_resumer_stable_path" agent-resumer install-shims --force --auto-tmux --no-profile || warn "agent-resumer shim install failed — continuing with service setup"
   fi
   install_agent "com.voidmatcha.agent-resumer" \
                 "$DOTFILES_DIR/configs/com.voidmatcha.agent-resumer.plist" \

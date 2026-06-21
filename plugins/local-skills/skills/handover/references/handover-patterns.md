@@ -12,8 +12,7 @@ Use this only when the user asks why the handover workflow exists or asks to com
   - Source: OpenAI Agents SDK docs (`docs/handoffs.md`, `docs/sessions`).
 - Claude Code session docs expose `--continue`, `--resume`, `/clear`, `/compact`, and `/context`; Anthropic guidance frames compact as lossy summarization and recommends fresh scoped sessions or subagents when stale context would hurt.
   - Sources: `https://code.claude.com/docs/en/sessions`, `https://claude.com/blog/using-claude-code-session-management-and-1m-context`.
-- Local owl cache checks model prompt-cache health as a separate decision from handoff. Its cache-expiry path recommends `/clear` when old context can be dropped and `/compact` when context should be retained with a cache rebuild; its pre-compact notice warns not to change model/tools/thinking configuration because that breaks cache sharing.
-  - Sources: local `owl-cache` skill and `owl-rs` cache/pre-compact messages.
+- Prompt-cache health is a separate decision from handoff: `/clear` when old context can be dropped, `/compact` when context should be retained with one cache rebuild; avoid changing model/tools/thinking configuration mid-session because that breaks cache sharing.
 - Production-style multi-agent handoff guidance converges on: versioned schema, idempotency/trace key, explicit completed vs remaining work, decision provenance, side-effect/evidence manifest, failure-mode declaration, durable state store, and ACK/retry semantics.
   - Corroborating searches: OpenAI Agents SDK handoff docs, LangChain context-management writing on filesystem offloading + summary + recoverability tests, and public multi-agent handoff articles/tools.
 
@@ -50,7 +49,7 @@ Usually more expensive:
 - the source uses verbose summaries or launches multiple agents that all inspect the same code;
 - the handoff is used repeatedly for tiny tasks where launch/handshake overhead dominates.
 
-Claude/owl-specific rule of thumb:
+Cache rule of thumb:
 
 - **Warm cache + useful context**: stay in the session; compact only if context pressure is real.
 - **Expired cache + disposable context**: `/clear` is usually cheapest.

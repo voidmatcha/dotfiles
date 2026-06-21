@@ -3,7 +3,7 @@
 
 The hook path is intentionally cheap and fail-open: it only reads the current
 hook payload and a small local state file, then optionally emits Claude
-`additionalContext`. Heavy commands (owl/agentsview/ccusage) are manual-only via
+`additionalContext`. Heavy commands (agentsview/ccusage) are manual-only via
 `diagnose`.
 """
 from __future__ import annotations
@@ -205,51 +205,6 @@ def _run_command(cmd: list[str], timeout: int = 8) -> tuple[int | None, str, str
         return None, "", str(exc)
 
 
-def _owl_binary() -> str | None:
-    candidates = [
-        os.environ.get("OWL_RS_BIN"),
-        shutil.which("owl-rs"),
-        str(Path("~/.cache/owl/bin/owl-rs").expanduser()),
-        str(Path("~/.local/bin/owl-rs").expanduser()),
-    ]
-    for candidate in candidates:
-        if candidate and Path(candidate).exists():
-            return candidate
-    return None
-
-
-def _collect_owl_signal() -> Signal:
-    binary = _owl_binary()
-    if not binary:
-        return Signal("owl", "unavailable", "owl-rs not found", "info")
-    code, stdout, stderr = _run_command([binary, "report", "cache"], timeout=6)
-    text = "\n".join(part for part in (stdout, stderr) if part)
-    if code is None:
-        return Signal("owl", "unavailable", stderr or "owl command unavailable", "info")
-    if code != 0 and not text:
-        return Signal("owl", "error", f"owl exited {code}", "warn")
-
-    lower = text.lower()
-    idle_match = re.search(r"idle\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)\s*m", text, re.IGNORECASE)
-    idle_minutes = float(idle_match.group(1)) if idle_match else None
-    cache_warning = any(token in lower for token in ("cache warning", "cache expired", "cache miss", "expired", "cold cache"))
-    cached_match = re.search(r"cached\s+tokens?\s*[:=]?\s*([0-9][0-9,]*)", text, re.IGNORECASE)
-
-    details: list[str] = []
-    if idle_minutes is not None:
-        details.append(f"idle {idle_minutes:.1f}m")
-    if cached_match:
-        details.append(f"cached tokens {cached_match.group(1)}")
-    if cache_warning:
-        details.append("cache warning detected")
-    if not details:
-        compact = " ".join(text.split())[:240]
-        details.append(compact or f"owl exited {code}")
-
-    severity = "red" if cache_warning or (idle_minutes is not None and idle_minutes >= IDLE_RED_MINUTES) else "warn" if idle_minutes is not None and idle_minutes >= IDLE_WARN_MINUTES else "info"
-    return Signal("owl", "observed", "; ".join(details), severity)
-
-
 def _headroom_port_from_env() -> str:
     port = os.environ.get("HEADROOM_PORT")
     if port:
@@ -346,14 +301,6 @@ def _pick_recommendation(signals: list[Signal], intent: str) -> Recommendation:
     max_severity = max((_severity_rank(signal.severity) for signal in signals), default=0)
     red_names = {signal.name for signal in signals if signal.severity == "red"}
     warn_names = {signal.name for signal in signals if signal.severity == "warn"}
-    headroom_active = any(signal.name == "headroom" and signal.status == "observed" for signal in signals)
-
-    # Headroom-backed sessions already have a cache/proxy layer, so owl cache
-    # warnings are still useful but should not by themselves force a high-
-    # confidence compact recommendation. Missing owl-rs is reported as info.
-    if headroom_active and "owl" in red_names:
-        red_names.remove("owl")
-        warn_names.add("owl")
 
     if intent == "handover":
         return Recommendation("handover", "high", "handover intent was explicit", if_same_task="handover")
@@ -362,12 +309,10 @@ def _pick_recommendation(signals: list[Signal], intent: str) -> Recommendation:
 
     if red_names:
         reason = "red signal(s): " + ", ".join(sorted(red_names))
-        confidence = "high" if "owl" in red_names else "medium"
-        return Recommendation("compact", confidence, reason, if_same_task="compact")
+        return Recommendation("compact", "medium", reason, if_same_task="compact")
     if warn_names:
         reason = "warning signal(s): " + ", ".join(sorted(warn_names))
-        confidence = "medium" if "owl" in warn_names else "low"
-        return Recommendation("continue-with-checkpoint", confidence, reason, if_same_task="compact if important context must be preserved")
+        return Recommendation("continue-with-checkpoint", "low", reason, if_same_task="compact if important context must be preserved")
     return Recommendation("continue", "medium", "no high-pressure signal found")
 
 
@@ -470,7 +415,7 @@ def cmd_diagnose(args: argparse.Namespace) -> int:
 
     signals = list(local_signals)
     if not args.local_only:
-        signals.extend([_collect_headroom_signal(), _collect_owl_signal(), _collect_agentsview_signal()])
+        signals.extend([_collect_headroom_signal(), _collect_agentsview_signal()])
         if args.include_ccusage:
             signals.append(_collect_ccusage_signal())
 
@@ -514,11 +459,11 @@ def build_parser() -> argparse.ArgumentParser:
     hook.add_argument("--intent", choices=["current", "new-task", "disposable", "handover"], default="current")
     hook.set_defaults(func=cmd_hook)
 
-    diagnose = sub.add_parser("diagnose", help="manual diagnosis; may call owl, agentsview, and ccusage when installed")
+    diagnose = sub.add_parser("diagnose", help="manual diagnosis; may call agentsview and ccusage when installed")
     diagnose.add_argument("--cwd", default=None)
     diagnose.add_argument("--intent", choices=["current", "new-task", "disposable", "handover"], default="current")
     diagnose.add_argument("--prompt", default="", help="optional prompt text to include in prompt-size analysis")
-    diagnose.add_argument("--local-only", action="store_true", help="skip owl/agentsview/ccusage probes")
+    diagnose.add_argument("--local-only", action="store_true", help="skip agentsview/ccusage probes")
     diagnose.add_argument("--include-ccusage", action="store_true", help="also run ccusage; slower and historical, so disabled by default")
     diagnose.add_argument("--json", action="store_true")
     diagnose.set_defaults(func=cmd_diagnose)

@@ -106,7 +106,7 @@ install_codex_upstream_skills() {
 
 install_codex_local_skills() {
   local skills_dir="$CODEX_CONFIG_DIR/skills"
-  local skill_dir skill_name dest backup_dst
+  local skill_dir skill_name dest backup_dst existing_link target
 
   if [ ! -d "$LOCAL_SKILLS_DIR" ]; then
     warn "local skills directory not found: $LOCAL_SKILLS_DIR"
@@ -114,6 +114,22 @@ install_codex_local_skills() {
   fi
 
   ensure_dir "$skills_dir"
+
+  while IFS= read -r existing_link; do
+    target="$(readlink "$existing_link" || true)"
+    case "$target" in
+      "$LOCAL_SKILLS_DIR"/*)
+        if [ ! -e "$target" ]; then
+          if $DRY_RUN; then
+            info "[dry-run] remove stale local Codex skill symlink $existing_link -> $target"
+          else
+            rm "$existing_link"
+            info "Removed stale local Codex skill symlink: $(basename "$existing_link")"
+          fi
+        fi
+        ;;
+    esac
+  done < <(find "$skills_dir" -mindepth 1 -maxdepth 1 -type l | sort)
 
   while IFS= read -r skill_dir; do
     [ -f "$skill_dir/SKILL.md" ] || continue

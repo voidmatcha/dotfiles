@@ -36,7 +36,6 @@ run_base_statusline() {
   local candidate
   for candidate in \
     "${AGENT_STATUSLINE_BASE:-}" \
-    "$HOME/owl/statusline/owl-status.sh" \
     "$HOME/.claude/statusline-original.sh"
   do
     [ -n "$candidate" ] || continue

@@ -55,9 +55,17 @@ unset _agent_resumer_shim_dir
 # When installed, route normal Claude/Codex/OMX launches through Headroom's
 # cache/proxy wrappers. This is intentionally shell-level only: `command claude`,
 # `command codex`, `command omx`, or `HEADROOM_DEFAULT=0` bypasses it instantly.
-# Owl/context-check remains advisory and optional; missing owl-rs should not
+# context-check remains advisory and optional; a missing probe should not
 # prevent Headroom-backed entry.
 export HEADROOM_MODE="${HEADROOM_MODE:-cache}"
+# Proxy defaults to a single uvicorn worker; when several agent sessions
+# (claude+codex+omx) share port 8787, compression serializes on that one worker
+# and even mid-size requests hit `compression_refused` 413 timeouts. Run a few
+# workers so concurrent sessions don't starve each other. Read as env by both
+# `headroom proxy` and `headroom wrap`. Sized for ~5 concurrent sessions + a
+# burst, kept under the 8 performance cores. Override per-launch when fanning
+# out wider, e.g. `HEADROOM_WORKERS=8 claudeh`.
+export HEADROOM_WORKERS="${HEADROOM_WORKERS:-7}"
 
 # Keep plain OMX launches direct by default. Codex already exposes the
 # useful session details via [tui].status_line, so the managed OMX tmux
@@ -380,6 +388,10 @@ alias gc="git commit"
 
 # Enable 1h prompt-cache TTL (vs 5min default) for Anthropic API
 export ENABLE_PROMPT_CACHING_1H=1
+
+# Enable RTK hook rewrite audit locally so safety reports can count bypass,
+# fallback, and repeat-after-compression candidates without storing outputs.
+export RTK_HOOK_AUDIT=${RTK_HOOK_AUDIT:-1}
 # >>> rtk token-saving aliases >>>
 # Non-overriding RTK shortcuts for token-optimized agent/dev output.
 # Use raw commands when exact output is required.

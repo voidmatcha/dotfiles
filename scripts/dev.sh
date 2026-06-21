@@ -12,7 +12,7 @@ else
   if $DRY_RUN; then
     info "[dry-run] Skipping nvm install"
   else
-    NVM_VERSION=$(curl -fsSL https://api.github.com/repos/nvm-sh/nvm/releases/latest 2>/dev/null | grep '"tag_name"' | cut -d'"' -f4)
+    NVM_VERSION=$(curl -fsSL https://api.github.com/repos/nvm-sh/nvm/releases/latest 2>/dev/null | grep '"tag_name"' | cut -d'"' -f4 || true)
     NVM_VERSION="${NVM_VERSION:-v0.40.5}"
     curl -o- "https://raw.githubusercontent.com/nvm-sh/nvm/${NVM_VERSION}/install.sh" | bash
   fi
@@ -90,7 +90,7 @@ if ! $DRY_RUN; then
 
   eval "$(pyenv init -)" || warn "pyenv init failed — check manually"
 
-  LATEST_PYTHON=$(pyenv install --list | grep -E '^\s+3\.[0-9]+\.[0-9]+$' | tail -1 | tr -d ' ')
+  LATEST_PYTHON=$(pyenv install --list | grep -E '^\s+3\.[0-9]+\.[0-9]+$' | tail -1 | tr -d ' ' || true)
   info "Installing Python $LATEST_PYTHON..."
   pyenv install -s "$LATEST_PYTHON" || warn "pyenv install $LATEST_PYTHON failed — check manually"
   pyenv global "$LATEST_PYTHON" || warn "pyenv global $LATEST_PYTHON failed — check manually"
@@ -252,7 +252,7 @@ fi
 
 # ── agent statusline helpers ──
 # Claude's statusLine is command-based, so a small wrapper can prepend the
-# current cmux/tmux/session label while delegating to Owl / the existing HUD.
+# current cmux/tmux/session label while delegating to the existing HUD.
 # Codex status_line is config.toml-based; omit thread-title to avoid UUID fallback in HUD.
 if [ -x "$DOTFILES_DIR/scripts/statusline.sh" ]; then
   bash "$DOTFILES_DIR/scripts/statusline.sh"
@@ -265,7 +265,7 @@ fi
 info "Checking agent-resumer..."
 if $DRY_RUN; then
   info "[dry-run] npm install -g agent-resumer@latest"
-  info "[dry-run] agent-resumer install-shims --force --no-profile"
+  info "[dry-run] agent-resumer install-shims --force --auto-tmux --no-profile"
 else
   if ! command -v agent-resumer &>/dev/null; then
     info "Installing agent-resumer (global npm)"
@@ -276,10 +276,10 @@ else
   fi
 
   if command -v agent-resumer &>/dev/null; then
-    if agent-resumer install-shims --force --no-profile; then
+    if agent-resumer install-shims --force --auto-tmux --no-profile; then
       info "agent-resumer shims installed"
     else
-      warn "agent-resumer shim install failed — try manually: agent-resumer install-shims --force --no-profile"
+      warn "agent-resumer shim install failed — try manually: agent-resumer install-shims --force --auto-tmux --no-profile"
     fi
   fi
 fi

@@ -209,11 +209,8 @@ def do_kill(candidates, pids, force):
     time.sleep(2)
     survivors = []
     for pid in pids:
-        try:
-            os.kill(pid, 0)
+        if pid_alive(pid):
             survivors.append(pid)
-        except ProcessLookupError:
-            continue
     if survivors and force:
         for pid in survivors:
             try:

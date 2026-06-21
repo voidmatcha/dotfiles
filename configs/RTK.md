@@ -1,6 +1,6 @@
 # RTK - Rust Token Killer
 
-**Usage**: Token-optimized CLI proxy (60-90% savings on dev operations)
+**Usage**: Compresses noisy command output before transcript ingress (~65.3% tool-output compression measured across two machine histories — see README ledger). Not a total-cost-savings claim.
 
 ## Meta Commands (always use rtk directly)
 
@@ -26,4 +26,4 @@ which rtk             # Verify correct binary
 All other commands are automatically rewritten by the Claude Code hook.
 Example: `git status` → `rtk git status` (transparent, 0 tokens overhead)
 
-Shared rules live in `~/.agent/AGENTS.md`; extended tool routing lives in this dotfiles repo's `README.md`.
+Refer to README.md for the shared agent/tooling overview and command reference.
