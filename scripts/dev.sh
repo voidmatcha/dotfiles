@@ -259,7 +259,7 @@ if [ -x "$DOTFILES_DIR/scripts/statusline.sh" ]; then
 fi
 
 # ── agent-resumer (pane-aware auto-resume supervisor) ──
-# Installs the npm CLI plus shims for claude/codex/opencode. The repo-owned
+# Installs the npm CLI plus shims for claude/codex. The repo-owned
 # ~/.zshrc block keeps ~/.agent-resumer/shims first on PATH, so skip the
 # package's profile mutation here.
 info "Checking agent-resumer..."

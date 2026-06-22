@@ -1,14 +1,17 @@
 # dotfiles
 
-A reproducible macOS setup for AI-assisted development.
+A macOS setup for running AI coding assistants — [Claude Code], [Codex], and [OMX] — under
+one shared set of rules, with the configuration measured and tested rather than tuned by hand.
 
-This is not a config dump. The repo is an operating system for agentic development:
-it installs the local environment, keeps Claude Code and Codex on one shared contract,
-routes MCP/browser tools deliberately, measures token behavior, and tests the workflow
-code that makes those habits repeatable.
+Most dotfiles are a pile of config. Here, a single plain-text rules file (`AGENTS.md`) governs
+all three assistants, 153 automated tests run on every change in CI, and every non-trivial
+commit records the alternatives it rejected and why — anyone can read those trade-offs with
+`git log --grep='Rejected:'`.
 
-The core thesis is evidence-bound: optimize what enters context, keep cacheable prefixes
-stable, and hand off long sessions before carrying context costs more than reuse is worth.
+The one headline number comes with its limit attached. [RTK], a tool that strips noisy command
+output before an assistant reads it, removes about 65.3% of that output across two machines'
+histories (197.5M raw tokens delivered as 68.8M) — output removed from what the assistant has
+to read, not money saved.
 
 ## What to review first
 
@@ -35,15 +38,15 @@ stable, and hand off long sessions before carrying context costs more than reuse
 
 Quantitative claims use two scoped sources:
 
-1. [Tokscale], a public token-mix snapshot.
+1. Tokscale, a public token-mix snapshot.
 2. `rtk gain --history`, local command-output compression histories.
 
 [Tokscale] is a shareable dashboard snapshot, not causality proof by itself. [RTK]
 measures tool output removed before transcript ingress, not total cost saved.
 
-[Tokscale] source captured on 2026-06-17.
+Tokscale source captured on 2026-06-17.
 
-| [Tokscale] category | Share | Tokens |
+| Tokscale category | Share | Tokens |
 | --- | ---: | ---: |
 | Input | 1.0% | 727.5M |
 | Output | 0.4% | 276.2M |
@@ -51,37 +54,37 @@ measures tool output removed before transcript ingress, not total cost saved.
 | Cache Write | 2.4% | 1.7B |
 | Reasoning | 0.02% | 16.8M |
 
-[Tokscale] window: 72.108946182B total tokens, $50,017.9449 total cost,
+Tokscale window: 72.108946182B total tokens, $50,017.9449 total cost,
 9,344 sessions, 185 active days, date range 2025-09-21 to 2026-06-17.
 
-| [RTK] export | Commands | Raw output | Delivered output | Saved | Compression |
+| RTK export | Commands | Raw output | Delivered output | Saved | Compression |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Machine A [RTK] history | 26,092 | 101.4M | 27.9M | 73.6M | 72.6% |
-| Machine B [RTK] history | 103,434 | 96.1M | 40.9M | 55.4M | 57.6% |
+| Machine A RTK history | 26,092 | 101.4M | 27.9M | 73.6M | 72.6% |
+| Machine B RTK history | 103,434 | 96.1M | 40.9M | 55.4M | 57.6% |
 | Combined cross-machine snapshot | 129,526 | 197.5M | 68.8M | about 129.0M | about 65.3% |
 
-Combined [RTK] compression is weighted by raw output:
+Combined RTK compression is weighted by raw output:
 `(73.6M + 55.4M) / (101.4M + 96.1M)`, not the average of `72.6%` and `57.6%`.
 
 Safe claims:
 
-- `about 40.8x reuse`, from [Tokscale] Cache Read divided by Cache Write.
-- `about 3.4% new-content share`, from [Tokscale] Input plus Cache Write divided by total tokens.
+- `about 40.8x reuse`, from Tokscale Cache Read divided by Cache Write.
+- `about 3.4% new-content share`, from Tokscale Input plus Cache Write divided by total tokens.
 - `about 65.3% RTK tool-output compression across two machine histories`.
-- `Cache Read about 96.2%`, as a [Tokscale] category share.
+- `Cache Read about 96.2%`, as a Tokscale category share.
 
 Do not claim:
 
 - `65.3% cost reduction`.
 - `96.2% efficiency`.
-- exact total-spend contribution from [RTK] without a matched control run.
+- exact total-spend contribution from RTK without a matched control run.
 - `optimal`, `minimized`, or best-possible cost.
 
 Open measurement items:
 
-- Treat the combined [RTK] row as a cross-machine snapshot, not a deduplicated central database total.
-- Track [RTK] bypass and rerun rate before claiming compression never causes hidden rework.
-- Align [Tokscale], [RTK], and local usage-export windows before computing total-spend attribution.
+- Treat the combined RTK row as a cross-machine snapshot, not a deduplicated central database total.
+- Track RTK bypass and rerun rate before claiming compression never causes hidden rework.
+- Align Tokscale, RTK, and local usage-export windows before computing total-spend attribution.
 
 ## External research applied
 
@@ -160,7 +163,7 @@ workflow.
 | [Claude Code] | Claude execution with shared AGENTS.md rules, hooks, MCP, and [RTK] policy. | [`scripts/claude.sh`](scripts/claude.sh), [`configs/CLAUDE.md`](configs/CLAUDE.md), [`configs/claude-settings.json`](configs/claude-settings.json) |
 | [Codex (with OMX)][Codex] | Codex execution with [OMX] workflows, goals, memories, and native subagents. | [`scripts/codex.sh`](scripts/codex.sh), [`configs/codex/config.toml`](configs/codex/config.toml) |
 | [Headroom] | Optional `claudeh`, `codexh`, and `omxh` wrappers for reversible compression and cache-aware routing. | [`scripts/headroom-agent.sh`](scripts/headroom-agent.sh), [`scripts/headroom.sh`](scripts/headroom.sh) |
-| [agent-resumer] | Pane-aware auto-resume supervisor for Claude/Codex/OMX/OpenCode usage-limit resets. | [`scripts/dev.sh`](scripts/dev.sh), [`scripts/agent-resumer-launch.sh`](scripts/agent-resumer-launch.sh) |
+| [agent-resumer] | Pane-aware auto-resume supervisor for Claude/Codex/OMX usage-limit resets. | [`scripts/dev.sh`](scripts/dev.sh), [`scripts/agent-resumer-launch.sh`](scripts/agent-resumer-launch.sh) |
 | [RTK] | Command-output compression policy before noisy shell output enters context. | [`configs/RTK.md`](configs/RTK.md), [`configs/rtk-config.toml`](configs/rtk-config.toml) |
 | Local skills | Repo-owned procedures for context pressure, handoff, verification, previews, cleanup, and provenance. | [`plugins/local-skills/skills`](plugins/local-skills/skills) |
 

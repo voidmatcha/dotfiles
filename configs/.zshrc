@@ -29,7 +29,7 @@ source "$ZSH/oh-my-zsh.sh"
 export PATH="$HOME/.local/bin:$PATH"
 
 # ── agent-resumer shims ──
-# Keep claude/codex/opencode pane-aware in tmux. Install-time shims live here;
+# Keep claude/codex pane-aware in tmux. Install-time shims live here;
 # keep this before agent wrapper functions and before cmux-deck can exit.
 _agent_resumer_shim_dir="$HOME/.agent-resumer/shims"
 if [ -d "$_agent_resumer_shim_dir" ]; then
@@ -66,6 +66,13 @@ export HEADROOM_MODE="${HEADROOM_MODE:-cache}"
 # burst, kept under the 8 performance cores. Override per-launch when fanning
 # out wider, e.g. `HEADROOM_WORKERS=8 claudeh`.
 export HEADROOM_WORKERS="${HEADROOM_WORKERS:-7}"
+
+# Avoid retry amplification: Headroom should return transient 5xx quickly and
+# let the interactive client own user-visible retry/backoff.
+export HEADROOM_RETRY_MAX_ATTEMPTS="${HEADROOM_RETRY_MAX_ATTEMPTS:-1}"
+
+# Disable Anthropic usage polling only; this does not affect Claude auth/login.
+export HEADROOM_NO_SUBSCRIPTION_TRACKING="${HEADROOM_NO_SUBSCRIPTION_TRACKING:-1}"
 
 # Keep plain OMX launches direct by default. Codex already exposes the
 # useful session details via [tui].status_line, so the managed OMX tmux

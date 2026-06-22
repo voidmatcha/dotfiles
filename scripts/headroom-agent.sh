@@ -22,6 +22,10 @@ Environment knobs:
   HEADROOM_<TOOL>_MEMORY     1 to enable Headroom memory
   HEADROOM_<TOOL>_LEARN      1 to enable Headroom traffic learning
   HEADROOM_<TOOL>_CODE_GRAPH 1 to enable Headroom code graph proxy mode
+  HEADROOM_RETRY_MAX_ATTEMPTS
+                              Upstream retry attempts before returning to client
+  HEADROOM_NO_SUBSCRIPTION_TRACKING
+                              1 to disable Anthropic usage polling
 USAGE
 }
 
@@ -395,6 +399,18 @@ PY
   [ "$(env_flag "HEADROOM_${upper}_MEMORY" 0)" = "1" ] && proxy_args+=(--memory)
   [ "$(env_flag "HEADROOM_${upper}_LEARN" 0)" = "1" ] && proxy_args+=(--learn)
   [ "$(env_flag "HEADROOM_${upper}_CODE_GRAPH" 0)" = "1" ] && proxy_args+=(--code-graph)
+
+  local retry_var retry_max_attempts
+  retry_var="HEADROOM_${upper}_RETRY_MAX_ATTEMPTS"
+  retry_max_attempts="${HEADROOM_RETRY_MAX_ATTEMPTS:-}"
+  if [ -n "${!retry_var:-}" ]; then
+    retry_max_attempts="${!retry_var}"
+  fi
+  if [ -n "$retry_max_attempts" ]; then
+    proxy_args+=(--retry-max-attempts "$retry_max_attempts")
+  fi
+
+  [ "$(env_flag "HEADROOM_NO_SUBSCRIPTION_TRACKING" 0)" = "1" ] && proxy_args+=(--no-subscription-tracking)
 
   if port_open "$port"; then
     if is_headroom_proxy_ready "$port"; then

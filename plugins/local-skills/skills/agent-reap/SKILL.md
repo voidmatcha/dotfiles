@@ -33,6 +33,6 @@ user explicitly approves.
 ## Safety properties (already enforced by the script)
 
 - `--kill` refuses any pid not in the current candidate set.
-- Agent main processes (claude/codex/omx/omc/opencode) are never candidates.
+- Agent main processes (claude/codex/omx/omc) are never candidates.
 - The script's own session subtree is never a candidate, but sibling agent
   sessions under the same multiplexer (cmux) are still scanned.

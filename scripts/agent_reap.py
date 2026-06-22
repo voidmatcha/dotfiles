@@ -19,7 +19,7 @@ Detection rules (every candidate row is tagged with one):
 Safety:
   - Scan is read-only; killing requires --kill --pids with an explicit list.
   - --kill refuses pids that are not in the current candidate set.
-  - Agent main processes (claude/codex/omx/omc/opencode) are never candidates.
+  - Agent main processes (claude/codex/omx/omc) are never candidates.
   - The process tree this script runs inside is never a candidate.
 
 Usage:
@@ -42,7 +42,7 @@ from collections import namedtuple
 
 Proc = namedtuple("Proc", "pid ppid pcpu etime user args")
 
-AGENT_NAMES = {"claude", "codex", "omx", "omc", "opencode"}
+AGENT_NAMES = {"claude", "codex", "omx", "omc"}
 INLINE_INTERP_RE = re.compile(r"^(?:python[\d.]*|node|sh|zsh|bash|perl|ruby)$", re.I)
 INLINE_FLAGS = {"-c", "-e", "-"}
 SYSTEM_PREFIXES = ("/System/", "/usr/libexec/", "/sbin/", "/Applications/", "/Library/")
