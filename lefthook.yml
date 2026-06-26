@@ -1,0 +1,15 @@
+# Pre-push validation for this dotfiles repo.
+# Runs repo's own checker and a required gitleaks scan before push so broken
+# or secret-bearing changes are caught locally instead of failing CI or leaking.
+# verify.sh covers: shell + Python syntax, JSON/TOML/plist parsing, plugin
+# manifests, diff whitespace, Bats tests (when bats installed).
+#
+# Activate once per clone: lefthook install (run automatically by install.sh)
+# Bypass one-off push: git push --no-verify
+pre-push:
+  parallel: false
+  commands:
+    verify:
+      run: scripts/verify.sh
+    secrets:
+      run: scripts/secret-scan.sh --required

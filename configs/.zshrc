@@ -58,18 +58,29 @@ unset _agent_resumer_shim_dir
 # context-check remains advisory and optional; a missing probe should not
 # prevent Headroom-backed entry.
 export HEADROOM_MODE="${HEADROOM_MODE:-cache}"
-# Proxy defaults to a single uvicorn worker; when several agent sessions
-# (claude+codex+omx) share port 8787, compression serializes on that one worker
-# and even mid-size requests hit `compression_refused` 413 timeouts. Run a few
-# workers so concurrent sessions don't starve each other. Read as env by both
-# `headroom proxy` and `headroom wrap`. Sized for ~5 concurrent sessions + a
-# burst, kept under the 8 performance cores. Override per-launch when fanning
-# out wider, e.g. `HEADROOM_WORKERS=8 claudeh`.
-export HEADROOM_WORKERS="${HEADROOM_WORKERS:-7}"
+# Keep the proxy single-process by default. Headroom's CCR retrieval store,
+# compression cache, prefix tracker, and TOIN state are process-local; multiple
+# uvicorn workers can strand `<<ccr:...>>` markers on a different worker than
+# `headroom_retrieve`. Override only when accepting that tradeoff, e.g.
+# `HEADROOM_WORKERS=4 claudeh`.
+#
+# The `:-1` default cannot override a value already exported by a parent shell
+# or a long-lived tmux server, so a stale multi-worker value would otherwise
+# stick across every child pane and silently strand `<<ccr:...>>` markers under
+# concurrent fan-out (e.g. workflows). Reset anything but the safe default for
+# interactive shells; the per-command override above bypasses this rc and works.
+export HEADROOM_WORKERS="${HEADROOM_WORKERS:-1}"
+[ "$HEADROOM_WORKERS" = 1 ] || export HEADROOM_WORKERS=1
 
 # Avoid retry amplification: Headroom should return transient 5xx quickly and
 # let the interactive client own user-visible retry/backoff.
 export HEADROOM_RETRY_MAX_ATTEMPTS="${HEADROOM_RETRY_MAX_ATTEMPTS:-1}"
+
+# If Headroom's pre-upstream compression times out on a very large Codex/OMX
+# request, fail open and forward the original request instead of closing the
+# stream (the proxy otherwise returns 413 / WS 1009 and Codex reports
+# "stream disconnected before completion").
+export HEADROOM_WS_FAIL_OPEN_ON_COMPRESSION_FAILURE="${HEADROOM_WS_FAIL_OPEN_ON_COMPRESSION_FAILURE:-1}"
 
 # Disable Anthropic usage polling only; this does not affect Claude auth/login.
 export HEADROOM_NO_SUBSCRIPTION_TRACKING="${HEADROOM_NO_SUBSCRIPTION_TRACKING:-1}"
@@ -80,6 +91,16 @@ export HEADROOM_NO_SUBSCRIPTION_TRACKING="${HEADROOM_NO_SUBSCRIPTION_TRACKING:-1
 # NOTE: 절반은 취향(status_line 중복 회피), 절반은 아래 WORKAROUND의 발생원 차단.
 # 업스트림 픽스 후에도 유지 가능하지만, HUD를 다시 기본으로 쓰려면 이 줄만 빼면 됨.
 export OMX_LAUNCH_POLICY="${OMX_LAUNCH_POLICY:-direct}"
+
+# Codex bypasses Headroom by default (direct to OpenAI); Claude/OMX still proxy.
+# Why: new Codex (cli >=0.117 / gpt-5.4+) streams /v1/responses over WebSocket,
+# and the upstream relay for it (headroomlabs-ai/headroom #79) is still
+# open/stale with no merged upstream PR as of headroom-ai 0.27.0 — so routing
+# Codex through the proxy isn't guaranteed (#82 = the 403-on-WS-upgrade repro).
+# The related WS-1009 crash (#531) IS already fixed (v0.24.0). Keeping Codex
+# direct avoids the risk. Re-enable once #79 ships: HEADROOM_CODEX=1 (or run
+# `headroom wrap codex` for a one-off), then verify with `headroom doctor`.
+export HEADROOM_CODEX="${HEADROOM_CODEX:-0}"
 
 __headroom_default_enabled() {
   local tool value
@@ -442,3 +463,8 @@ if [[ -o interactive && -n "$CMUX_SURFACE_ID" && -z "$TMUX" ]] && command -v tmu
   fi
 fi
 # <<< cmux-deck adopt <<<
+
+# Machine-local shell env (headroom persistent env, per-machine exports) — gitignored.
+# `headroom install` and similar generators append to ~/.zshrc, which is a symlink to
+# this tracked file; relocate any such block to ~/.zshrc.local so it never gets committed.
+[ -f "$HOME/.zshrc.local" ] && source "$HOME/.zshrc.local"

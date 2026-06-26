@@ -12,6 +12,14 @@
     light = false
     line-numbers = true
 
+[credential]
+    # Empty value resets the helper list, dropping Homebrew's system-level
+    # ad-hoc-signed osxkeychain helper whose keychain ACL trust breaks on every
+    # `brew upgrade git` (re-prompts for the login keychain). Pin the Apple-signed
+    # CLT helper instead — stable code-signing identity, so "Always Allow" sticks.
+    helper =
+    helper = /Library/Developer/CommandLineTools/usr/libexec/git-core/git-credential-osxkeychain
+
 [init]
     defaultBranch = main
 

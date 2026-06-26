@@ -14,6 +14,10 @@ _DOTFILES_COMMON_LOADED=1
 DOTFILES_DIR="${DOTFILES_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 DRY_RUN="${DRY_RUN:-false}"
 NON_INTERACTIVE="${NON_INTERACTIVE:-false}"
+# Opt-in "re-run as upgrade". install.sh --upgrade exports this; each sub-script
+# reads it to ALSO bump versions (brew upgrade, uv tool upgrade, pull git-cloned
+# tools, …) on top of its normal install-if-missing. Default false = pure setup.
+UPGRADE="${UPGRADE:-false}"
 TAG="${TAG:-dotfiles}"
 
 # Colors (no-op when stdout is not a TTY)
@@ -125,4 +129,23 @@ json_entry_exists() {
   jq -e "$@" "$filter" "$file" >/dev/null 2>&1
 }
 
-export DOTFILES_DIR DRY_RUN NON_INTERACTIVE
+# git_pull_if_clean <dir>
+# Fast-forward a git checkout only when it is a clean repo — used by --upgrade to
+# refresh git-cloned tools (oh-my-zsh, zsh plugins). No-op on a dirty tree, a
+# non-repo, or DRY_RUN.
+git_pull_if_clean() {
+  local dir="$1"
+  [ -d "$dir/.git" ] || return 0
+  command -v git &>/dev/null || return 0
+  if [ -n "$(git -C "$dir" status --porcelain 2>/dev/null)" ]; then
+    warn "skip update (local changes): $dir"
+    return 0
+  fi
+  if $DRY_RUN; then
+    info "[dry-run] git -C $dir pull --ff-only"
+    return 0
+  fi
+  git -C "$dir" pull --ff-only --quiet 2>/dev/null || warn "git pull failed: $dir"
+}
+
+export DOTFILES_DIR DRY_RUN NON_INTERACTIVE UPGRADE

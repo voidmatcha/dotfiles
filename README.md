@@ -1,102 +1,99 @@
 # dotfiles
 
-A macOS setup for running AI coding assistants — [Claude Code], [Codex], and [OMX] — under
-one shared set of rules, with the configuration measured and tested rather than tuned by hand.
+macOS setup for AI coding assistants — [Claude Code], [Codex], and [OMX] — under
+one shared rule set, with installer behavior and token-efficiency claims measured
+instead of guessed.
 
-Most dotfiles are a pile of config. Here, a single plain-text rules file (`AGENTS.md`) governs
-all three assistants, 153 automated tests run on every change in CI, and every non-trivial
-commit records the alternatives it rejected and why — anyone can read those trade-offs with
-`git log --grep='Rejected:'`.
+Most dotfiles pile up config. This repo treats the agent layer as production
+tooling: one plain-text `AGENTS.md` contract governs the assistants, local
+verification covers 162 Bats checks, and non-trivial commits record rejected
+alternatives in Lore trailers (`git log --grep='Rejected:'`).
 
-The one headline number comes with its limit attached. [RTK], a tool that strips noisy command
-output before an assistant reads it, removes about 65.3% of that output across two machines'
-histories (197.5M raw tokens delivered as 68.8M) — output removed from what the assistant has
-to read, not money saved.
+Current headline: local measurements show the setup is **cache-heavy and
+tool-output aware**, not magically cheaper. On 2026-06-29, [RTK] removed 25.2M
+estimated command-output tokens before transcript ingress globally (57.3%; 69.1%
+inside this repo), [Headroom] reported 97.9% cached requests with zero
+failed/rate-limited/cache-bust-token-lost counters, and `ccusage` showed a 94.0%
+cache-read share over the last ten local days.
 
 ## What to review first
 
-| Reviewer question | Start with | What it proves |
+| Reviewer question | Start | What it proves |
 | --- | --- | --- |
-| Are Claude Code, Codex, and OMX governed by one contract? | [`configs/AGENTS.md`](configs/AGENTS.md), [`configs/CLAUDE.md`](configs/CLAUDE.md), [`configs/codex/config.toml`](configs/codex/config.toml) | One policy layer exists, while each tool keeps its native workflow. |
-| Are token-efficiency claims measured? | [Tokscale], `rtk gain --history`, [`configs/RTK.md`](configs/RTK.md) | Public token-mix snapshot plus local command-output compression histories. |
-| Are hosted and local tools separated? | [`configs/mcp.json`](configs/mcp.json), [`configs/codex/config.toml`](configs/codex/config.toml), [`configs/hooks/pretool-guard.sh`](configs/hooks/pretool-guard.sh) | Hosted readers, browser surfaces, and local MCPs are routed explicitly. |
-| Can setup changes be verified? | [`scripts/verify.sh`](scripts/verify.sh), [`tests/scripts.bats`](tests/scripts.bats) | Installer, hook, config, plugin, and skill behavior is testable. |
+| Are [Claude Code], [Codex], and [OMX] governed by one contract? | [`configs/AGENTS.md`](configs/AGENTS.md), [`configs/CLAUDE.md`](configs/CLAUDE.md), [`configs/codex/config.toml`](configs/codex/config.toml) | One policy layer exists while each tool keeps its native workflow. |
+| Are token-efficiency claims measured? | [Evidence ledger](#evidence-ledger), [`configs/RTK.md`](configs/RTK.md), `rtk gain --history`, [Headroom] `/metrics`, `ccusage` | Each number has a source, scope, and boundary; the README does not add unlike counters together. |
+| Are hosted and local tools separated? | [`configs/mcp.json`](configs/mcp.json), [`configs/codex/config.toml`](configs/codex/config.toml), [`configs/hooks/pretool-guard.sh`](configs/hooks/pretool-guard.sh) | Hosted readers, browser surfaces, local MCPs, and destructive-command tripwires are routed explicitly. |
+| Can setup changes be verified? | [`scripts/verify.sh`](scripts/verify.sh), [`tests/scripts.bats`](tests/scripts.bats), [`lefthook.yml`](lefthook.yml) | Installer, hook, config, plugin, skill, secret-scan, and doctor behavior are testable. |
 | Can local work be previewed without broad exposure? | [`scripts/services.sh`](scripts/services.sh), [`plugins/local-skills/skills/local-preview-server/SKILL.md`](plugins/local-skills/skills/local-preview-server/SKILL.md) | Previews default to localhost and use [Tailscale Serve] only when remote access is intentional. |
 
 ## Design at a glance
 
 | Design choice | What it does | Evidence |
 | --- | --- | --- |
-| Shared agent contract | Routes [Claude Code], [Codex], and [OMX] through one AGENTS.md contract. | [`configs/AGENTS.md`](configs/AGENTS.md), [`configs/CLAUDE.md`](configs/CLAUDE.md), [`configs/codex/config.toml`](configs/codex/config.toml) |
-| Explicit tool surfaces | Documents MCP servers, hosted readers, browser surfaces, and destructive-command tripwires. | [`configs/mcp.json`](configs/mcp.json), [`configs/codex/config.toml`](configs/codex/config.toml), [`configs/hooks/pretool-guard.sh`](configs/hooks/pretool-guard.sh) |
+| Shared agent contract | Routes [Claude Code], [Codex], and [OMX] through one `AGENTS.md` contract. | [`configs/AGENTS.md`](configs/AGENTS.md), [`configs/CLAUDE.md`](configs/CLAUDE.md), [`configs/codex/config.toml`](configs/codex/config.toml) |
+| Explicit tool surfaces | Documents MCP servers, hosted readers, browser surfaces, and destructive-command guards. | [`configs/mcp.json`](configs/mcp.json), [`configs/codex/config.toml`](configs/codex/config.toml), [`configs/hooks/pretool-guard.sh`](configs/hooks/pretool-guard.sh) |
 | Tool-output compression | Uses [RTK] before noisy shell output becomes transcript context. | [`configs/RTK.md`](configs/RTK.md), [`configs/rtk-config.toml`](configs/rtk-config.toml), `rtk gain --history` |
-| Session lifecycle checks | Makes continue, compact, clear, handoff, preview, and verify decisions repeatable. | [`plugins/local-skills/skills`](plugins/local-skills/skills) |
-| Private remote access | Keeps browser IDEs and previews local-first, with explicit tailnet exposure. | [`scripts/tailscale.sh`](scripts/tailscale.sh), [`scripts/services.sh`](scripts/services.sh) |
-| Verification culture | Treats dotfiles automation as production code. | [`scripts/verify.sh`](scripts/verify.sh), [`tests/`](tests/) |
+| Proxy/cache telemetry | Tracks routed request health, cache reuse, and optimization counters separately from usage-cost logs. | [`scripts/headroom.sh`](scripts/headroom.sh), [`scripts/headroom-agent.sh`](scripts/headroom-agent.sh), [Headroom] `/metrics` |
+| Local skill layer | Keeps high-risk workflows explicit: context checks, handoff, preview, audit, reach, reap, and provenance. | [`plugins/local-skills/skills`](plugins/local-skills/skills) |
+| Verification culture | Treats dotfiles automation like production code. | [`scripts/verify.sh`](scripts/verify.sh), [`scripts/doctor.sh`](scripts/doctor.sh), [`scripts/secret-scan.sh`](scripts/secret-scan.sh), [`tests/`](tests/) |
 
 ## Evidence ledger
 
-Quantitative claims use two scoped sources:
+These numbers are measurement surfaces, not one additive savings total. They are
+local snapshots and will drift as commands and sessions run.
 
-1. Tokscale, a public token-mix snapshot.
-2. `rtk gain --history`, local command-output compression histories.
+### Current local snapshot
 
-[Tokscale] is a shareable dashboard snapshot, not causality proof by itself. [RTK]
-measures tool output removed before transcript ingress, not total cost saved.
+Captured 2026-06-29 in Asia/Seoul.
 
-Tokscale source captured on 2026-06-17.
+| Surface | Window / scope | What it measures | Result |
+| --- | --- | --- | --- |
+| [RTK] global | `rtk gain --history --format json` | Estimated command/tool output removed before transcript ingress. | 22,345 commands; 44.0M raw estimate → 18.8M delivered estimate; 25.2M removed (57.3%). |
+| [RTK] project | `rtk gain --history --project --format json` in this repo | Same metric, scoped to `/Users/user/work/dotfiles`. | 1,481 commands; 1.54M raw estimate → 482.6K delivered estimate; 1.07M removed (69.1%). |
+| [Headroom] proxy | Current proxy lifetime `/metrics` | Routed LLM proxy counters: cache/request health and optimization savings. | 13,676 requests; 13,385 cached (97.9%); 1.567B input tokens; 4.60M output tokens; 288.3M tokens saved; 0 failed, rate-limited, cache-bust, or cache-bust-token-lost counters. |
+| [ccusage] | `ccusage daily -j --offline --since 2026-06-20 --timezone Asia/Seoul` | Local Claude/Codex log estimate for usage mix and spend. | 10 days; 5.029B total tokens; 4.728B cache-read tokens (94.0%); 6.0% non-cache-read share; $4,536.65 estimated cost. |
 
-| Tokscale category | Share | Tokens |
-| --- | ---: | ---: |
-| Input | 1.0% | 727.5M |
-| Output | 0.4% | 276.2M |
-| Cache Read | 96.2% | 69.4B |
-| Cache Write | 2.4% | 1.7B |
-| Reasoning | 0.02% | 16.8M |
+### Historical / public reference
 
-Tokscale window: 72.108946182B total tokens, $50,017.9449 total cost,
-9,344 sessions, 185 active days, date range 2025-09-21 to 2026-06-17.
+| Surface | Window / scope | Result | Use |
+| --- | --- | --- | --- |
+| [Tokscale] public snapshot | 2025-09-21 through 2026-06-17 | 72.109B total tokens; 96.2% cache-read share; $50,017.94 dashboard cost. | Shareable historical token-mix context, not causality proof for any one repo change. |
+| [RTK] cross-machine export | Older two-machine command histories | 129,526 commands; 197.5M raw estimate → 68.8M delivered estimate; about 129.0M removed (about 65.3%). | Historical compression context. The current local snapshot above is the headline for this repo. |
 
-| RTK export | Commands | Raw output | Delivered output | Saved | Compression |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Machine A RTK history | 26,092 | 101.4M | 27.9M | 73.6M | 72.6% |
-| Machine B RTK history | 103,434 | 96.1M | 40.9M | 55.4M | 57.6% |
-| Combined cross-machine snapshot | 129,526 | 197.5M | 68.8M | about 129.0M | about 65.3% |
+### Measurement boundaries
 
-Combined RTK compression is weighted by raw output:
-`(73.6M + 55.4M) / (101.4M + 96.1M)`, not the average of `72.6%` and `57.6%`.
+| Surface | Safe interpretation | Boundary |
+| --- | --- | --- |
+| [RTK] | Reduces command/tool output before the assistant reads it. | Not a cost-reduction percentage without a matched no-RTK baseline. |
+| [Headroom] | Shows health and optimization counters for traffic routed through the proxy. | Lifetime proxy counters, not period-aligned with `ccusage`; internal `tokens_saved` is not additive with RTK. |
+| [ccusage] | Estimates token mix, cache-read share, and spend from local logs. | Useful for usage accounting, not a causal optimization proof by itself. |
+| [Tokscale] | Public historical token-mix snapshot. | Snapshot window and data source differ from current local commands. |
 
 Safe claims:
 
-- `about 40.8x reuse`, from Tokscale Cache Read divided by Cache Write.
-- `about 3.4% new-content share`, from Tokscale Input plus Cache Write divided by total tokens.
-- `about 65.3% RTK tool-output compression across two machine histories`.
-- `Cache Read about 96.2%`, as a Tokscale category share.
+- [RTK] is removing substantial noisy shell output before transcript ingress.
+- [Headroom] looks healthy in the current proxy lifetime: high cached-request share,
+  zero failed/rate-limited counters, and zero cache-bust-token-lost counter.
+- Recent `ccusage` logs are cache-heavy: 94.0% cache-read share, about 6.0%
+  non-cache-read share.
+- The combined story is layer-by-layer: less tool output admitted, stable cache-heavy
+  sessions, and local usage ledgers.
 
 Do not claim:
 
-- `65.3% cost reduction`.
-- `96.2% efficiency`.
-- exact total-spend contribution from RTK without a matched control run.
-- `optimal`, `minimized`, or best-possible cost.
-
-Open measurement items:
-
-- Treat the combined RTK row as a cross-machine snapshot, not a deduplicated central database total.
-- Track RTK bypass and rerun rate before claiming compression never causes hidden rework.
-- Align Tokscale, RTK, and local usage-export windows before computing total-spend attribution.
+- `RTK saved + Headroom saved + cache read = total savings`.
+- `57.3%` or `69.1%` RTK compression equals cost reduction.
+- `97.9% cached requests` or `94.0% cache-read share` proves optimal efficiency.
+- exact spend avoided without a matched baseline and aligned measurement window.
 
 ## External research applied
 
-Recent research and repo review reinforced the same design direction already present here:
-agent efficiency is a context assembly problem, not just prompt-shortening.
-
-| External pattern | What it says | Applied here |
+| Source pattern | Takeaway | Local effect |
 | --- | --- | --- |
-| [OpenAI prompt caching] | Cached-token accounting depends on stable repeated prefixes; static content should come first and variable content last. | Keep AGENTS/CLAUDE/Codex contracts compact and stable; avoid dynamic tool churn in the prefix. |
-| [Claude Code monitoring] | Claude Code can export usage, cost, tool activity, and cache-read/cache-creation fields through OpenTelemetry. | Keep `context-check` advisory and add OTel/local export to the measurement roadmap instead of inventing cost claims. |
-| [Braintrust token tracking] | Useful token tracking separates call-level usage, context-window pressure, and per-step agent traces. | The README separates [Tokscale] mix, [RTK] tool-output compression, and future step-level evidence. |
-| [ccusage], [tokenwatch], [tokenusage], [TokenTracker] | Strong usage tools are local-first and exportable; they avoid uploading prompts or paths. | `scripts/dev.sh` installs `ccusage`; the roadmap asks for sanitized local exports beside public snapshots. |
+| [OpenAI prompt caching] | Cached-token accounting depends on stable repeated prefixes; static content should come before variable content. | Keep shared AGENTS/CLAUDE/Codex contracts compact and avoid dynamic tool churn in the prefix. |
+| [Claude Code monitoring] | Usage, cost, tool activity, cache-read, and cache-creation fields should be exported before making cost claims. | Keep `context-check` advisory and treat OTel/local exports as measurement work, not README slogans. |
+| [Braintrust token tracking] | Token tracking is most useful when call-level usage, context pressure, and agent traces are separate. | README separates [Tokscale] mix, [RTK] ingress compression, [Headroom] proxy counters, and [ccusage] local usage logs. |
+| [ccusage], [tokenwatch], [tokenusage], [TokenTracker] | Local-first usage tools can export token ledgers without uploading prompts or paths. | `scripts/dev.sh` installs `ccusage`; future public exports need redaction instead of raw prompt sharing. |
 
 ## Install
 
@@ -119,6 +116,20 @@ cd ~/dotfiles
 ./install.sh
 ```
 
+Update an existing machine:
+
+```bash
+./update.sh --check   # preview: git pull + install.sh --dry-run --upgrade
+./update.sh           # git pull --ff-only + install.sh --upgrade
+./update.sh --no-pull # re-run local upgrade steps without pulling
+```
+
+Health/status snapshot:
+
+```bash
+./scripts/doctor.sh
+```
+
 `bootstrap.sh` installs Xcode Command Line Tools when `git` is missing, clones this
 repo into `~/dotfiles`, and hands off to `./install.sh`. The `company/` overlay runs
 only when the submodule exists locally.
@@ -129,7 +140,7 @@ only when the submodule exists locally.
 | Area | Installs/configures | Source |
 | --- | --- | --- |
 | macOS defaults | Dock, Finder, keyboard, screenshots, firewall, Touch ID sudo. | [`scripts/macos.sh`](scripts/macos.sh) |
-| CLI packages | [Homebrew] tools, [Bats], [uv], [gettext], [git-filter-repo], [Docker CLI]. | [`Brewfile`](Brewfile) |
+| CLI packages | [Homebrew] tools, [Bats], [gitleaks], [uv], [gettext], [git-filter-repo], [Docker CLI]. | [`Brewfile`](Brewfile) |
 | Language runtimes | [nvm], [Node.js] LTS, [Corepack], [pyenv], latest [Python] 3, [SDKMAN!], [OpenJDK] LTS, [Maven]. | [`scripts/dev.sh`](scripts/dev.sh) |
 | Shell and Git | [Zsh] plugins, [direnv], personal/work Git identities, SSH signing via [OpenSSH]. | [`scripts/shell.sh`](scripts/shell.sh), [`scripts/git.sh`](scripts/git.sh) |
 | Agent CLIs | [Claude Code], [Codex], [Hermes Agent], [OMX], [agent-resumer]. | [`scripts/claude.sh`](scripts/claude.sh), [`scripts/codex.sh`](scripts/codex.sh), [`scripts/hermes.sh`](scripts/hermes.sh), [`scripts/dev.sh`](scripts/dev.sh) |
@@ -226,56 +237,55 @@ step, or evidence-gathering path was worth making deterministic.
 
 ## Token-efficiency design
 
-This repo targets token cost at five points: what enters context, whether cache prefixes stay
-stable, how idle sessions decay, when a session should hand off, and whether the optimization
-layer remains measured.
+The goal is not one magic percentage. The setup reduces token pressure at
+separate layers and keeps their counters separate.
 
-| Cost surface | Repo mechanism | Evidence |
+| Layer | Control | Current evidence |
 | --- | --- | --- |
-| Context ingress | [RTK] compresses noisy command output before transcript ingress. | [`configs/RTK.md`](configs/RTK.md), [`configs/rtk-config.toml`](configs/rtk-config.toml), `rtk gain --history` |
-| Cache prefix stability | [Claude Code] keeps a compact `CLAUDE.md`; [Codex] keeps one `developer_instructions` contract and explicit MCP entries. | [`configs/CLAUDE.md`](configs/CLAUDE.md), [`configs/codex/config.toml`](configs/codex/config.toml) |
-| Idle and context pressure | `context-check` reads idle, prompt, transcript, and [Headroom] pressure before recommending continue, compact, clear, or handoff. | [`plugins/local-skills/skills/context-check/SKILL.md`](plugins/local-skills/skills/context-check/SKILL.md) |
-| Long-session handoff | `handover` carries distilled state into fresh [Claude Code], [Codex], or [OMX] sessions. | [`plugins/local-skills/skills/handover/SKILL.md`](plugins/local-skills/skills/handover/SKILL.md) |
-| Survival under real work | Hooks fail open, bypasses exist, and the verifier covers hooks plus skill helpers. | [`configs/hooks`](configs/hooks), [`scripts/verify.sh`](scripts/verify.sh), [`tests/`](tests/) |
+| Ingress | [RTK] compresses noisy shell output before it becomes transcript context. | Current project snapshot: 69.1% estimated command-output reduction. |
+| Prefix/cache stability | Shared prompt contracts stay compact and stable while tool-specific details live in native configs. | [Headroom] cached-request share is 97.9%; `ccusage` cache-read share is 94.0% over the measured ten-day window. |
+| Proxy health | [Headroom] tracks routed request failures, rate limits, cache-busts, and saved-token counters. | Current proxy lifetime: zero failed, rate-limited, cache-bust, or cache-bust-token-lost counters. |
+| Usage ledger | [ccusage] and [Tokscale] report token mix and estimated spend separately from optimization counters. | Recent local logs show 5.029B total tokens and $4,536.65 estimated cost for 2026-06-20..2026-06-29. |
+| Session lifecycle | `context-check` and `handover` make continue, compact, clear, and transfer decisions explicit. | Local skills keep long sessions from silently accumulating stale context. |
 
-Only [RTK] and [Tokscale] get numeric published claims here. `rtk_safety_report.py` and
-`agent_usage_audit.py session-report` create local evidence for future claims. [agent-browser] is a
-qualitative token-pressure control for targeted browser observation and authenticated browsing, not a numeric savings claim. [Headroom], `context-check`, `handover`,
-[Jina Reader], [defuddle], [codegraph], and [serena] are structural controls.
-They reduce token pressure by shaping what gets loaded or carried, but this README does not
-assign them a savings percentage.
+[agent-browser] is a qualitative token-pressure control for targeted browser observation and authenticated browsing, not a numeric savings claim.
+
+[Headroom], `context-check`, `handover`, [agent-browser], [Jina Reader],
+[defuddle], [codegraph], and [serena] reduce token pressure by shaping what gets
+loaded or carried. This README intentionally does not assign them one shared
+savings percentage.
 
 <details>
 <summary>Five principles behind the setup</summary>
 
-1. **Stateless billing rewards ingress control.** A token that never enters the transcript is
-   not reread on later calls. [RTK] attacks noisy tool output at ingress; scout-style batching
-   attacks repeated call overhead.
-2. **Cache is prefix-sensitive.** [OpenAI prompt caching] documents that static content should
-   precede variable content and cached-token fields must be tracked. This repo keeps shared
-   prompt contracts compact and avoids pretending every tool list should be loaded everywhere.
-3. **Cache has a clock.** The point of `context-check` is to make idle/context pressure visible
-   before a session drifts into an expensive or brittle state.
-4. **Long sessions are not free.** A high cache-read share helps only while reuse beats the cost
-   of carrying stale context. `handover` exists so clearing context can be deliberate, not lossy.
-5. **Unmeasured optimization is a guess.** [RTK] gain, [Tokscale] summaries, local usage tools,
-   [Bats], and `scripts/verify.sh` keep the efficiency layer tied to evidence.
+1. **Stateless billing rewards ingress control.** A token that never enters the
+   transcript is not reread on later calls. [RTK] attacks noisy tool output at
+   ingress.
+2. **Cache is prefix-sensitive.** [OpenAI prompt caching] documents that stable
+   repeated prefixes matter. The repo keeps shared prompt contracts compact
+   rather than loading every tool surface everywhere.
+3. **Cache has a clock and a scope.** High cache-read share helps only while the
+   reused context is still useful. `context-check` exists so idle and context
+   pressure are visible.
+4. **Long sessions are not free.** `handover` makes clearing context deliberate
+   instead of lossy.
+5. **Unmeasured optimization is a guess.** [RTK] gain, [Headroom] metrics,
+   [ccusage], [Tokscale], [Bats], and `scripts/verify.sh` keep efficiency claims
+   tied to evidence.
 
 </details>
 
 ## Measurement roadmap
 
-These are not current achievements. They are the next artifacts needed to make the efficiency
-story harder to attack.
+These are gaps, not current achievements.
 
-| Gap | Next artifact | Why it matters | Source pattern |
-| --- | --- | --- | --- |
-| Public snapshot depends on [Tokscale]. | Sanitized local `ccusage` or `@ccusage/codex` JSON/Markdown export. | Makes token mix reproducible from local logs without uploading prompts or paths. | [ccusage], [tokenwatch], [tokenusage], [TokenTracker] |
-| [RTK] safety needs local history. | `scripts/rtk_safety_report.py` over `RTK_HOOK_AUDIT=1` logs and privacy-preserving JSONL events. | Counts fallback, explicit bypass, and repeat-after-compression candidates without raw outputs. | [RTK] `hook-audit` plus local reporter. |
-| Tool-output compression and token dashboard windows differ. | Shared date-window export for [Tokscale], [RTK], and local usage logs. | Avoids mixing periods before any spend-attribution claim. | [Braintrust token tracking] attribution discipline. |
-| Cache semantics depend on provider/client. | Optional [Claude Code monitoring] OTel export and [OpenAI prompt caching] field mapping. | Separates input, output, cache read, cache creation, and reasoning fields by source. | Official provider/client docs. |
-| Token pressure is not always from prompts. | `python3 scripts/agent_usage_audit.py session-report --since 7d`. | Separates exact usage counters from estimated tool-result pressure across RTK, Claude logs, and Codex logs. | [Braintrust token tracking], [TokenTracker]. |
-| Private evidence needs publish hygiene. | One redaction script for paths, repo names, branch names, hosts, and commit hashes. | Makes public evidence safe enough to include without leaking work context. | Existing sanitization checklist and local-first usage tools. |
+| Gap | Next artifact | Why it matters |
+| --- | --- | --- |
+| Measurement windows differ across [RTK], [Headroom], [ccusage], and [Tokscale]. | One dated export script that records all available counters in the same run. | Prevents mixing lifetime, ten-day, and historical dashboard numbers as if they were one experiment. |
+| [Headroom] output-savings data is not yet populated. | Add a repeatable `headroom output-savings` capture once real data exists. | Separates prompt/input savings from output-token behavior. |
+| [RTK] safety still depends on local history inspection. | Privacy-preserving `RTK_HOOK_AUDIT=1` report for fallbacks, bypasses, and repeat-after-compression candidates. | Proves compression did not hide meaningful output or create fragile command behavior. |
+| Public dashboards can drift or become stale. | Refresh [agentsview]/[Tokscale]-style snapshots only after a full resync. | Avoids stale public evidence in the headline. |
+| Public evidence needs publish hygiene. | Redaction script for paths, repo names, branch names, hosts, and commit hashes. | Makes local usage exports safe to share. |
 
 ## MCP governance and tool routing
 
@@ -401,10 +411,18 @@ Useful focused checks:
 ```bash
 bats tests/
 bash scripts/verify.sh --quick
+bash scripts/secret-scan.sh --optional
+bash scripts/doctor.sh
 ```
 
+Pre-push protection is managed by [lefthook]: `install.sh` runs `lefthook install`
+when available, and `lefthook.yml` runs both `scripts/verify.sh` and required
+[gitleaks] secret scanning before push. Install missing hook tooling with
+`./scripts/brew.sh`.
+
 Tests cover shell syntax, JSON/TOML/plist parsing, plugin manifests, hook behavior,
-[Codex] TOML validation, `Brewfile` parsing, and local skill helpers.
+[Codex] TOML validation, `Brewfile` parsing, secret-scan wiring, doctor/status
+checks, and local skill helpers.
 
 ## Layout
 
@@ -495,3 +513,7 @@ See [`company/README.md`](company/README.md) for overlay maintenance.
 [uv]: https://docs.astral.sh/uv/
 [yt-dlp]: https://github.com/yt-dlp/yt-dlp
 [Zsh]: https://www.zsh.org/
+
+[gitleaks]: https://github.com/gitleaks/gitleaks
+
+[lefthook]: https://lefthook.dev/

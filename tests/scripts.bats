@@ -196,6 +196,43 @@ SH
   [ ! -e "$home/.codex" ]
 }
 
+@test "codex setup removes stale Headroom provider from Spark explore agent" {
+  home="$TMPDIR_TEST/codex-native-agent-home"
+  dotfiles="$TMPDIR_TEST/dotfiles-min"
+  bin="$TMPDIR_TEST/codex-native-agent-bin"
+  mkdir -p "$home/.codex/agents" "$dotfiles/configs/codex" "$bin"
+  cp "$REPO_ROOT/configs/codex/config.toml" "$dotfiles/configs/codex/config.toml"
+  cat > "$home/.codex/agents/explore.toml" <<'TOML'
+# oh-my-codex agent: explore
+name = "explore"
+model = "gpt-5.5"
+model_provider = "headroom"
+model_reasoning_effort = "low"
+TOML
+  cat > "$bin/codex" <<'SH'
+#!/bin/sh
+printf 'codex-cli test
+'
+SH
+  cat > "$bin/omx" <<'SH'
+#!/bin/sh
+printf 'oh-my-codex test
+'
+SH
+  cat > "$bin/git" <<'SH'
+#!/bin/sh
+exit 1
+SH
+  chmod +x "$bin/codex" "$bin/omx" "$bin/git"
+
+  run env HOME="$home" DOTFILES_DIR="$dotfiles" PATH="$bin:/usr/bin:/bin"     bash "$REPO_ROOT/scripts/codex.sh" --non-interactive
+
+  [ "$status" -eq 0 ]
+  grep -q '^model = "gpt-5.5"' "$home/.codex/agents/explore.toml"
+  run grep -q '^model_provider = "headroom"' "$home/.codex/agents/explore.toml"
+  [ "$status" -eq 1 ]
+}
+
 @test "codex dry-run does not execute codex or omx probes" {
   home="$TMPDIR_TEST/codex-home"
   bin="$TMPDIR_TEST/bin"
@@ -478,6 +515,110 @@ SH
   [ "$status" -eq 1 ]
 }
 
+@test "headroom codex wrapper disables stale injected provider without provider table" {
+  home="$TMPDIR_TEST/headroom-stale-provider-home"
+  bin="$TMPDIR_TEST/headroom-stale-provider-bin"
+  mkdir -p "$home/.codex" "$bin"
+  cat > "$home/.codex/config.toml" <<'TOML'
+model = "gpt-5.5"
+
+[features]
+goals = true
+TOML
+
+  cat > "$bin/headroom" <<'SH'
+#!/bin/sh
+case "$1" in
+  proxy)
+    sleep 120
+    ;;
+  wrap)
+    tmp="$HOME/.codex/config.toml.tmp"
+    {
+      echo '# --- Headroom proxy (auto-injected by headroom wrap codex) ---'
+      echo 'model_provider = "headroom"'
+      echo 'openai_base_url = "http://127.0.0.1:8787/v1"'
+      echo '# --- end Headroom ---'
+      cat "$HOME/.codex/config.toml"
+    } > "$tmp"
+    mv "$tmp" "$HOME/.codex/config.toml"
+    exit 0
+    ;;
+  unwrap)
+    exit 0
+    ;;
+esac
+exit 0
+SH
+  cat > "$bin/codex" <<'SH'
+#!/bin/sh
+if grep -q '^model_provider = "headroom"' "$HOME/.codex/config.toml"; then
+  echo "stale headroom provider was not disabled" >&2
+  exit 43
+fi
+grep -q '^# model_provider = "headroom".*openai_base_url routes the built-in OpenAI provider' "$HOME/.codex/config.toml"
+grep -q '^openai_base_url = "http://127.0.0.1:8787/v1"' "$HOME/.codex/config.toml"
+SH
+  chmod +x "$bin/headroom" "$bin/codex"
+
+  run env HOME="$home" PATH="$bin:/usr/bin:/bin" HEADROOM_WAIT_SECONDS=0 HEADROOM_CODEX_MCP=0 \
+    bash "$REPO_ROOT/scripts/headroom-agent.sh" codex
+
+  [ "$status" -eq 0 ]
+}
+
+@test "headroom codex wrapper prepares config when live marker exists without route" {
+  home="$TMPDIR_TEST/headroom-active-marker-home"
+  bin="$TMPDIR_TEST/headroom-active-marker-bin"
+  state="$TMPDIR_TEST/headroom-active-marker-state"
+  mkdir -p "$home/.codex" "$bin" "$state/headroom-agent/codex-config/sessions"
+  cat > "$home/.codex/config.toml" <<'TOML'
+model = "gpt-5.5"
+TOML
+  # Simulate an already-running wrapper session on the same port whose PID is
+  # still alive, but whose Codex config route was lost/restored.
+  printf '%s 8787 omx
+' "$$" > "$state/headroom-agent/codex-config/sessions/session-existing"
+
+  cat > "$bin/headroom" <<'SH'
+#!/bin/sh
+case "$1" in
+  proxy)
+    sleep 120
+    ;;
+  wrap)
+    printf 'called
+' > "$HOME/wrap-called.txt"
+    tmp="$HOME/.codex/config.toml.tmp"
+    {
+      echo '# --- Headroom proxy (auto-injected by headroom wrap codex) ---'
+      echo 'model_provider = "headroom"'
+      echo 'openai_base_url = "http://127.0.0.1:8787/v1"'
+      echo '# --- end Headroom ---'
+      cat "$HOME/.codex/config.toml"
+    } > "$tmp"
+    mv "$tmp" "$HOME/.codex/config.toml"
+    exit 0
+    ;;
+  unwrap)
+    exit 0
+    ;;
+esac
+exit 0
+SH
+  cat > "$bin/codex" <<'SH'
+#!/bin/sh
+[ -e "$HOME/wrap-called.txt" ] || { echo "headroom prepare was skipped" >&2; exit 44; }
+grep -q '^# model_provider = "headroom".*openai_base_url routes the built-in OpenAI provider' "$HOME/.codex/config.toml"
+grep -q '^openai_base_url = "http://127.0.0.1:8787/v1"' "$HOME/.codex/config.toml"
+SH
+  chmod +x "$bin/headroom" "$bin/codex"
+
+  run env HOME="$home" XDG_STATE_HOME="$state" PATH="$bin:/usr/bin:/bin" HEADROOM_WAIT_SECONDS=0 HEADROOM_CODEX_MCP=0     bash "$REPO_ROOT/scripts/headroom-agent.sh" codex
+
+  [ "$status" -eq 0 ]
+}
+
 @test "headroom omx wrapper does not duplicate default flags already supplied" {
   home="$TMPDIR_TEST/headroom-omx-flags-home"
   bin="$TMPDIR_TEST/headroom-omx-flags-bin"
@@ -517,6 +658,125 @@ SH
   ! grep -qi 'owl' "$script"
   ! grep -qi 'owl' "$skill"
   ! grep -rinw 'owl' "$REPO_ROOT/plugins/local-skills/skills/handover" "$REPO_ROOT/README.md"
+}
+
+@test "context-check does not compact fresh diagnoses from stale same-cwd sessions" {
+  state="$TMPDIR_TEST/context-check-state.json"
+  cwd="$TMPDIR_TEST/work"
+  mkdir -p "$cwd"
+  cat > "$state" <<JSON
+{"version":1,"sessions":{"old-session":{"cwd":"$cwd","turns":2,"last_prompt_at":0}}}
+JSON
+
+  run env CONTEXT_CHECK_STATE="$state" CONTEXT_CHECK_NOW=7200 \
+    python3 "$REPO_ROOT/plugins/local-skills/skills/context-check/scripts/context_check.py" \
+    diagnose --cwd "$cwd" --local-only --json
+
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+assert data["recommendation"]["action"] == "continue", data
+stored = [s for s in data["signals"] if s["name"] == "stored_idle"][0]
+assert stored["severity"] == "info", stored
+'
+}
+
+@test "headroom wrappers default to one worker for CCR retrieval safety" {
+  home="$TMPDIR_TEST/headroom-workers-home"
+  bin="$TMPDIR_TEST/headroom-workers-bin"
+  mkdir -p "$home" "$bin"
+
+  cat > "$bin/headroom" <<'SH'
+#!/bin/sh
+printf '%s\n' "$HEADROOM_WORKERS" > "$HOME/workers.txt"
+exit 0
+SH
+  chmod +x "$bin/headroom"
+
+  run env -u HEADROOM_WORKERS HOME="$home" PATH="$bin:/usr/bin:/bin" HEADROOM_WAIT_SECONDS=0 HEADROOM_CLAUDE_MCP=0 \
+    bash "$REPO_ROOT/scripts/headroom-agent.sh" claude
+
+  [ "$status" -eq 0 ]
+  [ "$(cat "$home/workers.txt")" = "1" ]
+  grep -q 'HEADROOM_WORKERS:-1' "$REPO_ROOT/configs/.zshrc"
+  grep -q 'HEADROOM_WORKERS:-1' "$REPO_ROOT/scripts/headroom-agent.sh"
+  ! grep -q 'HEADROOM_WORKERS:-7' "$REPO_ROOT/configs/.zshrc"
+  # Stale inherited multi-worker values must self-heal in interactive shells.
+  grep -q 'export HEADROOM_WORKERS=1' "$REPO_ROOT/configs/.zshrc"
+}
+
+@test "headroom daemon install respects opt-out, global disable, and dry-run" {
+  home="$TMPDIR_TEST/headroom-daemon-home"
+  bin="$TMPDIR_TEST/headroom-daemon-bin"
+  mkdir -p "$home" "$bin"
+
+  # Fake headroom records whenever `install apply` is invoked.
+  cat > "$bin/headroom" <<'SH'
+#!/bin/sh
+if [ "$1" = "install" ] && [ "$2" = "apply" ]; then
+  printf 'called\n' >> "$HOME/install-apply.log"
+fi
+exit 0
+SH
+  chmod +x "$bin/headroom"
+
+  # HEADROOM_DAEMON=0 -> must NOT install the persistent service.
+  run env HOME="$home" DOTFILES_DIR="$REPO_ROOT" PATH="$bin:/usr/bin:/bin" \
+    HEADROOM_DAEMON=0 bash "$REPO_ROOT/scripts/headroom.sh"
+  [ "$status" -eq 0 ]
+  [ ! -e "$home/install-apply.log" ]
+
+  # Global Headroom bypass (HEADROOM_DEFAULT=0) must also skip the install.
+  run env HOME="$home" DOTFILES_DIR="$REPO_ROOT" PATH="$bin:/usr/bin:/bin" \
+    HEADROOM_DEFAULT=0 bash "$REPO_ROOT/scripts/headroom.sh"
+  [ "$status" -eq 0 ]
+  [ ! -e "$home/install-apply.log" ]
+
+  # Dry-run prints the command but never executes it.
+  run env HOME="$home" DOTFILES_DIR="$REPO_ROOT" DRY_RUN=true PATH="$bin:/usr/bin:/bin" \
+    bash "$REPO_ROOT/scripts/headroom.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"headroom install apply"* ]]
+  [ ! -e "$home/install-apply.log" ]
+}
+
+@test "install --upgrade bumps versions; default install does not (brew.sh)" {
+  home="$TMPDIR_TEST/brew-upgrade-home"
+  bin="$TMPDIR_TEST/brew-upgrade-bin"
+  mkdir -p "$home" "$bin"
+
+  # Fake brew records only `brew upgrade` invocations.
+  cat > "$bin/brew" <<'SH'
+#!/bin/sh
+[ "$1" = "upgrade" ] && printf 'upgrade %s\n' "$*" >> "$HOME/brew-upgrade.log"
+exit 0
+SH
+  chmod +x "$bin/brew"
+
+  # Default (no UPGRADE): install-if-missing only — must NOT upgrade.
+  run env -u UPGRADE HOME="$home" DOTFILES_DIR="$REPO_ROOT" PATH="$bin:/usr/bin:/bin" \
+    bash "$REPO_ROOT/scripts/brew.sh"
+  [ "$status" -eq 0 ]
+  [ ! -e "$home/brew-upgrade.log" ]
+
+  # UPGRADE=true (what install.sh --upgrade exports): must run brew upgrade.
+  run env HOME="$home" DOTFILES_DIR="$REPO_ROOT" PATH="$bin:/usr/bin:/bin" UPGRADE=true \
+    bash "$REPO_ROOT/scripts/brew.sh"
+  [ "$status" -eq 0 ]
+  [ -e "$home/brew-upgrade.log" ]
+  grep -q 'upgrade' "$home/brew-upgrade.log"
+
+  # Flag is wired in install.sh and the env var defaults safely in common.sh.
+  grep -q -- '--upgrade) UPGRADE=true' "$REPO_ROOT/install.sh"
+  grep -q 'UPGRADE="${UPGRADE:-false}"' "$REPO_ROOT/scripts/lib/common.sh"
+}
+
+@test "zshrc resets a stale inherited HEADROOM_WORKERS to one" {
+  guard="$(grep -A1 'export HEADROOM_WORKERS="${HEADROOM_WORKERS:-1}"' "$REPO_ROOT/configs/.zshrc" | tail -n1)"
+  run env HEADROOM_WORKERS=7 bash -c "export HEADROOM_WORKERS=\"\${HEADROOM_WORKERS:-1}\"; $guard; printf '%s' \"\$HEADROOM_WORKERS\""
+  [ "$status" -eq 0 ]
+  [ "$output" = "1" ]
 }
 
 @test "hermes dry-run does not execute version probe" {
@@ -2426,4 +2686,104 @@ JSONL
   [ "$status" -eq 0 ]
   [[ "$output" == *"Events loaded | 1"* ]]
   [[ "$output" == *"loaded 1 event(s): $hook_log"* ]]
+}
+
+@test "pre-push hook requires verify and gitleaks secret scan" {
+  grep -q 'brew "gitleaks"' "$REPO_ROOT/Brewfile"
+  grep -q 'scripts/verify.sh' "$REPO_ROOT/lefthook.yml"
+  grep -q 'scripts/secret-scan.sh --required' "$REPO_ROOT/lefthook.yml"
+}
+
+@test "secret scan optional skips missing gitleaks but required fails" {
+  run env DOTFILES_DIR="$REPO_ROOT" PATH="/usr/bin:/bin" bash "$REPO_ROOT/scripts/secret-scan.sh" --optional
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"skipped secret scan"* ]]
+
+  run env DOTFILES_DIR="$REPO_ROOT" PATH="/usr/bin:/bin" bash "$REPO_ROOT/scripts/secret-scan.sh" --required
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"gitleaks not found"* ]]
+}
+
+@test "secret scan invokes gitleaks over dotfiles tree" {
+  home="$TMPDIR_TEST/secret-scan-home"
+  bin="$TMPDIR_TEST/secret-scan-bin"
+  mkdir -p "$home" "$bin"
+  cat > "$bin/gitleaks" <<'SH'
+#!/bin/sh
+printf '%s\n' "$*" > "$HOME/gitleaks-args.txt"
+exit 0
+SH
+  chmod +x "$bin/gitleaks"
+
+  run env HOME="$home" DOTFILES_DIR="$REPO_ROOT" PATH="$bin:/usr/bin:/bin" \
+    bash "$REPO_ROOT/scripts/secret-scan.sh" --required
+
+  [ "$status" -eq 0 ]
+  [ "$(cat "$home/gitleaks-args.txt")" = "detect --source $REPO_ROOT --no-git --redact --verbose" ]
+}
+
+@test "doctor reports advisory dotfiles health snapshot" {
+  home="$TMPDIR_TEST/doctor-home"
+  bin="$TMPDIR_TEST/doctor-bin"
+  mkdir -p "$home" "$bin"
+
+  cat > "$bin/git" <<'SH'
+#!/bin/sh
+case "$1" in
+  rev-parse) exit 0 ;;
+  status) exit 0 ;;
+esac
+exit 0
+SH
+  cat > "$bin/lefthook" <<'SH'
+#!/bin/sh
+[ "$1" = "version" ] && printf '2.1.9\n'
+exit 0
+SH
+  for cmd in brew bats gitleaks zsh; do
+    cat > "$bin/$cmd" <<'SH'
+#!/bin/sh
+exit 0
+SH
+  done
+  chmod +x "$bin"/*
+
+  run env HOME="$home" DOTFILES_DIR="$REPO_ROOT" PATH="$bin:/usr/bin:/bin" \
+    bash "$REPO_ROOT/scripts/doctor.sh"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"dotfiles health snapshot"* ]]
+  [[ "$output" == *"gitleaks:"* ]]
+  [[ "$output" == *"summary:"* ]]
+}
+
+@test "local skills document gitignored local markdown overrides" {
+  grep -q 'plugins/local-skills/CONVENTIONS.md' "$REPO_ROOT/.gitignore"
+  grep -q '\*.local.md' "$REPO_ROOT/.gitignore"
+  grep -q 'CONVENTIONS.local.md' "$REPO_ROOT/plugins/local-skills/CONVENTIONS.md"
+  grep -q 'must not weaken safety' "$REPO_ROOT/plugins/local-skills/CONVENTIONS.md"
+  grep -q '\*.local.md' "$REPO_ROOT/configs/AGENTS.md"
+}
+
+@test "verify-output skill audits claims with evidence categories" {
+  skill="$REPO_ROOT/plugins/local-skills/skills/verify-output/SKILL.md"
+  [ -f "$skill" ]
+  grep -q '^name: verify-output$' "$skill"
+  grep -q 'hallucinations' "$skill"
+  grep -q 'supported' "$skill"
+  grep -q 'unsupported' "$skill"
+  grep -q 'not-checked' "$skill"
+  grep -q 'Corrected answer' "$skill"
+  grep -q 'Provenance: Upstream:' "$skill"
+}
+
+@test "premortem skill frames assume-failure with likelihood-impact scoring" {
+  skill="$REPO_ROOT/plugins/local-skills/skills/premortem/SKILL.md"
+  [ -f "$skill" ]
+  grep -q '^name: premortem$' "$skill"
+  grep -q 'prospective hindsight' "$skill"
+  grep -qi 'likelihood' "$skill"
+  grep -qi 'impact' "$skill"
+  grep -q 'When NOT to use' "$skill"
+  grep -q 'Provenance: Mode: inspired-by' "$skill"
 }

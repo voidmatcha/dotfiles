@@ -13,6 +13,8 @@ Environment knobs:
   HEADROOM_PORT              Proxy port (default: 8787)
   HEADROOM_MODE              Headroom mode (default: cache; set token for max compression)
   HEADROOM_WAIT_SECONDS      Proxy readiness wait (default: 60)
+  HEADROOM_WORKERS           Proxy workers (default: 1; keep single-process
+                             so CCR retrieval markers stay resolvable)
   HEADROOM_<TOOL>_CONTEXT_TOOL
                              1 to let Headroom inject RTK/lean-ctx instructions
                              (TOOL: CLAUDE, CODEX, or OMX; default 0)
@@ -24,6 +26,9 @@ Environment knobs:
   HEADROOM_<TOOL>_CODE_GRAPH 1 to enable Headroom code graph proxy mode
   HEADROOM_RETRY_MAX_ATTEMPTS
                               Upstream retry attempts before returning to client
+  HEADROOM_WS_FAIL_OPEN_ON_COMPRESSION_FAILURE
+                              Forward original request/frame when compression
+                              times out instead of returning 413 / WS 1009
   HEADROOM_NO_SUBSCRIPTION_TRACKING
                               1 to disable Anthropic usage polling
 USAGE
@@ -110,9 +115,24 @@ run_headroom_wrap() {
 
   upper="$(printf '%s' "$target" | tr '[:lower:]' '[:upper:]')"
   export HEADROOM_MODE="${HEADROOM_MODE:-cache}"
+  export HEADROOM_WORKERS="${HEADROOM_WORKERS:-1}"
   export HEADROOM_AGENT_ACTIVE="$target"
+  export HEADROOM_WS_FAIL_OPEN_ON_COMPRESSION_FAILURE="${HEADROOM_WS_FAIL_OPEN_ON_COMPRESSION_FAILURE:-1}"
 
   args=(wrap "$target" --port "$port")
+  # Reuse an already-running healthy Headroom proxy instead of binding the port
+  # again. Without this, a second concurrent `wrap claude` on the same port dies
+  # with "Address already in use" — upstream has no auto-free-port yet (#1121).
+  # The codex/omx path already reuses; this mirrors it via Headroom's documented
+  # `--no-proxy` (skip proxy startup, attach to the existing one; ANTHROPIC_BASE_URL
+  # is still set). For a separate isolated proxy, override per-launch:
+  # `HEADROOM_PORT=8788 claudeh`. Caveat: the ad-hoc proxy's lifetime follows the
+  # session that started it; for a session-independent shared proxy use
+  # `headroom install` (LaunchAgent) once, outside a live session.
+  if port_open "$port" && is_headroom_proxy_ready "$port"; then
+    warn "reusing existing Headroom proxy on port $port (--no-proxy)"
+    args+=(--no-proxy)
+  fi
   # Default shell entrypoints should not silently rewrite arbitrary project
   # guidance or duplicate Serena registrations. Enable explicitly per tool.
   if [ "$(env_flag "HEADROOM_${upper}_CONTEXT_TOOL" 0)" != "1" ]; then
@@ -174,7 +194,9 @@ run_codex_config_wrapped() {
   fi
 
   export HEADROOM_MODE="${HEADROOM_MODE:-cache}"
+  export HEADROOM_WORKERS="${HEADROOM_WORKERS:-1}"
   export HEADROOM_AGENT_ACTIVE="$target"
+  export HEADROOM_WS_FAIL_OPEN_ON_COMPRESSION_FAILURE="${HEADROOM_WS_FAIL_OPEN_ON_COMPRESSION_FAILURE:-1}"
   sessions_dir="$state_dir/sessions"
   lock_dir="$state_dir/config.lock"
   managed_file="$state_dir/managed-by-headroom-agent"
@@ -319,6 +341,64 @@ state.unlink(missing_ok=True)
 PY
   }
 
+  sanitize_headroom_model_provider() {
+    command -v python3 >/dev/null 2>&1 || return 0
+    python3 - "$config_file" <<'PY'
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+config = Path(sys.argv[1])
+if not config.exists():
+    raise SystemExit(0)
+
+lines = config.read_text(encoding="utf-8").splitlines(keepends=True)
+has_headroom_provider_table = any(
+    re.match(r'^\s*\[model_providers\.(?:"headroom"|headroom)\]\s*$', line)
+    for line in lines
+)
+if has_headroom_provider_table:
+    raise SystemExit(0)
+
+start = "# --- Headroom proxy (auto-injected by headroom wrap codex) ---"
+end = "# --- end Headroom ---"
+comment = (
+    "  # disabled by headroom-agent: Codex requires [model_providers.headroom]; "
+    "openai_base_url routes the built-in OpenAI provider"
+)
+provider_pattern = re.compile(r'^(\s*)model_provider\s*=\s*"headroom"(\s*(?:#.*)?)?$')
+
+out: list[str] = []
+changed = False
+in_headroom_block = False
+for line in lines:
+    stripped = line.strip()
+    if stripped == start:
+        in_headroom_block = True
+        out.append(line)
+        continue
+    if stripped == end:
+        out.append(line)
+        in_headroom_block = False
+        continue
+    if in_headroom_block and provider_pattern.match(line):
+        newline = "\n" if line.endswith("\n") else ""
+        body = line[:-1] if newline else line
+        if not body.lstrip().startswith("#"):
+            out.append(f"# {body}{comment}{newline}")
+            changed = True
+            continue
+    out.append(line)
+
+if changed:
+    tmp = config.with_suffix(config.suffix + ".headroom-agent-tmp")
+    tmp.write_text("".join(out), encoding="utf-8")
+    tmp.replace(config)
+PY
+  }
+
   register_codex_config_session() {
     local count existing_port was_prewrapped managed
     acquire_config_lock || exit 1
@@ -331,15 +411,19 @@ PY
         warn "another Codex-config Headroom session is already using port $existing_port; refusing port $port"
         exit 1
       fi
-      printf '%s %s %s\n' "$$" "$port" "$target" > "$session_file"
-      session_registered=1
-      release_config_lock
-      return 0
+      if config_has_headroom_marker; then
+        printf '%s %s %s\n' "$$" "$port" "$target" > "$session_file"
+        session_registered=1
+        release_config_lock
+        return 0
+      fi
+      warn "active Headroom session markers exist but Codex config is not routed; preparing config for this session"
     fi
 
     was_prewrapped=0
     config_has_headroom_marker && was_prewrapped=1
     neutralize_top_level_model_provider
+    sanitize_headroom_model_provider
     prepare_args=(wrap codex --port "$port" --prepare-only)
     # Default shell entrypoints are conservative: no project guidance rewrites
     # and no duplicate Serena registration unless explicitly enabled.
@@ -357,6 +441,7 @@ PY
       release_config_lock
       exit 1
     fi
+    sanitize_headroom_model_provider
 
     managed=1
     [ "$was_prewrapped" -eq 1 ] && managed=0

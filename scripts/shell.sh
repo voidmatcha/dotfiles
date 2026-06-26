@@ -8,7 +8,12 @@ ZSH_CUSTOM="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}"
 
 # ── Oh My Zsh ──
 if [ -d "$HOME/.oh-my-zsh" ]; then
-  info "Oh My Zsh already installed"
+  if $UPGRADE; then
+    info "Updating Oh My Zsh..."
+    git_pull_if_clean "$HOME/.oh-my-zsh"
+  else
+    info "Oh My Zsh already installed"
+  fi
 else
   info "Installing Oh My Zsh..."
   if $DRY_RUN; then
@@ -25,7 +30,12 @@ install_plugin() {
   local dest="$ZSH_CUSTOM/plugins/$name"
 
   if [ -d "$dest" ]; then
-    info "$name already installed"
+    if $UPGRADE; then
+      info "Updating $name..."
+      git_pull_if_clean "$dest"
+    else
+      info "$name already installed"
+    fi
     return
   fi
 

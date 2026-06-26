@@ -8,7 +8,7 @@ set -uo pipefail
 REPO="${1:?repo}"; TARGET="${2:?target}"; BASELINE="${3:?baseline.json}"
 # Trailer fields default to empty so the explicit checks below own the block (clear msg, exit 3).
 PROTECTS="${4-}"; UNAFFECTED="${5-}"; SUBJECT="${6:?commit subject}"; BODY="${7:-}"
-cd "$REPO"
+cd "$REPO" || exit
 
 # --- 1. Enforce the side-effect trailers (hard block on empty / hand-waved) ---
 bad() { echo "FREEZE BLOCKED: $1" >&2; exit 3; }

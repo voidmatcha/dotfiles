@@ -34,7 +34,7 @@ cd "$DOTFILES_DIR"
 info "shell syntax"
 while IFS= read -r file; do
   bash -n "$file"
-done < <(find scripts install.sh bootstrap.sh configs/hooks -type f -name '*.sh' | sort)
+done < <(find scripts install.sh bootstrap.sh update.sh configs/hooks -type f -name '*.sh' | sort)
 
 if command -v zsh &>/dev/null && [ -f configs/.zshrc ]; then
   zsh -n configs/.zshrc

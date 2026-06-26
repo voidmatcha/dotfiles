@@ -234,6 +234,36 @@ install_codex_cmux_skill() {
   info "Installed Codex cmux skill -> $dest"
 }
 
+sanitize_omx_native_agent_providers() {
+  local agents_dir="$CODEX_CONFIG_DIR/agents"
+  local explore_toml="$agents_dir/explore.toml"
+
+  if [ ! -f "$explore_toml" ]; then
+    return 0
+  fi
+
+  if $DRY_RUN; then
+    info "[dry-run] sanitize stale Headroom provider from $explore_toml"
+    return 0
+  fi
+
+  if grep -q '^model_provider = "headroom"$' "$explore_toml"; then
+    python3 - "$explore_toml" <<'PY'
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+out = [line for line in lines if line.strip() != 'model_provider = "headroom"']
+if out != lines:
+    path.write_text("".join(out), encoding="utf-8")
+PY
+    info "Removed stale Headroom provider from $explore_toml"
+  fi
+}
+
 if ! $DRY_RUN; then
   sanitize_codex_shared_config
 fi
@@ -242,6 +272,7 @@ install_codex_config
 if $DRY_RUN; then
   if command -v codex &>/dev/null; then
     info "[dry-run] codex --version"
+    $UPGRADE && info "[dry-run] would: npm i -g @openai/codex@latest oh-my-codex@latest"
   else
     info "[dry-run] npm install -g @openai/codex oh-my-codex"
   fi
@@ -251,6 +282,7 @@ if $DRY_RUN; then
     info "[dry-run] omx not installed — would install with oh-my-codex"
   fi
   install_codex_cmux_skill
+  sanitize_omx_native_agent_providers
   if [ -x "$DOTFILES_DIR/scripts/skills.sh" ]; then
     bash "$DOTFILES_DIR/scripts/skills.sh" codex
   fi
@@ -269,6 +301,12 @@ fi
 if command -v codex &>/dev/null; then
   CODEX_VERSION=$(codex --version 2>/dev/null || echo "unknown")
   info "Found codex ${CODEX_VERSION}"
+  # --upgrade: bump codex CLI + oh-my-codex to latest (the version install.sh
+  # otherwise skips once present).
+  if $UPGRADE && command -v npm &>/dev/null; then
+    info "Upgrading codex + oh-my-codex (--upgrade)..."
+    npm install -g @openai/codex@latest oh-my-codex@latest || warn "codex/omx upgrade reported errors (continuing)"
+  fi
   if command -v omx &>/dev/null; then
     OMX_VERSION=$(omx --version 2>/dev/null || echo "unknown")
     info "Found omx ${OMX_VERSION}"
@@ -293,6 +331,7 @@ else
 fi
 
 install_codex_cmux_skill
+sanitize_omx_native_agent_providers
 if [ -x "$DOTFILES_DIR/scripts/skills.sh" ]; then
   bash "$DOTFILES_DIR/scripts/skills.sh" codex
 fi

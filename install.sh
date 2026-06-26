@@ -18,12 +18,14 @@ DOTFILES_DIR="$(cd "$(dirname "$0")" && pwd)"
 DRY_RUN=false
 NON_INTERACTIVE=false
 ASSUME_YES=false
+UPGRADE=false
 
 for arg in "$@"; do
   case $arg in
     --dry-run) DRY_RUN=true ;;
     --yes|-y) ASSUME_YES=true ;;
     --non-interactive) NON_INTERACTIVE=true; ASSUME_YES=true ;;
+    --upgrade) UPGRADE=true ;;  # also bump tool versions, not just install-if-missing
     *) echo "Unknown option: $arg"; exit 1 ;;
   esac
 done
@@ -92,6 +94,14 @@ bash "$DOTFILES_DIR/scripts/shell.sh"
 # ── 5. Git ──
 info "5/12 Configuring Git..."
 bash "$DOTFILES_DIR/scripts/git.sh"
+
+# Pre-push validation hook: lefthook runs scripts/verify.sh before every push so
+# broken changes are caught locally instead of failing CI (see lefthook.yml).
+if command -v lefthook >/dev/null 2>&1; then
+  ( cd "$DOTFILES_DIR" && lefthook install >/dev/null 2>&1 ) && info "lefthook pre-push hook installed"
+else
+  warn "lefthook not found; skipping pre-push hook (install via Brewfile)"
+fi
 
 # ── 6. Symlinks ──
 info "6/12 Creating dotfiles symlinks..."

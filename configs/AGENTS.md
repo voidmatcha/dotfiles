@@ -8,20 +8,13 @@ tool-routing tables and exact one-liners, open this dotfiles repo's
 ## Core operating rules
 
 - If something is genuinely ambiguous, stop, state what is unclear, and ask.
-- Do not touch code unrelated to the request, and do not clean up what you did
-  not break.
-- Do not recommend tools or installs that are not in this dotfiles setup.
-- Do not transit sensitive/internal URLs through hosted services such as Jina or
-  Exa. Use local alternatives such as `agent-browser` for sensitive browsing.
-- Do not bulk-scrape platforms; X, Reddit, LinkedIn, Jina, and Exa have account
-  flag or rate-limit risk.
-- Keep enabled MCPs lean per project: aim for <10 enabled servers and <80 total
-  active tools. Disable per-project via `/mcp` rather than uninstalling globally.
-- Do not create stray top-level `*.md` files (`NOTES.md`, `SUMMARY.md`,
-  `FINDINGS.md`, etc.) without explicit approval. Named policy files (`README`,
-  `CLAUDE`, `AGENTS`, `CONTRIBUTING`, `LICENSE`, `CHANGELOG`, `SKILL`,
-  `SECURITY`) and files under `docs/`, `skills/`, `.claude/`, `agents/`, or
-  `commands/` are allowed.
+- Do not touch code unrelated to the request; do not clean up what you did not break.
+- Do not recommend tool installs that are not in this dotfiles setup.
+- Do not transit sensitive/internal URLs through hosted services such as Jina or Exa. Use local alternatives such as `agent-browser` for sensitive browsing.
+- Do not bulk-scrape platforms; X, Reddit, LinkedIn, Jina, and Exa can flag accounts or rate-limit.
+- Keep enabled MCPs lean per project: aim for <10 enabled servers and <80 total active tools. Disable per-project via `/mcp` rather than uninstalling globally.
+- Do not create stray top-level `*.md` files (`NOTES.md`, `SUMMARY.md`, `FINDINGS.md`, etc.) without explicit approval. Named policy files (`README`, `CLAUDE`, `AGENTS`, `CONTRIBUTING`, `LICENSE`, `CHANGELOG`, `SKILL`, `SECURITY`) and files under `docs/`, `skills/`, `.claude/`, `agents/`, or `commands/` are allowed.
+- Use `*.local.md` only for machine/private overrides documented by a tracked file; these overrides are gitignored and must not weaken tracked safety or verification rules.
 
 ## Default tool routing
 

@@ -13,6 +13,8 @@ configs/.gitconfig-*.backup*
 # Per-machine git overrides (signingkey paths etc.) — never commit.
 .gitconfig.local
 .gitconfig.local-work
+# Per-machine shell env (headroom persistent env, local exports) — never commit.
+.zshrc.local
 .claude/settings.local.json
 # Claude review-loop plugin state/artifacts are per-session and generated.
 .claude/review-loop.local.md
@@ -22,3 +24,6 @@ configs/.gitconfig-*.backup*
 # Claude hook runtime telemetry is per-session and machine-local.
 .claude/hooks/.logs/
 reviews/
+# Per-machine agent/skill Markdown overrides; see plugins/local-skills/CONVENTIONS.md.
+*.local.md
+*.local.mdc

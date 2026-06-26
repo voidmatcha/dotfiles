@@ -27,6 +27,7 @@ if $DRY_RUN; then
   info "[dry-run] Skipping brew bundle"
   info "[dry-run] Packages that would be installed:"
   cat "$DOTFILES_DIR/Brewfile"
+  $UPGRADE && info "[dry-run] would: brew upgrade --formula (outdated formulae)"
 else
   # Trust only the Bun formula rather than the whole tap.
   if brew trust --help >/dev/null 2>&1; then
@@ -42,6 +43,12 @@ else
     brew uninstall --force docker-completion
   fi
   brew bundle --file="$DOTFILES_DIR/Brewfile"
+
+  # --upgrade: bump already-installed formulae (brew update ran above).
+  if $UPGRADE; then
+    info "Upgrading outdated formulae (--upgrade)..."
+    brew upgrade --formula || warn "brew upgrade reported errors (continuing)"
+  fi
 fi
 
 info "Homebrew setup done"

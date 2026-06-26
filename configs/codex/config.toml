@@ -124,7 +124,7 @@ tool_timeout_sec = 120
 "gpt-5.5" = 4
 
 [shell_environment_policy.set]
-USE_OMX_EXPLORE_CMD = "1"
+USE_OMX_EXPLORE_CMD = "0"
 
 OMX_DEFAULT_SPARK_MODEL = "gpt-5.5"
 OMX_SPARK_MODEL = "gpt-5.5"

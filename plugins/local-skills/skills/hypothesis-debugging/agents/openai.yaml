@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hypothesis Debugging"
+  short_description: "Rank root-cause hypotheses with evidence."
+  default_prompt: "Use $hypothesis-debugging to investigate this bug by resetting prior assumptions, listing candidate causes, making falsifiable predictions, and choosing one focused experiment."
