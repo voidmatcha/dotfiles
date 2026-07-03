@@ -18,8 +18,8 @@ LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
 # install.sh invokes scripts/dev.sh and scripts/services.sh as separate shells,
 # so nvm's PATH mutations from dev.sh do not automatically carry over.
 if [ -d "$HOME/.nvm/versions/node" ]; then
-  # Highest installed semver (sort -V), matching scripts/purplemux-launch.sh and
-  # scripts/agent-resumer-launch.sh. ls -dt sorts by mtime and can pick an older
+  # Highest installed semver (sort -V), matching scripts/purplemux-launch.sh.
+  # ls -dt sorts by mtime and can pick an older
   # Node that a freshly built newer one was layered on top of.
   latest_node="$(find "$HOME/.nvm/versions/node" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2>/dev/null | sort -V | tail -n1 || true)"
   if [ -n "$latest_node" ] && [ -d "$HOME/.nvm/versions/node/$latest_node/bin" ]; then
@@ -82,6 +82,35 @@ install_agent() {
 
   info "LaunchAgent installed: $label"
 }
+
+# ── purplemux: source-checkout shim (opt-in) ──
+# Set PURPLEMUX_APP_DIR to run purplemux from a source checkout instead of the
+# npm global. The shim template lives in the repo (scripts/purplemux-shim.sh)
+# and is rendered + installed with `install -m 755`, so a hand-made shim can
+# never silently lose its exec bit or drift off the tracked path again.
+# TCC-protected folders are refused: launchd cannot answer a consent prompt,
+# so a checkout under ~/Documents|~/Desktop|~/Downloads hangs the LaunchAgent.
+under_tcc_protected_dir() {
+  case "$1" in
+    "$HOME/Documents"*|"$HOME/Desktop"*|"$HOME/Downloads"*) return 0 ;;
+  esac
+  return 1
+}
+if [ -n "${PURPLEMUX_APP_DIR:-}" ]; then
+  if under_tcc_protected_dir "$PURPLEMUX_APP_DIR"; then
+    warn "PURPLEMUX_APP_DIR=$PURPLEMUX_APP_DIR is under a TCC-protected folder — launchd would hang, not prompt. Move the checkout (e.g. ~/dev/cmux-purplemux) and re-run. Skipping shim install."
+  elif $DRY_RUN; then
+    info "[dry-run] would render purplemux shim for $PURPLEMUX_APP_DIR to $HOME/.local/bin/purplemux (install -m 755)"
+  else
+    mkdir -p "$HOME/.local/bin"
+    purplemux_shim_tmp="$(mktemp)"
+    sed -e "s|__PURPLEMUX_APP_DIR__|$PURPLEMUX_APP_DIR|g" \
+        "$DOTFILES_DIR/scripts/purplemux-shim.sh" > "$purplemux_shim_tmp"
+    install -m 755 "$purplemux_shim_tmp" "$HOME/.local/bin/purplemux"
+    rm -f "$purplemux_shim_tmp"
+    info "purplemux shim installed: $HOME/.local/bin/purplemux -> $PURPLEMUX_APP_DIR"
+  fi
+fi
 
 # ── purplemux: ensure global npm install ──
 purplemux_ready=false
@@ -186,41 +215,6 @@ if $agentwatch_ready; then
   install_agent "com.user.agentwatch"                 "$DOTFILES_DIR/configs/com.user.agentwatch.plist"                 "$DOTFILES_DIR/scripts/agentwatch-launch.sh"
 else
   warn "Skipping agentwatch LaunchAgent because agentwatch is not available in launchd's stable PATH."
-fi
-
-# ── agent-resumer: ensure global npm install, shims, and LaunchAgent watcher ──
-agent_resumer_ready=false
-agent_resumer_stable_path="/opt/homebrew/bin:/usr/local/bin:$HOME/.bun/bin:$HOME/.local/bin:/usr/bin:/bin"
-if [ -n "${latest_node_bin:-}" ]; then
-  agent_resumer_stable_path="$latest_node_bin:$agent_resumer_stable_path"
-fi
-
-if $DRY_RUN; then
-  info "[dry-run] would check agent-resumer and install agent-resumer@latest via npm if missing"
-  info "[dry-run] agent-resumer install-shims --force --auto-tmux --no-profile"
-  agent_resumer_ready=true
-elif PATH="$agent_resumer_stable_path" command -v agent-resumer >/dev/null 2>&1; then
-  info "Found agent-resumer ($(PATH="$agent_resumer_stable_path" agent-resumer --version 2>/dev/null || echo unknown))"
-  agent_resumer_ready=true
-elif command -v npm >/dev/null 2>&1; then
-  info "Installing agent-resumer via npm..."
-  if npm install -g agent-resumer@latest; then
-    hash -r 2>/dev/null || true
-    agent_resumer_ready=true
-  fi
-else
-  warn "npm not found — install Node first (scripts/dev.sh), then run this script again."
-fi
-
-if $agent_resumer_ready; then
-  if ! $DRY_RUN && PATH="$agent_resumer_stable_path" command -v agent-resumer >/dev/null 2>&1; then
-    PATH="$agent_resumer_stable_path" agent-resumer install-shims --force --auto-tmux --no-profile || warn "agent-resumer shim install failed — continuing with service setup"
-  fi
-  install_agent "com.voidmatcha.agent-resumer" \
-                "$DOTFILES_DIR/configs/com.voidmatcha.agent-resumer.plist" \
-                "$DOTFILES_DIR/scripts/agent-resumer-launch.sh"
-else
-  warn "Skipping agent-resumer LaunchAgent because agent-resumer is not available."
 fi
 
 # ── caffeinate: keep the Mac awake on AC for remote access ──

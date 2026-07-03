@@ -74,6 +74,50 @@ check_headroom() {
   fi
 }
 
+check_purplemux() {
+  local bin real target
+  bin="$(command -v purplemux 2>/dev/null || true)"
+  if [ -z "$bin" ]; then
+    warn_check "purplemux not on PATH (ok when unused on this machine)"
+    return
+  fi
+  if [ ! -x "$bin" ]; then
+    # `command -v` can still resolve a file that lost its exec bit via a stale
+    # shell hash — a fake green that surfaces as a launchd crash loop.
+    fail_check "purplemux resolved but not executable: $bin (chmod 755 or re-run services.sh)"
+    return
+  fi
+  ok "purplemux: $bin"
+  # Resolve the actual app path: through a services.sh-rendered shim (APP_DIR=)
+  # or through symlinks. launchd cannot answer a TCC consent prompt, so an app
+  # under ~/Documents|~/Desktop|~/Downloads hangs the LaunchAgent silently.
+  target="$(sed -n 's/^APP_DIR="\(.*\)"$/\1/p' "$bin" 2>/dev/null | head -1)"
+  if [ -z "$target" ]; then
+    real="$(readlink -f "$bin" 2>/dev/null || printf '%s' "$bin")"
+    target="$real"
+  fi
+  case "$target" in
+    "$HOME/Documents"*|"$HOME/Desktop"*|"$HOME/Downloads"*)
+      fail_check "purplemux app path under TCC-protected folder: $target (launchd hangs there — move it, e.g. ~/dev/)"
+      ;;
+    *)
+      ok "purplemux app path outside TCC-protected folders: $target"
+      ;;
+  esac
+}
+
+check_local_bin_links() {
+  local broken count
+  broken="$(find "$HOME/.local/bin" -maxdepth 1 -type l ! -exec test -e {} \; -print 2>/dev/null || true)"
+  if [ -z "$broken" ]; then
+    ok "~/.local/bin has no broken symlinks"
+    return
+  fi
+  count="$(printf '%s\n' "$broken" | wc -l | tr -d ' ')"
+  warn_check "~/.local/bin has $count broken symlink(s): $(printf '%s' "$broken" | tr '\n' ' ')"
+  warn_check "clean with: find ~/.local/bin -maxdepth 1 -type l ! -exec test -e {} \\; -delete"
+}
+
 case "${1:-}" in
   ""|--summary)
     ;;
@@ -115,6 +159,8 @@ check_symlink "HOME/.gitignore_global" "$DOTFILES_DIR/configs/.gitignore_global"
 check_symlink "HOME/.agent/AGENTS.md" "$DOTFILES_DIR/configs/AGENTS.md" "$HOME/.agent/AGENTS.md"
 
 check_headroom
+check_purplemux
+check_local_bin_links
 
 printf '\nsummary: %s ok, %s warn, %s fail\n' "$status_ok" "$status_warn" "$status_fail"
 [ "$status_fail" -eq 0 ]

@@ -87,15 +87,6 @@
             "command": "~/.claude/hooks/pretool-guard.sh"
           }
         ]
-      },
-      {
-        "matcher": "Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/pretool-guard.sh"
-          }
-        ]
       }
     ],
     "PostToolUse": [

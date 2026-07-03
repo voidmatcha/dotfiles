@@ -28,29 +28,6 @@ source "$ZSH/oh-my-zsh.sh"
 # ── Local bin (early — uv tool installs go here, serena check below needs it) ──
 export PATH="$HOME/.local/bin:$PATH"
 
-# ── agent-resumer shims ──
-# Keep claude/codex pane-aware in tmux. Install-time shims live here;
-# keep this before agent wrapper functions and before cmux-deck can exit.
-_agent_resumer_shim_dir="$HOME/.agent-resumer/shims"
-if [ -d "$_agent_resumer_shim_dir" ]; then
-  if command -v awk >/dev/null 2>&1; then
-    PATH="$(
-      printf '%s' "$PATH" | awk -v RS=: -v shim="$_agent_resumer_shim_dir" '
-        BEGIN { out = shim; seen[shim] = 1 }
-        $0 != "" && !($0 in seen) { seen[$0] = 1; out = out ":" $0 }
-        END { printf "%s", out }
-      '
-    )"
-  else
-    case ":$PATH:" in
-      *":$_agent_resumer_shim_dir:"*) ;;
-      *) PATH="$_agent_resumer_shim_dir:$PATH" ;;
-    esac
-  fi
-  export PATH
-fi
-unset _agent_resumer_shim_dir
-
 # ── Headroom default agent entrypoints ──
 # When installed, route normal Claude/Codex/OMX launches through Headroom's
 # cache/proxy wrappers. This is intentionally shell-level only: `command claude`,
@@ -442,27 +419,23 @@ alias rerr='rtk err'
 # Keep mode unset here so existing launchers can choose cache vs token explicitly.
 export HEADROOM_CODE_AWARE_ENABLED=1
 # <<< headroom token-saving config <<<
-# >>> cmux-deck adopt >>>
-# Self-adopt each cmux surface into a deck-socket tmux session so cmux-deck
-# can attach it full-fidelity. Guarded: interactive zsh, inside a cmux
-# surface, not already multiplexed, tmux present. `new-session -A` attaches
-# the existing adopted session or creates it — either order converges.
-# Focus the newly opened cmux surface before adoption by default; cmux layout
-# commands are focus-neutral unless callers pass `--focus true`. Set
-# CMUX_DECK_FOCUS_ON_ADOPT=0 to keep background-created surfaces backgrounded.
-# Run (not exec): if tmux fails to start, fall through to a normal shell
-# instead of the tab closing silently; on a clean tmux exit, close the tab.
-if [[ -o interactive && -n "$CMUX_SURFACE_ID" && -z "$TMUX" ]] && command -v tmux >/dev/null 2>&1; then
-  if [[ "${CMUX_DECK_FOCUS_ON_ADOPT:-1}" != "0" ]] && command -v cmux >/dev/null 2>&1; then
-    cmux focus-panel --panel "$CMUX_SURFACE_ID" >/dev/null 2>&1 || true
-  fi
-  if tmux -S "$HOME/.cmux-deck/tmux.sock" -f "$HOME/.cmux-deck/tmux.conf" new-session -A -s "cmux-$CMUX_SURFACE_ID"; then
-    exit
-  else
-    echo "cmux-deck: tmux adopt failed ($?); continuing in a plain shell" >&2
-  fi
+
+# ── Auto-load SSH keys from the macOS Keychain ──
+# macOS Sequoia+ stopped auto-loading keys into ssh-agent at login, and our git
+# remotes are HTTPS — so nothing triggers `AddKeysToAgent` and the SSH signing
+# key stays out of the agent, making every signed commit re-prompt for the
+# passphrase. Load keychain-stored passphrases when the agent is empty (silent:
+# --apple-load-keychain never prompts and skips keys not in the Keychain).
+# One-time per key first:  ssh-add --apple-use-keychain ~/.ssh/<key>
+# Only load into the LOCAL launchd agent: with an inherited/forwarded
+# SSH_AUTH_SOCK (SSH-in with ForwardAgent, CI runner), --apple-load-keychain
+# would silently inject every Keychain-enrolled private key into a foreign
+# agent that outlives this shell.
+if [[ "$OSTYPE" == darwin* && -z "${SSH_CONNECTION:-}" \
+      && "${SSH_AUTH_SOCK:-}" == *com.apple.launchd* ]] \
+   && ! ssh-add -l &>/dev/null; then
+  ssh-add --apple-load-keychain 2>/dev/null
 fi
-# <<< cmux-deck adopt <<<
 
 # Machine-local shell env (headroom persistent env, per-machine exports) — gitignored.
 # `headroom install` and similar generators append to ~/.zshrc, which is a symlink to

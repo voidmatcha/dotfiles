@@ -143,7 +143,7 @@ only when the submodule exists locally.
 | CLI packages | [Homebrew] tools, [Bats], [gitleaks], [uv], [gettext], [git-filter-repo], [Docker CLI]. | [`Brewfile`](Brewfile) |
 | Language runtimes | [nvm], [Node.js] LTS, [Corepack], [pyenv], latest [Python] 3, [SDKMAN!], [OpenJDK] LTS, [Maven]. | [`scripts/dev.sh`](scripts/dev.sh) |
 | Shell and Git | [Zsh] plugins, [direnv], personal/work Git identities, SSH signing via [OpenSSH]. | [`scripts/shell.sh`](scripts/shell.sh), [`scripts/git.sh`](scripts/git.sh) |
-| Agent CLIs | [Claude Code], [Codex], [Hermes Agent], [OMX], [agent-resumer]. | [`scripts/claude.sh`](scripts/claude.sh), [`scripts/codex.sh`](scripts/codex.sh), [`scripts/hermes.sh`](scripts/hermes.sh), [`scripts/dev.sh`](scripts/dev.sh) |
+| Agent CLIs | [Claude Code], [Codex], [Hermes Agent], [OMX]. | [`scripts/claude.sh`](scripts/claude.sh), [`scripts/codex.sh`](scripts/codex.sh), [`scripts/hermes.sh`](scripts/hermes.sh), [`scripts/dev.sh`](scripts/dev.sh) |
 | Remote access | [Tailscale], [Tailscale SSH], [OpenSSH], [code-server], [purplemux]. | [`scripts/tailscale.sh`](scripts/tailscale.sh), [`scripts/services.sh`](scripts/services.sh) |
 
 Run one focused installer when you do not want the full setup:
@@ -174,7 +174,6 @@ workflow.
 | [Claude Code] | Claude execution with shared AGENTS.md rules, hooks, MCP, and [RTK] policy. | [`scripts/claude.sh`](scripts/claude.sh), [`configs/CLAUDE.md`](configs/CLAUDE.md), [`configs/claude-settings.json`](configs/claude-settings.json) |
 | [Codex (with OMX)][Codex] | Codex execution with [OMX] workflows, goals, memories, and native subagents. | [`scripts/codex.sh`](scripts/codex.sh), [`configs/codex/config.toml`](configs/codex/config.toml) |
 | [Headroom] | Optional `claudeh`, `codexh`, and `omxh` wrappers for reversible compression and cache-aware routing. | [`scripts/headroom-agent.sh`](scripts/headroom-agent.sh), [`scripts/headroom.sh`](scripts/headroom.sh) |
-| [agent-resumer] | Pane-aware auto-resume supervisor for Claude/Codex/OMX usage-limit resets. | [`scripts/dev.sh`](scripts/dev.sh), [`scripts/agent-resumer-launch.sh`](scripts/agent-resumer-launch.sh) |
 | [RTK] | Command-output compression policy before noisy shell output enters context. | [`configs/RTK.md`](configs/RTK.md), [`configs/rtk-config.toml`](configs/rtk-config.toml) |
 | Local skills | Repo-owned procedures for context pressure, handoff, verification, previews, cleanup, and provenance. | [`plugins/local-skills/skills`](plugins/local-skills/skills) |
 
@@ -231,6 +230,10 @@ step, or evidence-gathering path was worth making deterministic.
 | Diagnose stale code intelligence? | [`code-intel-doctor`](plugins/local-skills/skills/code-intel-doctor/SKILL.md) | MCP config, installed-tool, and index-health checks. |
 | Avoid sending work data through the wrong surface? | [`work-scope-guard`](plugins/local-skills/skills/work-scope-guard/SKILL.md) | Fail-open reminders for company/work scopes. |
 | Track imported workflow assets? | [`source-provenance`](plugins/local-skills/skills/source-provenance/SKILL.md) | Source, license, and local-modification records. |
+| Fact-check an AI answer before trusting or publishing it? | [`verify-output`](plugins/local-skills/skills/verify-output/SKILL.md) | Extracts claims, tries to refute each (plus bounded public fact-check), and classifies supported/unsupported/not-checked. |
+| Find the root cause of a bug, regression, or flaky failure? | [`hypothesis-debugging`](plugins/local-skills/skills/hypothesis-debugging/SKILL.md) | Separates facts from assumptions, ranks falsifiable candidates, keeps an attempt log; five-whys quick mode for shallow bugs. |
+| About to commit to a costly, hard-to-reverse plan? | [`premortem`](plugins/local-skills/skills/premortem/SKILL.md) | Assume-failure analysis: enumerate failure modes, score likelihood x impact, and fold mitigations back into the plan. |
+| Research-improve the repo's own skills, hooks, or scripts? | [`asset-improver`](plugins/local-skills/skills/asset-improver/SKILL.md) | External research plus cross-model verification behind a propose -> approve -> apply gate. |
 
 `handover` owns context/session transfer and long-running agent coordination. `cmux` and
 `purplemux` stay display/control backends for workspaces, tabs, surfaces, focus, and terminal health.
@@ -335,7 +338,7 @@ management still do the security work.
 
 | Guard | Surface | Catches |
 | --- | --- | --- |
-| [`pretool-guard`](configs/hooks/pretool-guard.sh) | Claude `PreToolUse` hook for Bash and Write. | Broad destructive Bash patterns and stray Markdown writes before the tool call runs. |
+| [`pretool-guard`](configs/hooks/pretool-guard.sh) | Claude `PreToolUse` hook for Bash. | Broad destructive Bash patterns (force push, root rm -rf, dotenv reads, curl-pipe-bash, broad pkill on shared infra) before the tool call runs. |
 | [`skill-md-edit-warn`](configs/hooks/skill-md-edit-warn.sh) | Claude `PostToolUse` warning. | `SKILL.md` edits made after the session already loaded skill instructions. |
 | `permissions.deny` | [`configs/claude-settings.json`](configs/claude-settings.json) | Known secret paths and risky hosted-tool surfaces in Claude Code. |
 | [`work-scope-guard`](plugins/local-skills/skills/work-scope-guard/SKILL.md) | Local skill. | Company/work-scope routing reminders. |
@@ -370,7 +373,6 @@ LaunchAgents when dependencies are missing. In test terms, it skips loading Laun
 | `com.user.purplemux` | Web terminal multiplexer for [Claude Code]. | Listens on `*:8022`; access is [Tailscale Serve] plus macOS firewall. |
 | `com.user.code-server` | VS Code in the browser. | Binds to `127.0.0.1:8088`; optional tailnet exposure on `:8443`. |
 | `com.user.agentwatch` | Local agent session supervisor. | No network listener. |
-| `com.voidmatcha.agent-resumer` | Auto-resume watcher for local agent limit resets. | No network listener. |
 | `com.user.caffeinate` | Keeps the Mac awake on AC power for remote access. | No network listener. |
 
 Tailnet exposure is opt-in:
@@ -457,7 +459,6 @@ git -C ~/dotfiles submodule update --init
 See [`company/README.md`](company/README.md) for overlay maintenance.
 
 [agent-browser]: https://github.com/vercel-labs/agent-browser
-[agent-resumer]: https://www.npmjs.com/package/agent-resumer
 [agentsview]: https://www.agentsview.io/
 [Bats]: https://github.com/bats-core/bats-core
 [Braintrust token tracking]: https://www.braintrust.dev/articles/how-to-track-llm-token-usage-2026

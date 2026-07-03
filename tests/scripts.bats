@@ -154,6 +154,43 @@ SH
   [[ "$output" != *"bad git should not run"* ]]
 }
 
+@test "purplemux source shim fails fast when checkout missing" {
+  home="$TMPDIR_TEST/purplemux-shim-missing-home"
+  shim="$TMPDIR_TEST/purplemux-missing"
+  missing="$TMPDIR_TEST/not-there"
+  mkdir -p "$home"
+  sed -e "s|__PURPLEMUX_APP_DIR__|$missing|g" \
+    "$REPO_ROOT/scripts/purplemux-shim.sh" > "$shim"
+  chmod +x "$shim"
+
+  run env HOME="$home" PATH="/usr/bin:/bin" "$shim"
+
+  [ "$status" -eq 78 ]
+  [[ "$output" == *"source checkout not found"* ]]
+}
+
+@test "purplemux source shim executes checkout bin entry with rendered path" {
+  home="$TMPDIR_TEST/purplemux-shim-home"
+  app="$TMPDIR_TEST/purplemux-app"
+  bin="$TMPDIR_TEST/purplemux-shim-bin"
+  shim="$TMPDIR_TEST/purplemux-rendered"
+  mkdir -p "$home" "$app/bin" "$bin"
+  touch "$app/bin/purplemux.js"
+  cat > "$bin/node" <<'SH'
+#!/bin/sh
+printf '%s\n' "$*" > "$HOME/node-args.txt"
+SH
+  chmod +x "$bin/node"
+  sed -e "s|__PURPLEMUX_APP_DIR__|$app|g" \
+    "$REPO_ROOT/scripts/purplemux-shim.sh" > "$shim"
+  chmod +x "$shim"
+
+  run env HOME="$home" PATH="$bin:/usr/bin:/bin" "$shim" --version
+
+  [ "$status" -eq 0 ]
+  [ "$(cat "$home/node-args.txt")" = "$app/bin/purplemux.js --version" ]
+}
+
 @test "install links Claude config before setup scripts" {
   settings_line=$(grep -n 'configs/claude-settings.json' "$REPO_ROOT/install.sh" | cut -d: -f1)
   claude_line=$(grep -n 'bash "\$DOTFILES_DIR/scripts/claude.sh"' "$REPO_ROOT/install.sh" | cut -d: -f1)
@@ -298,13 +335,6 @@ SH
   [ ! -e "$home/.local/bin" ]
 }
 
-
-@test "dev setup installs agent-resumer npm shims without profile mutation" {
-  grep -q 'npm install -g agent-resumer@latest' "$REPO_ROOT/scripts/dev.sh"
-  grep -q 'agent-resumer install-shims --force --auto-tmux --no-profile' "$REPO_ROOT/scripts/dev.sh"
-  grep -q 'agent-resumer' "$REPO_ROOT/README.md"
-}
-
 @test "code-server setup dry-run installs worktree-focused extensions" {
   home="$TMPDIR_TEST/code-server-home"
   mkdir -p "$home"
@@ -408,33 +438,6 @@ SH
   grep -q '__dotfiles_codex_base' "$zshrc"
   grep -q 'a missing probe should not' "$zshrc"
 }
-
-@test "zshrc prepends agent-resumer shims before agent wrappers and cmux adopt" {
-  zshrc="$REPO_ROOT/configs/.zshrc"
-
-  grep -q 'agent-resumer shims' "$zshrc"
-  grep -q '_agent_resumer_shim_dir="$HOME/.agent-resumer/shims"' "$zshrc"
-  run grep -F '/Users/yongjae/.agent-resumer/shims' "$zshrc"
-  [ "$status" -eq 1 ]
-
-  shim_line=$(grep -n '_agent_resumer_shim_dir=' "$zshrc" | head -1 | cut -d: -f1)
-  claude_wrapper_line=$(grep -n 'claude() {' "$zshrc" | head -1 | cut -d: -f1)
-  cmux_adopt_line=$(grep -n 'cmux-deck adopt' "$zshrc" | head -1 | cut -d: -f1)
-
-  [ -n "$shim_line" ]
-  [ -n "$claude_wrapper_line" ]
-  [ -n "$cmux_adopt_line" ]
-  [ "$shim_line" -lt "$claude_wrapper_line" ]
-  [ "$shim_line" -lt "$cmux_adopt_line" ]
-}
-
-@test "zshrc cmux-deck adoption focuses newly opened surfaces by default" {
-  zshrc="$REPO_ROOT/configs/.zshrc"
-
-  grep -q 'CMUX_DECK_FOCUS_ON_ADOPT:-1' "$zshrc"
-  grep -q 'cmux focus-panel --panel "\$CMUX_SURFACE_ID"' "$zshrc"
-}
-
 @test "dev setup runs headroom installer before agent-browser" {
   headroom_line=$(grep -n 'scripts/headroom.sh' "$REPO_ROOT/scripts/dev.sh" | head -1 | cut -d: -f1)
   statusline_line=$(grep -n 'scripts/statusline.sh' "$REPO_ROOT/scripts/dev.sh" | head -1 | cut -d: -f1)
@@ -630,7 +633,7 @@ TOML
   cat > "$bin/headroom" <<'SH'
 #!/bin/sh
 case "$1" in
-  proxy) sleep 120 ;;
+  proxy) exit 0 ;;
   wrap|unwrap) exit 0 ;;
 esac
 exit 0
@@ -647,7 +650,6 @@ SH
   [ "$status" -eq 0 ]
   [ "$(cat "$home/omx-args.txt")" = "--direct --xhigh --madmax" ]
 }
-
 @test "context-check treats Headroom as primary" {
   skill="$REPO_ROOT/plugins/local-skills/skills/context-check/SKILL.md"
   script="$REPO_ROOT/plugins/local-skills/skills/context-check/scripts/context_check.py"
@@ -692,7 +694,13 @@ assert stored["severity"] == "info", stored
 printf '%s\n' "$HEADROOM_WORKERS" > "$HOME/workers.txt"
 exit 0
 SH
-  chmod +x "$bin/headroom"
+  # The claude wrapper path resolves the real agent binary up front (to keep
+  # headroom validates the target binary before wrapping, so a stub must exist.
+  cat > "$bin/claude" <<'SH'
+#!/bin/sh
+exit 0
+SH
+  chmod +x "$bin/headroom" "$bin/claude"
 
   run env -u HEADROOM_WORKERS HOME="$home" PATH="$bin:/usr/bin:/bin" HEADROOM_WAIT_SECONDS=0 HEADROOM_CLAUDE_MCP=0 \
     bash "$REPO_ROOT/scripts/headroom-agent.sh" claude
@@ -800,11 +808,11 @@ SH
   [[ "$output" != *"hermes --version should not run"* ]]
 }
 
-@test "services dry-run does not execute purplemux, agent-resumer, npm, or tailscale probes" {
+@test "services dry-run does not execute purplemux, npm, or tailscale probes" {
   home="$TMPDIR_TEST/services-home"
   bin="$TMPDIR_TEST/bin"
   mkdir -p "$home" "$bin"
-  for cmd in purplemux agent-resumer npm tailscale; do
+  for cmd in purplemux npm tailscale; do
     cat > "$bin/$cmd" <<'SH'
 #!/bin/sh
 printf 'service probe should not run in dry-run\n' >&2
@@ -817,27 +825,8 @@ SH
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"would check purplemux"* ]]
-  [[ "$output" == *"would check agent-resumer"* ]]
-  [[ "$output" == *"agent-resumer install-shims --force --auto-tmux --no-profile"* ]]
   [[ "$output" == *"tailscale serve --bg"* ]]
   [[ "$output" != *"service probe should not run"* ]]
-}
-
-@test "agent-resumer launcher restores latest nvm bin under launchd PATH" {
-  home="$TMPDIR_TEST/agent-resumer-home"
-  nvm_bin="$home/.nvm/versions/node/v99.0.0/bin"
-  mkdir -p "$nvm_bin"
-  cat > "$nvm_bin/agent-resumer" <<'SH'
-#!/bin/sh
-printf 'agent-resumer args: %s\n' "$*"
-SH
-  chmod +x "$nvm_bin/agent-resumer"
-
-  run env -i HOME="$home" PATH="/usr/bin:/bin" AGENT_RESUMER_INTERVAL=12345 \
-    bash "$REPO_ROOT/scripts/agent-resumer-launch.sh"
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"agent-resumer args: watch --watch --interval 12345 --quiet"* ]]
 }
 
 @test "services does not abort when launchctl bootstrap fails" {
@@ -1042,6 +1031,14 @@ for path in checked:
             violations.append(f'{path}:{line_no}:{line}')
         if any(marker in line for marker in absolute_string_markers):
             violations.append(f'{path}:{line_no}:{line}')
+
+# configs/.zshrc legitimately uses absolute strings like "/opt/homebrew/bin",
+# so only the home-prefix check applies (catches installer-appended blocks
+# hardcoding /Users/<name>).
+zshrc = repo / 'configs/.zshrc'
+for line_no, line in enumerate(zshrc.read_text().splitlines(), 1):
+    if any(prefix in line for prefix in home_prefixes):
+        violations.append(f'{zshrc}:{line_no}:{line}')
 
 assert not violations, '\\n'.join(violations)
 PY
@@ -1797,49 +1794,19 @@ PY
   grep -qE 'empty stdin|stdin read timed out' "$stderr_file"
 }
 
-@test "Claude PreToolUse guard blocks stray .md creation via Write" {
-  input="$TMPDIR_TEST/pretool-md-stray.json"
-  output_file="$TMPDIR_TEST/pretool-md-stray-output.json"
+@test "Claude PreToolUse guard passes Write .md creation through (md guard removed)" {
+  # The stray-.md Write guard was removed on purpose (AGENTS.md still states
+  # the soft policy; enforcement was more friction than value). This pins the
+  # removal: a Write payload — even a stray top-level .md — must pass silently.
+  input="$TMPDIR_TEST/pretool-md-passthrough.json"
   cat > "$input" <<'JSON'
-{"hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{"file_path":"/tmp/SUMMARY.md","content":"oops"}}
+{"hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{"file_path":"/tmp/SUMMARY.md","content":"ok"}}
 JSON
 
-  run bash -c "'$REPO_ROOT/configs/hooks/pretool-guard.sh' < '$input' > '$output_file'"
+  run bash -c "'$REPO_ROOT/configs/hooks/pretool-guard.sh' < '$input'"
 
   [ "$status" -eq 0 ]
-  python3 - <<PY
-import json
-from pathlib import Path
-
-payload = json.loads(Path('$output_file').read_text())
-hook = payload['hookSpecificOutput']
-assert hook['permissionDecision'] == 'deny'
-assert 'stray .md' in hook['permissionDecisionReason']
-PY
-}
-
-@test "Claude PreToolUse guard allows named-policy .md and doc-tree paths via Write" {
-  for path in \
-      /tmp/repo/README.md \
-      /tmp/repo/AGENTS.md \
-      /tmp/repo/docs/architecture.md \
-      /tmp/repo/skills/foo/SKILL.md \
-      /tmp/repo/.claude/agents/scout.md; do
-    input="$TMPDIR_TEST/pretool-md-ok-$(basename "$path").json"
-    python3 - "$input" "$path" <<'PY'
-import json, sys
-from pathlib import Path
-Path(sys.argv[1]).write_text(json.dumps({
-    'hook_event_name': 'PreToolUse',
-    'tool_name': 'Write',
-    'tool_input': {'file_path': sys.argv[2], 'content': 'ok'},
-}))
-PY
-
-    run bash -c "'$REPO_ROOT/configs/hooks/pretool-guard.sh' < '$input'"
-    [ "$status" -eq 0 ]
-    [ -z "$output" ]
-  done
+  [ -z "$output" ]
 }
 
 @test "Claude PreToolUse guard ignores non-Bash non-Write tools silently" {
@@ -2786,4 +2753,19 @@ SH
   grep -qi 'impact' "$skill"
   grep -q 'When NOT to use' "$skill"
   grep -q 'Provenance: Mode: inspired-by' "$skill"
+}
+
+@test "README references every local skill (no undocumented skills)" {
+  missing=""
+  found=0
+  for d in "$REPO_ROOT"/plugins/local-skills/skills/*/; do
+    [ -f "$d/SKILL.md" ] || continue
+    found=$((found + 1))
+    name="$(basename "$d")"
+    grep -q "skills/$name/SKILL.md" "$REPO_ROOT/README.md" || missing="$missing $name"
+  done
+  # Guard against vacuous pass: if the skills path moves or the glob matches
+  # nothing, found stays 0 and this test would otherwise enforce nothing.
+  [ "$found" -gt 0 ] || { echo "no skills found under plugins/local-skills/skills/"; false; }
+  [ -z "$missing" ] || { echo "skills missing from README:$missing"; false; }
 }

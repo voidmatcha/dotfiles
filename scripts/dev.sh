@@ -258,32 +258,6 @@ if [ -x "$DOTFILES_DIR/scripts/statusline.sh" ]; then
   bash "$DOTFILES_DIR/scripts/statusline.sh"
 fi
 
-# ── agent-resumer (pane-aware auto-resume supervisor) ──
-# Installs the npm CLI plus shims for claude/codex. The repo-owned
-# ~/.zshrc block keeps ~/.agent-resumer/shims first on PATH, so skip the
-# package's profile mutation here.
-info "Checking agent-resumer..."
-if $DRY_RUN; then
-  info "[dry-run] npm install -g agent-resumer@latest"
-  info "[dry-run] agent-resumer install-shims --force --auto-tmux --no-profile"
-else
-  if ! command -v agent-resumer &>/dev/null; then
-    info "Installing agent-resumer (global npm)"
-    npm install -g agent-resumer@latest || warn "agent-resumer install failed — try manually: npm install -g agent-resumer"
-    hash -r 2>/dev/null || true
-  else
-    info "agent-resumer already installed ($(agent-resumer --version 2>/dev/null || echo unknown))"
-  fi
-
-  if command -v agent-resumer &>/dev/null; then
-    if agent-resumer install-shims --force --auto-tmux --no-profile; then
-      info "agent-resumer shims installed"
-    else
-      warn "agent-resumer shim install failed — try manually: agent-resumer install-shims --force --auto-tmux --no-profile"
-    fi
-  fi
-fi
-
 # ── code-server browser IDE extensions ──
 if [ -x "$DOTFILES_DIR/scripts/code-server.sh" ]; then
   bash "$DOTFILES_DIR/scripts/code-server.sh"

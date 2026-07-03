@@ -22,7 +22,6 @@ fi
 
 python3 - "$payload" <<'PY'
 import json
-import os
 import re
 import shlex
 import sys
@@ -49,7 +48,7 @@ if payload.get('hook_event_name') != 'PreToolUse':
     sys.exit(0)
 
 tool_name = payload.get('tool_name')
-if tool_name not in ('Bash', 'Write'):
+if tool_name != 'Bash':
     sys.exit(0)
 
 tool_input = payload.get('tool_input') or {}
@@ -136,39 +135,4 @@ if tool_name == 'Bash':
     for reason, pattern in deny_patterns:
         if pattern.search(command):
             deny(f'Blocked risky Bash command: {reason}')
-
-elif tool_name == 'Write':
-    file_path = tool_input.get('file_path', '')
-    if not isinstance(file_path, str):
-        sys.exit(0)
-
-    basename = os.path.basename(file_path)
-    if basename.endswith('.md'):
-        # Named-policy files: always allowed wherever they live.
-        allowed_basenames = {
-            'README.md', 'CLAUDE.md', 'AGENTS.md', 'GEMINI.md',
-            'CONTRIBUTING.md', 'LICENSE.md', 'CHANGELOG.md',
-            'SKILL.md', 'SECURITY.md', 'CODE_OF_CONDUCT.md',
-            'NOTICE.md',
-        }
-        # Project doc trees: anything under docs/, skills/<name>/, .claude/,
-        # agents/, commands/ is treated as legitimate documentation.
-        normalized = file_path.replace('\\', '/')
-        in_doc_tree = (
-            '/docs/' in normalized
-            or '/skills/' in normalized
-            or '/.claude/' in normalized
-            or '/agents/' in normalized
-            or '/commands/' in normalized
-            or normalized.startswith('docs/')
-            or normalized.startswith('skills/')
-            or normalized.startswith('.claude/')
-        )
-        if basename not in allowed_basenames and not in_doc_tree:
-            deny(
-                f'Blocked stray .md creation: {basename}. '
-                'Allowed: named policy files (README/CLAUDE/AGENTS/etc.), '
-                'or paths under docs/, skills/, .claude/, agents/, commands/. '
-                'Ask the user before creating new top-level docs.'
-            )
 PY
