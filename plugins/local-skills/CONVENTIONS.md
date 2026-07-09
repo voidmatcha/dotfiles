@@ -33,6 +33,11 @@ not the name. This index is for the judgment-call ones that are easy to forget:
 | Bug / regression / flaky failure — find the cause | `hypothesis-debugging` |
 | About to commit to a costly, hard-to-reverse plan | `premortem` |
 | Need public web/GitHub research beyond local files | `agent-reach` |
+| Imported or adapted an external agent asset | `source-provenance` |
+| CodeGraph or Serena config/index looks stale | `code-intel-doctor` |
+| Decide whether overlapping agent surfaces should be pruned | `agent-usage-audit` |
+| Mine repeated corrections from local session JSONL | `session-feedback-audit` |
+| Review Korean technical terminology without general copy-editing | `korean-technical-terminology` |
 | Verify this dotfiles repo before install | `dotfiles-verify` |
 | Decide continue / compact / clear / hand off | `context-check` |
 | Hand work to a fresh Claude/Codex/OMX session | `handover` |

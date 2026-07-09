@@ -422,6 +422,7 @@ def cmd_diagnose(args: argparse.Namespace) -> int:
     sessions = _state_sessions_for_cwd(state, cwd)
     if sessions:
         latest = sessions[0]
+        is_current_cwd_state = latest.get("key") == f"cwd:{cwd}"
         last_prompt_at = latest.get("last_prompt_at")
         if isinstance(last_prompt_at, (int, float)):
             idle = max(0.0, (now - float(last_prompt_at)) / 60.0)
@@ -430,11 +431,13 @@ def cmd_diagnose(args: argparse.Namespace) -> int:
             # historical evidence, not current-session pressure; otherwise an
             # old session in the same repo incorrectly forces `/compact`.
             severity = "info"
-            if latest.get("key") == f"cwd:{cwd}":
+            if is_current_cwd_state:
                 severity = "red" if idle >= IDLE_RED_MINUTES else "warn" if idle >= IDLE_WARN_MINUTES else "info"
             signals.append(Signal("stored_idle", "observed", f"latest stored prompt was {idle:.1f}m ago", severity))
         turns = int(latest.get("turns") or 0)
-        severity = "red" if turns >= TURN_RED else "warn" if turns >= TURN_WARN else "info"
+        severity = "info"
+        if is_current_cwd_state:
+            severity = "red" if turns >= TURN_RED else "warn" if turns >= TURN_WARN else "info"
         signals.append(Signal("stored_turns", "observed", f"latest stored turn count is {turns}", severity))
 
     reco = _pick_recommendation(signals, args.intent)

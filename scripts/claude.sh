@@ -44,6 +44,10 @@ install_claude_code() {
   # the rest of this script (claude plugin / mcp …) even if PATH wasn't
   # refreshed in this shell.
   command -v claude &>/dev/null || export PATH="$HOME/.local/bin:$PATH"
+  if ! command -v claude &>/dev/null; then
+    warn "Claude Code is still unavailable after the native install attempt"
+    return 1
+  fi
 }
 install_claude_code
 
@@ -78,7 +82,6 @@ SKILL_REPOS=(
   # when `--global --yes` is used without `--agent`, skills CLI auto-expands
   # universal `.agents/skills` targets and currently includes PromptScript, which
   # is project-only.
-  "anthropics/skills@frontend-design"
   "anthropics/skills@doc-coauthoring"        # handover docs / specs
   "anthropics/skills@internal-comms"         # status reports / FAQs
   "anthropics/skills@webapp-testing"         # cake-pc-web Playwright
@@ -252,6 +255,7 @@ PLUGINS=(
   "claude-hud@claude-hud"                             # statusline context/tool/agent/todo HUD
   "skills-janitor@skills-janitor"                     # skill inventory, dupes, token value
   "superpowers@claude-plugins-official"
+  "frontend-design@claude-plugins-official"
   "rust-analyzer-lsp@claude-plugins-official"
   "fakechat@claude-plugins-official"
   "vercel@claude-plugins-official"
@@ -338,14 +342,53 @@ fi
 # `claude mcp add-json`). Symlinking configs/mcp.json into ~/.claude/.mcp.json
 # does NOT work — verified: `claude mcp add --scope user` writes to
 # ~/.claude.json directly.
+restore_mcp_entry() {
+  local name="$1" entry="$2"
+  with_timeout 30 claude mcp remove --scope user "$name" >/dev/null 2>&1 || true
+  with_timeout 30 claude mcp add-json --scope user "$name" "$entry" >/dev/null 2>&1 || return 1
+  # shellcheck disable=SC2016 # jq variables are passed via --arg/--argjson.
+  json_entry_exists "$HOME/.claude.json" '.mcpServers[$n] == $e' \
+    --arg n "$name" --argjson e "$entry"
+}
+
 register_mcp_from_file() {
   local mcp_file="$1"
   if [ ! -f "$mcp_file" ]; then
     return 0
   fi
-  if ! command -v jq &>/dev/null || ! command -v claude &>/dev/null; then
-    warn "jq or claude not available — skipping MCP registration from $mcp_file"
+  if $DRY_RUN; then
+    local preview_names preview_name
+    if command -v python3 &>/dev/null; then
+      preview_names=$(python3 - "$mcp_file" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    data = json.load(handle)
+servers = data.get("mcpServers")
+if not isinstance(servers, dict) or not all(isinstance(name, str) and name for name in servers):
+    raise SystemExit("mcpServers must be an object with non-empty string keys")
+if not all(isinstance(entry, dict) for entry in servers.values()):
+    raise SystemExit("every MCP entry must be an object")
+for name in sorted(servers):
+    print(name)
+PY
+      ) || {
+        warn "invalid MCP configuration: $mcp_file"
+        return 1
+      }
+      while IFS= read -r preview_name; do
+        [ -z "$preview_name" ] || \
+          info "[dry-run] claude mcp add-json --scope user $preview_name '<redacted>'"
+      done <<< "$preview_names"
+    else
+      info "[dry-run] register user-scope MCP servers from $mcp_file (entry JSON hidden)"
+    fi
     return 0
+  fi
+  if ! command -v jq &>/dev/null || ! command -v envsubst &>/dev/null || ! command -v claude &>/dev/null; then
+    warn "jq, envsubst, or claude not available — cannot register MCPs from $mcp_file"
+    return 1
   fi
 
   # Load dev/user secrets so any ${VAR} placeholders in mcp.json expand below.
@@ -359,64 +402,127 @@ register_mcp_from_file() {
     set +a
   fi
 
-  local names
+  local names registration_failed=0
   local envsubst_allowlist
   # shellcheck disable=SC2016 # envsubst receives a variable allowlist.
   envsubst_allowlist='${EXA_API_KEY} ${FIGMA_API_KEY}'
   names=$(jq -r '.mcpServers | keys[]' "$mcp_file" 2>/dev/null)
   while IFS= read -r name; do
     [ -z "$name" ] && continue
-    local entry
+    local raw_entry entry placeholder_names placeholder_name placeholder_value
+    local missing_placeholders old_entry install_status rollback_status
     # Use --arg to safely pass the key (avoids jq filter string-interpolation injection).
-    # envsubst expands ${VAR} with an explicit allowlist; anything else stays
-    # as a literal $VAR. Missing key → empty string (JSON still valid).
+    # Refuse to render when a referenced variable is unset/empty. Rendering an
+    # empty secret and removing the old entry first destroys a working config.
     # Extend the allowlist as new keys are added to mcp.json.
-    entry=$(jq -c --arg n "$name" '.mcpServers[$n]' "$mcp_file" \
-      | envsubst "$envsubst_allowlist")
-    if $DRY_RUN; then
-      redacted_entry=$(printf '%s' "$entry" | jq -c '
-        if (.env | type) == "object" then
-          .env |= with_entries(.value = "<redacted>")
+    raw_entry=$(jq -c --arg n "$name" '.mcpServers[$n]' "$mcp_file")
+    if ! printf '%s' "$raw_entry" | jq -e 'type == "object"' >/dev/null 2>&1; then
+      warn "Invalid MCP $name: entry must be a JSON object (keeping existing config)"
+      registration_failed=1
+      continue
+    fi
+    # `envsubst --variables` recognizes both $VAR and ${VAR} forms without
+    # expanding values, so missing unbraced secrets cannot collapse to "".
+    placeholder_names=$(envsubst --variables "$raw_entry" | sort -u)
+    missing_placeholders=""
+    while IFS= read -r placeholder_name; do
+      [ -z "$placeholder_name" ] && continue
+      placeholder_value="${!placeholder_name-}"
+      if [ -z "$placeholder_value" ]; then
+        if [ -n "$missing_placeholders" ]; then
+          missing_placeholders="$missing_placeholders, $placeholder_name"
         else
-          .
-        end
-        | if (.headers | type) == "object" then
-          .headers |= with_entries(
-            if (.key | test("(?i)(authorization|token|key|secret|password)")) then
-              .value = "<redacted>"
-            else
-              .
-            end
-          )
-        else
-          .
-        end
-      ' 2>/dev/null || printf '%s' "$entry")
-      info "[dry-run] claude mcp add-json --scope user $name '$redacted_entry'"
+          missing_placeholders="$placeholder_name"
+        fi
+      fi
+    done <<< "$placeholder_names"
+    if [ -n "$missing_placeholders" ]; then
+      warn "Skipping MCP $name: missing environment placeholder(s): $missing_placeholders (keeping existing config)"
+      continue
+    fi
+
+    entry=$(printf '%s' "$raw_entry" | envsubst "$envsubst_allowlist")
+    if printf '%s' "$entry" | grep -Eq '\$\{?[A-Za-z_][A-Za-z0-9_]*\}?'; then
+      warn "Skipping MCP $name: unresolved environment placeholder remains (keeping existing config)"
+      continue
+    fi
+    if ! printf '%s' "$entry" | jq -e . >/dev/null 2>&1; then
+      warn "Skipping MCP $name: rendered entry is invalid JSON (keeping existing config)"
+      registration_failed=1
       continue
     fi
     # Already registered with the exact same config → leave it alone. This is
     # the common path on re-runs, and it avoids the remove→add window below,
     # which drops a working entry whenever the add fails (policy block,
     # CLI hang). add-json stores the entry verbatim, so equality is reliable.
+    # shellcheck disable=SC2016 # jq variables are passed via --arg/--argjson.
     if json_entry_exists "$HOME/.claude.json" '.mcpServers[$n] == $e' \
         --arg n "$name" --argjson e "$entry"; then
       info "MCP already registered: $name"
       continue
     fi
-    # Remove first (add-json refuses to overwrite), then add.
+
+    # Back up the exact old entry before remove (add-json refuses to overwrite).
+    # If the replacement fails, immediately restore this JSON instead of
+    # leaving the user with no working registration.
+    old_entry=$(jq -cer --arg n "$name" '.mcpServers[$n] // empty' \
+      "$HOME/.claude.json" 2>/dev/null) || old_entry=""
+    if [ -n "$old_entry" ]; then
+      info "Backing up existing MCP config before replacement: $name"
+      if ! with_timeout 30 claude mcp remove --scope user "$name" >/dev/null 2>&1; then
+        registration_failed=1
+        if json_entry_exists "$HOME/.claude.json" '.mcpServers[$n] == $e' \
+            --arg n "$name" --argjson e "$old_entry"; then
+          warn "Failed to remove existing MCP: $name (verified existing config is intact)"
+        elif restore_mcp_entry "$name" "$old_entry"; then
+          warn "MCP remove failed after mutating config; restored and verified previous config: $name"
+        else
+          warn "CRITICAL: MCP remove failed and previous config could not be restored: $name"
+        fi
+        continue
+      fi
+    fi
+
     # 30s timeout: `claude` CLI subcommands have been observed to hang on
-    # certain machines/versions; don't let MCP setup stall install.sh.
-    with_timeout 30 claude mcp remove --scope user "$name" >/dev/null 2>&1 || true
-    local add_output
-    if add_output=$(with_timeout 30 claude mcp add-json --scope user "$name" "$entry" 2>&1); then
-      info "Registered MCP: $name"
+    # certain machines/versions; don't let MCP setup stall install.sh. The CLI
+    # exit code is not sufficient: verify the user config postcondition too.
+    local replacement_ok=0
+    if with_timeout 30 claude mcp add-json --scope user "$name" "$entry" >/dev/null 2>&1; then
+      # shellcheck disable=SC2016 # jq variables are passed via --arg/--argjson.
+      if json_entry_exists "$HOME/.claude.json" '.mcpServers[$n] == $e' \
+          --arg n "$name" --argjson e "$entry"; then
+        replacement_ok=1
+        info "Registered and verified MCP: $name"
+      else
+        warn "Failed to verify registered MCP postcondition: $name"
+      fi
     else
-      # Surface the CLI's own first line — "blocked by enterprise policy" vs a
-      # timeout need entirely different operator responses.
-      warn "Failed to register MCP: $name — $(printf '%s' "$add_output" | head -n 1)"
+      install_status=$?
+      # add-json receives rendered secrets. Never echo its diagnostics because
+      # a failing CLI may print the full rejected argument back to the caller.
+      warn "Failed to register MCP: $name (exit $install_status; CLI output suppressed to protect rendered secrets)"
+    fi
+
+    if [ "$replacement_ok" -ne 1 ]; then
+      registration_failed=1
+      if [ -n "$old_entry" ]; then
+        # A failed/lying add may still have left a partial entry. Restore the
+        # exact backup through the same verified transaction helper.
+        rollback_status=0
+        if restore_mcp_entry "$name" "$old_entry"; then
+          warn "MCP replacement failed; restored and verified previous config: $name"
+        else
+          rollback_status=$?
+          warn "CRITICAL: MCP rollback failed verification for $name (exit $rollback_status; CLI output suppressed to protect rendered secrets)"
+        fi
+      else
+        # No prior entry existed, so remove any unverified partial registration.
+        with_timeout 30 claude mcp remove --scope user "$name" >/dev/null 2>&1 || true
+      fi
     fi
   done <<< "$names"
+
+  return "$registration_failed"
 }
 
 info "Registering user-scope MCP servers from configs/mcp.json..."

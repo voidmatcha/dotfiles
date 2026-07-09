@@ -1,13 +1,17 @@
 ---
 name: premortem
 description: "Use when about to commit to a plan, rollout, migration, release, hire, or any decision that is costly or hard to reverse — run this before you start, not after. Triggers: 'premortem this', 'what could kill this', 'stress test this plan', 'what am I missing', 'poke holes in this', 'where will this break', '실패 시나리오', '뭐가 잘못될 수 있어', '이 계획 망할 이유'."
+license: MIT
+metadata:
+  dotfiles.provenance.upstream: https://hbr.org/2007/09/performing-a-project-premortem
+  dotfiles.provenance.mode: inspired-by
 ---
 
 # Premortem
 
 Imagine the plan has already failed, then work backward to list why — before you commit. Asking "what could go wrong?" gets hedged answers; assuming failure already happened triggers "prospective hindsight" and surfaces specific, honest failure modes. It is a safety belt before action, not a postmortem after.
 
-Provenance: Mode: inspired-by. Technique: premortem / prospective hindsight (Gary Klein, *Harvard Business Review*, 2007; popularized by Daniel Kahneman). Adapted into a concise local skill; no upstream code copied.
+Provenance: Mode: inspired-by; Upstream: https://hbr.org/2007/09/performing-a-project-premortem; License: MIT for this local skill text. Technique: premortem / prospective hindsight (Gary Klein, *Harvard Business Review*, 2007; popularized by Daniel Kahneman). No upstream code or article text was copied.
 
 Local override: an optional `premortem.local.md` beside this file (gitignored, see plugins/local-skills/CONVENTIONS.md) may add machine-specific checks but must not weaken the honesty or scoring steps.
 

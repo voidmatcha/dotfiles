@@ -102,9 +102,11 @@ link_file() {
 # macOS has no `timeout`; perl's alarm sends SIGALRM after N seconds (exit 142).
 # Use to bound third-party CLIs that may hang on first-run downloads, network
 # stalls, or unexpected interactive prompts — without blocking install.sh.
+# Normalize the wrapper and child to the universally supported C locale: macOS
+# Perl aborts before exec when a parent exports Linux-only C.UTF-8.
 with_timeout() {
   local secs="$1"; shift
-  perl -e 'alarm shift; exec @ARGV' "$secs" "$@"
+  LC_ALL=C LC_CTYPE=C LANG=C perl -e 'alarm shift; exec @ARGV' "$secs" "$@"
 }
 
 # sudo_ok "<description>"
@@ -146,6 +148,24 @@ git_pull_if_clean() {
     return 0
   fi
   git -C "$dir" pull --ff-only --quiet 2>/dev/null || warn "git pull failed: $dir"
+}
+
+# company_overlay_current [dotfiles-root]
+# Proves the submodule is exactly at the parent gitlink and has no local or
+# untracked changes before privileged/private overlay code is executed.
+company_overlay_current() {
+  local root="${1:-$DOTFILES_DIR}" overlay expected actual top dirty
+  overlay="$root/company"
+  command -v git >/dev/null 2>&1 || return 1
+  [ -d "$overlay" ] && [ ! -L "$overlay" ] || return 1
+  git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 1
+  expected="$(git -C "$root" ls-tree HEAD -- company 2>/dev/null | awk '$1 == "160000" && $2 == "commit" { print $3; exit }')"
+  actual="$(git -C "$overlay" rev-parse HEAD 2>/dev/null || true)"
+  [ -n "$expected" ] && [ "$actual" = "$expected" ] || return 1
+  top="$(git -C "$overlay" rev-parse --show-toplevel 2>/dev/null)" || return 1
+  [ "$(cd "$overlay" && pwd -P)" = "$(cd "$top" && pwd -P)" ] || return 1
+  dirty="$(git -C "$overlay" status --porcelain --untracked-files=normal 2>/dev/null)" || return 1
+  [ -z "$dirty" ]
 }
 
 export DOTFILES_DIR DRY_RUN NON_INTERACTIVE UPGRADE

@@ -1,6 +1,6 @@
 ---
 name: agent-usage-audit
-description: "Audit installed Claude/Codex agents, skills, commands, recent session usage, and source-level token pressure to decide what to prune, keep, or route."
+description: "Audit installed Claude/Codex agents, skills, commands, metadata-level reference counts, and source-level token pressure to decide what to prune, keep, or route. This inventory skill does not mine historical correction content or decide the current session's handoff state."
 ---
 
 # Agent Usage Audit
@@ -10,10 +10,17 @@ raw command output, private paths, or project text.
 
 ## Workflows
 
+Resolve the dotfiles checkout explicitly before running its repo-backed helpers:
+
+```bash
+DOTFILES_DIR="${DOTFILES_DIR:-$HOME/work/dotfiles}"
+test -f "$DOTFILES_DIR/scripts/agent_usage_audit.py"
+```
+
 ### Install/usage inventory
 
 ```bash
-python3 scripts/agent_usage_audit.py
+python3 "$DOTFILES_DIR/scripts/agent_usage_audit.py"
 ```
 
 Use this to separate installed local assets, recent usage signals, and gaps where an
@@ -23,7 +30,7 @@ outcomes.
 ### Source-level token pressure
 
 ```bash
-python3 scripts/agent_usage_audit.py session-report --since 7d --format markdown --redact
+python3 "$DOTFILES_DIR/scripts/agent_usage_audit.py" session-report --since 7d --format markdown --redact
 ```
 
 Use this when deciding where token pressure is coming from across RTK, Claude local
@@ -33,7 +40,7 @@ tool-result pressure.
 ### RTK safety signals
 
 ```bash
-python3 scripts/rtk_safety_report.py --since 30d
+python3 "$DOTFILES_DIR/scripts/rtk_safety_report.py" --since 30d
 ```
 
 Use this to inspect fallback, explicit bypass, and repeat-after-compression candidate

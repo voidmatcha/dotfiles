@@ -1,6 +1,6 @@
 ---
 name: worktree-open
-description: "Build a browser VS Code (code-server) link for a git worktree or all worktrees of a repo. Use when the user asks to view, review, or open worktree code in a browser/VS Code."
+description: "Build a browser VS Code (code-server) link for a git worktree or all worktrees of a repo. Use when the user asks to view, review, or open worktree source code in browser VS Code. Do not use to serve reports or build artifacts, and do not start a new preview server."
 ---
 
 # Worktree open (code-server)
@@ -8,12 +8,13 @@ description: "Build a browser VS Code (code-server) link for a git worktree or a
 Use the bundled helper instead of retyping URL logic:
 
 ```bash
-python3 plugins/local-skills/skills/worktree-open/scripts/worktree_open.py [path]
-python3 plugins/local-skills/skills/worktree-open/scripts/worktree_open.py --all [repo-or-worktree]
+SKILL_DIR="/absolute/path/to/worktree-open"
+python3 "$SKILL_DIR/scripts/worktree_open.py" [path]
+python3 "$SKILL_DIR/scripts/worktree_open.py" --all [repo-or-worktree]
 ```
 
-Resolve the script path relative to this `SKILL.md` first. For installed copies,
-that means `scripts/worktree_open.py` next to the skill.
+Set `SKILL_DIR` to the absolute directory containing this `SKILL.md` (use the
+path supplied by the skill loader). The bundled helper then works from any cwd.
 
 ## Address policy
 
@@ -48,13 +49,13 @@ Never create workspace files or artifacts inside the repo.
 
 ```bash
 # Current folder
-python3 scripts/worktree_open.py .
+python3 "$SKILL_DIR/scripts/worktree_open.py" .
 
 # Specific folder from any current working directory
-python3 scripts/worktree_open.py ~/work/some-repo
+python3 "$SKILL_DIR/scripts/worktree_open.py" ~/work/some-repo
 
 # Multi-root dashboard for all worktrees in the repo
-python3 scripts/worktree_open.py --all ~/work/some-repo
+python3 "$SKILL_DIR/scripts/worktree_open.py" --all ~/work/some-repo
 ```
 
 If the URL does not respond, code-server or Tailscale Serve may be down. Check:

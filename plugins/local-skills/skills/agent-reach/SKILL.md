@@ -1,13 +1,19 @@
 ---
 name: agent-reach
 description: "Use public web, GitHub, social/community, video, RSS, and career search surfaces from the CLI/MCP when local repo evidence is not enough. Routes to public-only research tools while avoiding internal/company URLs and secret-bearing pages."
+license: unknown
+compatibility: "Requires public network access; optional gh, mcporter, yt-dlp, and platform-specific CLIs unlock additional channels."
+metadata:
+  dotfiles.provenance.upstream: https://github.com/Panniantong/agent-reach
+  dotfiles.provenance.mode: adapted
+  dotfiles.provenance.local-changes: "Rewritten as a public-only routing skill with company URL guards, local tool fallbacks, and non-mutating health checks."
 ---
 
 # Agent Reach
 
 Use this skill when the task needs current public internet evidence beyond local repository files: web search, page reading, GitHub discovery, social/community signal, video subtitles, RSS, or public career/company pages.
 
-Provenance: Upstream: https://raw.githubusercontent.com/Panniantong/agent-reach/main/docs/install.md; License: unknown; Mode: adapted.
+Provenance: Upstream: https://github.com/Panniantong/agent-reach; License: unknown; Mode: adapted; Local changes: public-only routing, company URL guards, local fallbacks, and non-mutating health checks.
 
 ## Safety boundary
 
@@ -32,9 +38,14 @@ Provenance: Upstream: https://raw.githubusercontent.com/Panniantong/agent-reach/
 ## Quick checks
 
 ```bash
-command -v agent-reach >/dev/null && agent-reach doctor
+command -v agent-reach >/dev/null && agent-reach --version
 command -v gh >/dev/null && gh auth status
 command -v yt-dlp >/dev/null && yt-dlp --version
 ```
+
+Do not use `agent-reach doctor` as a read-only probe. The upstream command may
+re-register its generic skill under `~/.agents/skills` and `~/.claude/skills`,
+overwriting or duplicating this adapted local skill. Run it only during explicit
+upstream setup; afterward reinstall local skills and compare the active trees.
 
 If a command is missing, use the nearest available public alternative and state the gap.

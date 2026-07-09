@@ -1,0 +1,7 @@
+# Historical public OAuth client IDs misclassified by the default Discord rule.
+# Fingerprints are exact finding suppressions; repository paths remain scanned.
+5d7aeaa241f357c0c6f54f1f4c8c1435d3512a6c:scripts/opencode.sh:discord-client-id:44
+5d7aeaa241f357c0c6f54f1f4c8c1435d3512a6c:README.md:discord-client-id:62
+77dd622f0229e12fcf407c24b64f97e1685e054c:configs/opencode/tests/discord-notify.test.ts:discord-client-id:43
+36ba7141710ce09c92da8c17a60e78e7ddd92867:scripts/opencode.sh:discord-client-id:44
+36ba7141710ce09c92da8c17a60e78e7ddd92867:README.md:discord-client-id:62

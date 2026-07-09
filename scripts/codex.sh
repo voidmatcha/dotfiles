@@ -272,9 +272,18 @@ install_codex_config
 if $DRY_RUN; then
   if command -v codex &>/dev/null; then
     info "[dry-run] codex --version"
-    $UPGRADE && info "[dry-run] would: npm i -g @openai/codex@latest oh-my-codex@latest"
+    if $UPGRADE; then
+      info "[dry-run] would: npm install -g @openai/codex@latest"
+      if command -v omx &>/dev/null; then
+        info "[dry-run] would: omx update --stable (upgrade OMX + refresh generated user assets)"
+      else
+        info "[dry-run] would: npm install -g oh-my-codex@latest"
+        info "[dry-run] would: omx update --stable (refresh generated user assets)"
+      fi
+    fi
   else
     info "[dry-run] npm install -g @openai/codex oh-my-codex"
+    $UPGRADE && info "[dry-run] would: omx update --stable after install (refresh generated user assets)"
   fi
   if command -v omx &>/dev/null; then
     info "[dry-run] omx --version"
@@ -287,7 +296,7 @@ if $DRY_RUN; then
     bash "$DOTFILES_DIR/scripts/skills.sh" codex
   fi
   info "[dry-run] codex login status"
-  info "[dry-run] omx setup / omx doctor are manual post-install checks"
+  info "[dry-run] omx setup / omx doctor are manual first-install checks"
   info "Codex CLI + oh-my-codex setup done"
   exit 0
 fi
@@ -298,14 +307,23 @@ fi
 #   npm install -g @openai/codex oh-my-codex
 # `omx doctor` then verifies install shape; `omx setup` provisions native
 # agents and prompts (run interactively on first use).
+codex_upgrade_failed=0
 if command -v codex &>/dev/null; then
   CODEX_VERSION=$(codex --version 2>/dev/null || echo "unknown")
   info "Found codex ${CODEX_VERSION}"
-  # --upgrade: bump codex CLI + oh-my-codex to latest (the version install.sh
-  # otherwise skips once present).
-  if $UPGRADE && command -v npm &>/dev/null; then
-    info "Upgrading codex + oh-my-codex (--upgrade)..."
-    npm install -g @openai/codex@latest oh-my-codex@latest || warn "codex/omx upgrade reported errors (continuing)"
+  # Upgrade Codex itself with npm. OMX must use its supported update command
+  # below because that also refreshes generated prompts/skills/native agents.
+  if $UPGRADE; then
+    if command -v npm &>/dev/null; then
+      info "Upgrading Codex CLI (--upgrade)..."
+      if ! npm install -g @openai/codex@latest; then
+        warn "Codex CLI upgrade failed"
+        codex_upgrade_failed=1
+      fi
+    else
+      warn "npm not found; cannot upgrade Codex CLI"
+      codex_upgrade_failed=1
+    fi
   fi
   if command -v omx &>/dev/null; then
     OMX_VERSION=$(omx --version 2>/dev/null || echo "unknown")
@@ -327,6 +345,35 @@ else
   else
     warn "npm install -g @openai/codex oh-my-codex failed"
     exit 1
+  fi
+fi
+
+if $UPGRADE; then
+  if ! command -v omx &>/dev/null; then
+    if command -v npm &>/dev/null; then
+      info "Installing oh-my-codex before generated-asset refresh..."
+      if ! npm install -g oh-my-codex@latest; then
+        warn "oh-my-codex install failed"
+        codex_upgrade_failed=1
+      fi
+      hash -r 2>/dev/null || true
+    else
+      warn "npm not found; cannot install oh-my-codex"
+      codex_upgrade_failed=1
+    fi
+  fi
+
+  if command -v omx &>/dev/null; then
+    info "Refreshing OMX stable channel and generated user assets..."
+    if with_timeout 600 omx update --stable </dev/null; then
+      info "OMX stable update + generated asset refresh completed"
+    else
+      warn "omx update --stable failed; generated user assets may be stale"
+      codex_upgrade_failed=1
+    fi
+  else
+    warn "omx is unavailable after install; generated user assets were not refreshed"
+    codex_upgrade_failed=1
   fi
 fi
 
@@ -382,7 +429,7 @@ if command -v omx &>/dev/null && ! $DRY_RUN; then
   warn "  1) Provision native agents/prompts/hooks:"
   warn "       omx setup"
   warn "       bash $DOTFILES_DIR/scripts/codex.sh  # normalize machine-local paths afterwards"
-  warn "     (re-run after each \`oh-my-codex\` npm version bump, or use \`omx update\`)"
+  warn "     (--upgrade runs \`omx update --stable\` automatically on later updates)"
   warn ""
   warn "  2) Verify install shape + runtime prerequisites:"
   warn "       omx doctor"
@@ -395,6 +442,11 @@ if command -v omx &>/dev/null && ! $DRY_RUN; then
   warn "       omx --tmux --madmax --high   # opt-in managed tmux/HUD surface"
   warn "  Set OMX_LAUNCH_POLICY=tmux|detached-tmux|auto to override the dotfiles direct default."
   echo ""
+fi
+
+if [ "$codex_upgrade_failed" -ne 0 ]; then
+  warn "Codex/OMX upgrade completed with errors"
+  exit 1
 fi
 
 info "Codex CLI + oh-my-codex setup done"

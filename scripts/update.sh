@@ -22,7 +22,8 @@ source "$(cd "$(dirname "$0")" && pwd)/lib/common.sh"
 #   scripts/update.sh --no-pull  skip the git pull step
 #
 # Honors DRY_RUN. claude-code (the running app / cask) is left for deliberate
-# upgrade. Per-tool failures warn and continue (see each sub-script).
+# upgrade. Independent refresh/install failures are collected so all safe steps
+# run, but the final status remains non-zero when any requested step failed.
 
 APPLY=true
 DO_PULL=true
@@ -44,27 +45,98 @@ USAGE
 done
 $DRY_RUN && APPLY=false
 
-# 1) refresh the dotfiles checkout (symlinked configs then go live immediately)
-if ! $DO_PULL; then
+failure_count=0
+failure_summary=""
+checkout_refresh_failed=0
+skip_company_overlay="${SKIP_COMPANY_OVERLAY:-false}"
+canonical_dotfiles_dir=""
+checkout_root=""
+checkout_status=""
+
+record_failure() {
+  local label="$1"
+  failure_count=$((failure_count + 1))
+  if [ -n "$failure_summary" ]; then
+    failure_summary="$failure_summary, $label"
+  else
+    failure_summary="$label"
+  fi
+  warn "$label failed (continuing to collect remaining results)"
+}
+
+# 1) prove the checkout identity before running any code from it, then refresh
+# it when requested (symlinked configs then go live immediately).
+if ! command -v git &>/dev/null; then
+  record_failure "git checkout validation"
+  checkout_refresh_failed=1
+elif ! canonical_dotfiles_dir="$(cd "$DOTFILES_DIR" 2>/dev/null && pwd -P)"; then
+  warn "cannot resolve dotfiles checkout path: $DOTFILES_DIR"
+  record_failure "git checkout validation"
+  checkout_refresh_failed=1
+elif ! checkout_root="$(git -C "$DOTFILES_DIR" rev-parse --show-toplevel 2>/dev/null)"; then
+  warn "dotfiles path is not a valid git checkout: $DOTFILES_DIR"
+  record_failure "git checkout validation"
+  checkout_refresh_failed=1
+elif [ "$checkout_root" != "$canonical_dotfiles_dir" ]; then
+  warn "dotfiles checkout root mismatch (expected $canonical_dotfiles_dir, git reports $checkout_root)"
+  record_failure "git checkout validation"
+  checkout_refresh_failed=1
+elif ! $DO_PULL; then
   info "git pull: skipped (--no-pull)"
-elif ! command -v git &>/dev/null || ! git -C "$DOTFILES_DIR" rev-parse --is-inside-work-tree &>/dev/null; then
-  warn "git pull skipped (no git / not a repo)"
-elif [ -n "$(git -C "$DOTFILES_DIR" status --porcelain 2>/dev/null)" ]; then
-  warn "dotfiles has uncommitted changes — skipping git pull (commit or stash to refresh)"
+elif ! checkout_status="$(git -C "$DOTFILES_DIR" status --porcelain 2>/dev/null)"; then
+  record_failure "git checkout status"
+  checkout_refresh_failed=1
+elif [ -n "$checkout_status" ]; then
+  record_failure "git pull (dirty checkout)"
+  checkout_refresh_failed=1
 elif $APPLY; then
   info "git pull --ff-only (latest dotfiles)"
-  git -C "$DOTFILES_DIR" pull --ff-only || warn "git pull failed (continuing)"
+  if git -C "$DOTFILES_DIR" pull --ff-only; then
+    info "git pull succeeded"
+  else
+    record_failure "git pull"
+    checkout_refresh_failed=1
+  fi
+
+  # Pulling the parent can change submodule pins. Refresh them before install
+  # so the company overlay is never run from a checkout older than the parent.
+  if [ "$checkout_refresh_failed" -eq 0 ]; then
+    info "git submodule update --init --recursive"
+    if git -C "$DOTFILES_DIR" submodule update --init --recursive; then
+      info "git submodule update succeeded"
+    else
+      record_failure "git submodule update"
+      skip_company_overlay="true"
+    fi
+  else
+    warn "skipping submodule refresh because the parent checkout did not update safely"
+  fi
 else
   info "[check] would: git -C $DOTFILES_DIR pull --ff-only"
+  info "[check] would: git -C $DOTFILES_DIR submodule update --init --recursive"
 fi
 
 # 2) full idempotent setup + per-tool version upgrades
-if $APPLY; then
+if [ "$checkout_refresh_failed" -ne 0 ]; then
+  warn "skipping install.sh because the requested checkout refresh did not complete safely"
+elif $APPLY; then
   info "install.sh --non-interactive --upgrade (setup + version upgrades; skips what's current)"
-  bash "$DOTFILES_DIR/install.sh" --non-interactive --upgrade || warn "install.sh reported errors (continuing)"
+  if SKIP_COMPANY_OVERLAY="$skip_company_overlay" \
+      bash "$DOTFILES_DIR/install.sh" --non-interactive --upgrade; then
+    info "install.sh --upgrade succeeded"
+  else
+    record_failure "install.sh --upgrade"
+  fi
 else
   info "install.sh --dry-run --upgrade (preview — no changes)"
-  bash "$DOTFILES_DIR/install.sh" --dry-run --upgrade || true
+  if ! bash "$DOTFILES_DIR/install.sh" --dry-run --upgrade; then
+    record_failure "install.sh --dry-run --upgrade"
+  fi
 fi
 
-info "done"
+if [ "$failure_count" -gt 0 ]; then
+  warn "completed with $failure_count failure(s): $failure_summary"
+  exit 1
+fi
+
+info "done (all requested update steps completed successfully)"

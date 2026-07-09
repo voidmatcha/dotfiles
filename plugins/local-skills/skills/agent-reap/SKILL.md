@@ -12,13 +12,20 @@ user explicitly approves.
 
 ## Workflow
 
-1. Scan (read-only): `python3 scripts/agent_reap.py` from the dotfiles repo root.
+Resolve the checkout explicitly; never assume the caller's cwd:
+
+```bash
+DOTFILES_DIR="${DOTFILES_DIR:-$HOME/work/dotfiles}"
+test -f "$DOTFILES_DIR/scripts/agent_reap.py"
+```
+
+1. Scan (read-only): `python3 "$DOTFILES_DIR/scripts/agent_reap.py"`.
    - Lower the CPU floor when hunting quieter leaks: `--threshold 30`
    - `--json` for machine-readable output.
 2. Show the candidate table to the user. Each row carries a rule tag explaining
    why it was flagged:
-   - `ORPHAN-INLINE` — ppid 1 interpreter running inline code (`python -c`,
-     `sh -c`, …); its parent shell is dead, the work is pure waste.
+   - `ORPHAN-INLINE` — old, high-CPU ppid 1 interpreter running inline code
+     (`python -c`, `sh -c`, …); both the CPU and `--min-age` gates must pass.
    - `AGENT-CHILD` — long-running high-CPU descendant of a live agent process
      or a Claude shell-snapshot job.
    - `ORPHAN-CPU` — ppid 1 CLI tool (non-app, non-system) pegging the CPU.
@@ -26,7 +33,7 @@ user explicitly approves.
    (AskUserQuestion works well) — `AGENT-CHILD` rows belong to a session that
    is still alive, so name which session loses the work before asking.
 4. Kill only the approved pids:
-   `python3 scripts/agent_reap.py --kill --pids <approved,comma,separated>`
+   `python3 "$DOTFILES_DIR/scripts/agent_reap.py" --kill --pids <approved,comma,separated>`
    - Add `--force` only if SIGTERM survivors remain.
 5. Re-run the scan to verify, and report reclaimed CPU.
 

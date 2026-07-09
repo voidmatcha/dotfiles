@@ -21,6 +21,12 @@ teardown() {
   rm -rf "$TMPDIR_TEST"
 }
 
+run_from_dir() {
+  local dir="$1"
+  shift
+  cd "$dir" && "$@"
+}
+
 @test "bash -n parses all scripts" {
   while IFS= read -r f; do
     run bash -n "$f"
@@ -667,7 +673,7 @@ SH
   cwd="$TMPDIR_TEST/work"
   mkdir -p "$cwd"
   cat > "$state" <<JSON
-{"version":1,"sessions":{"old-session":{"cwd":"$cwd","turns":2,"last_prompt_at":0}}}
+{"version":1,"sessions":{"old-session":{"cwd":"$cwd","turns":100,"last_prompt_at":0}}}
 JSON
 
   run env CONTEXT_CHECK_STATE="$state" CONTEXT_CHECK_NOW=7200 \
@@ -681,6 +687,8 @@ data = json.load(sys.stdin)
 assert data["recommendation"]["action"] == "continue", data
 stored = [s for s in data["signals"] if s["name"] == "stored_idle"][0]
 assert stored["severity"] == "info", stored
+stored_turns = [s for s in data["signals"] if s["name"] == "stored_turns"][0]
+assert stored_turns["severity"] == "info", stored_turns
 '
 }
 
@@ -1266,6 +1274,35 @@ for required in ['runtime=1', 'ghostty', 'tty=', 'smoke marker', 'coordinator.lo
 PY
 }
 
+@test "Korean terminology review stays separate from session feedback audit" {
+  python3 - <<PY
+import json
+from pathlib import Path
+
+root = Path('$REPO_ROOT')
+skills = root / 'plugins/local-skills/skills'
+terminology = (skills / 'korean-technical-terminology/SKILL.md').read_text()
+audit = (skills / 'session-feedback-audit/SKILL.md').read_text()
+claude = json.loads((root / 'plugins/local-skills/.claude-plugin/plugin.json').read_text())
+codex = json.loads((root / 'plugins/local-skills/.codex-plugin/plugin.json').read_text())
+
+for required in ['Canonical English', 'Established Korean', 'Natural rewrite', 'references/decision-guide.md', 'same project and domain']:
+    assert required in terminology, required
+assert 'JSONL' not in terminology
+assert 'JSONL session logs' in audit
+assert 'Latin script as proof of English' in audit
+assert '--min-files' in audit
+assert 'Canonical English' not in audit
+for manifest in (claude, codex):
+    assert 'korean-technical-terminology' in manifest['keywords']
+    assert 'session-feedback-audit' in manifest['keywords']
+    assert 'korean-slop-jsonl-audit' not in manifest['keywords']
+    assert 'ai-slop' not in manifest['keywords']
+assert any('korean-technical-terminology' in prompt for prompt in codex['interface']['defaultPrompt'])
+assert any('session-feedback-audit' in prompt for prompt in codex['interface']['defaultPrompt'])
+PY
+}
+
 @test "worktree-open skill prefers Tailscale Serve links before local fallback" {
   skill="$REPO_ROOT/plugins/local-skills/skills/worktree-open/SKILL.md"
   helper="$REPO_ROOT/plugins/local-skills/skills/worktree-open/scripts/worktree_open.py"
@@ -1455,6 +1492,12 @@ PY
   ! grep -q 'codex@openai-codex' "$REPO_ROOT/scripts/claude.sh"
   grep -q 'claude-hud@claude-hud' "$REPO_ROOT/configs/claude-settings.json"
   grep -q 'skills-janitor@skills-janitor' "$REPO_ROOT/configs/claude-settings.json"
+  grep -q 'frontend-design@claude-plugins-official' "$REPO_ROOT/scripts/claude.sh"
+  grep -q 'frontend-design@claude-plugins-official' "$REPO_ROOT/configs/claude-settings.json"
+  run grep -F 'anthropics/skills@frontend-design' "$REPO_ROOT/scripts/claude.sh"
+  [ "$status" -eq 1 ]
+  grep -q '"ui-design@claude-code-workflows": false' "$REPO_ROOT/configs/claude-settings.json"
+  grep -q '"accessibility-compliance@claude-code-workflows": false' "$REPO_ROOT/configs/claude-settings.json"
   grep -q 'security-guidance@claude-plugins-official' "$REPO_ROOT/configs/claude-settings.json"
   grep -q 'review-loop@hamel-review' "$REPO_ROOT/configs/claude-settings.json"
   grep -q 'claude-mem@thedotmack' "$REPO_ROOT/configs/claude-settings.json"
@@ -1515,6 +1558,8 @@ exit 0
 SH
     chmod +x "$bin/$cmd"
   done
+  ln -s "$(command -v jq)" "$bin/jq"
+  ln -s "$(command -v envsubst)" "$bin/envsubst"
 
   run bash -c "env HOME='$home' DOTFILES_DIR='$dotfiles' DRY_RUN=false NON_INTERACTIVE=true UI_CLONE_INSTALL_DIR='$ui_clone' PATH='$bin:/usr/bin:/bin' bash '$REPO_ROOT/scripts/claude.sh'"
 
@@ -1932,17 +1977,17 @@ JSON
   [ "$status" -eq 0 ]
   [[ "$output" == *'"complete": false'* ]]
 
-  run env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$gitcfg" \
+  run run_from_dir "$work" env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$gitcfg" \
     python3 "$helper" ack --run-dir "$run_dir" --target omx --summary understood --next-action continue
   [ "$status" -eq 0 ]
-  run env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$gitcfg" \
+  run run_from_dir "$work" env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$gitcfg" \
     python3 "$helper" ack --run-dir "$run_dir" --target claude --summary understood --next-action continue
   [ "$status" -eq 0 ]
   run python3 "$helper" confirm --run-dir "$run_dir"
   [ "$status" -eq 0 ]
-  run python3 "$helper" ready --run-dir "$run_dir" --target omx
+  run run_from_dir "$work" python3 "$helper" ready --run-dir "$run_dir" --target omx
   [ "$status" -eq 0 ]
-  run python3 "$helper" ready --run-dir "$run_dir" --target claude
+  run run_from_dir "$work" python3 "$helper" ready --run-dir "$run_dir" --target claude
   [ "$status" -eq 0 ]
   run python3 "$helper" validate --run-dir "$run_dir"
   [ "$status" -eq 0 ]
@@ -1968,7 +2013,7 @@ JSON
   [ "$status" -eq 0 ]
 
   run_dir="$work/.omx/artifacts/handover-fast"
-  run env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$gitcfg" \
+  run run_from_dir "$work" env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$gitcfg" \
     python3 "$helper" ready --run-dir "$run_dir" --target omx \
       --summary "read package" --next-action "continue now"
   [ "$status" -eq 0 ]
@@ -2007,7 +2052,7 @@ SH
   [ "$status" -eq 0 ]
 
   run_dir="$work/.omx/artifacts/close-fail"
-  run env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$gitcfg" \
+  run run_from_dir "$work" env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$gitcfg" \
     python3 "$helper" ready --run-dir "$run_dir" --target omx \
       --summary "read package" --next-action "continue now"
   [ "$status" -eq 0 ]
@@ -2410,17 +2455,35 @@ PY
   preview_dir="$TMPDIR_TEST/local-preview-tailnet"
   bin="$TMPDIR_TEST/local-preview-bin"
   tailscale_log="$TMPDIR_TEST/tailscale.log"
+  tailscale_state="$TMPDIR_TEST/tailscale.state"
   mkdir -p "$preview_dir" "$bin"
   printf 'tailnet preview' > "$preview_dir/index.html"
 
   cat > "$bin/tailscale" <<'SH'
-#!/bin/sh
+#!/bin/bash
 printf '%s\n' "$*" >> "$TAILSCALE_LOG"
+if [ "$1 $2 $3" = "serve status --json" ]; then
+  if [ -f "$TAILSCALE_STATE" ]; then
+    port="$(cat "$TAILSCALE_STATE")"
+    printf '{"TCP":{"%s":{"HTTP":true}},"Web":{"127.0.0.1:%s":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:%s"}}}}}\n' \
+      "$port" "$port" "$port"
+  else
+    printf '{}\n'
+  fi
+  exit 0
+fi
 if [ "$1" = "serve" ]; then
+  if [ "${!#}" = "off" ]; then
+    rm -f "$TAILSCALE_STATE"
+  else
+    for arg in "$@"; do
+      case "$arg" in --http=*) printf '%s\n' "${arg#--http=}" > "$TAILSCALE_STATE" ;; esac
+    done
+  fi
   exit 0
 fi
 if [ "$1" = "status" ] && [ "$2" = "--json" ]; then
-  printf '{"Self":{"DNSName":""}}'
+  printf '{"Self":{"DNSName":"127.0.0.1"}}'
   exit 0
 fi
 if [ "$1" = "ip" ] && [ "$2" = "-4" ]; then
@@ -2432,7 +2495,7 @@ SH
   chmod +x "$bin/tailscale"
 
   port="$(free_tcp_port)"
-  run env TAILSCALE_LOG="$tailscale_log" PATH="$bin:/usr/bin:/bin" \
+  run env TAILSCALE_LOG="$tailscale_log" TAILSCALE_STATE="$tailscale_state" PATH="$bin:/usr/bin:/bin" \
     "$helper" start --path "$preview_dir" --port "$port" --tailscale-serve
 
   [ "$status" -eq 0 ]
@@ -2440,9 +2503,10 @@ SH
   [ "$(extract_key_value TAILNET_URL "$output")" = "http://127.0.0.1:$port/" ]
   grep -q -- "serve --bg --http=$port --set-path=/ http://127.0.0.1:$port" "$tailscale_log"
 
-  run env TAILSCALE_LOG="$tailscale_log" PATH="$bin:/usr/bin:/bin" "$helper" stop --port "$port"
+  run env TAILSCALE_LOG="$tailscale_log" TAILSCALE_STATE="$tailscale_state" PATH="$bin:/usr/bin:/bin" \
+    "$helper" stop --port "$port"
   [ "$status" -eq 0 ]
-  grep -q -- "serve --http=$port off" "$tailscale_log"
+  grep -q -- "serve --bg --http=$port --set-path=/ off" "$tailscale_log"
 }
 
 @test "rtk safety report counts fallback bypass and rerun candidates" {
@@ -2607,7 +2671,7 @@ JSONL
   [ "$status" -eq 0 ]
 
   run_dir="$work/.omx/artifacts/close-no-cmux"
-  run env -u CMUX_WORKSPACE_ID -u CMUX_SURFACE_ID python3 "$helper" ready \
+  run run_from_dir "$work" env -u CMUX_WORKSPACE_ID -u CMUX_SURFACE_ID python3 "$helper" ready \
     --run-dir "$run_dir" \
     --target codex \
     --summary "ready" \
@@ -2677,7 +2741,7 @@ JSONL
   mkdir -p "$home" "$bin"
   cat > "$bin/gitleaks" <<'SH'
 #!/bin/sh
-printf '%s\n' "$*" > "$HOME/gitleaks-args.txt"
+printf '%s\n' "$*" >> "$HOME/gitleaks-args.txt"
 exit 0
 SH
   chmod +x "$bin/gitleaks"
@@ -2686,7 +2750,8 @@ SH
     bash "$REPO_ROOT/scripts/secret-scan.sh" --required
 
   [ "$status" -eq 0 ]
-  [ "$(cat "$home/gitleaks-args.txt")" = "detect --source $REPO_ROOT --no-git --redact --verbose" ]
+  grep -Fqx "detect --source $REPO_ROOT --config $REPO_ROOT/.gitleaks-worktree.toml --no-git --redact --verbose" "$home/gitleaks-args.txt"
+  grep -Fqx "git $REPO_ROOT --config $REPO_ROOT/.gitleaks.toml --log-opts --all --redact --verbose" "$home/gitleaks-args.txt"
 }
 
 @test "doctor reports advisory dotfiles health snapshot" {

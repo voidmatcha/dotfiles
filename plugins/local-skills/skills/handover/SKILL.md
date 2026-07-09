@@ -5,7 +5,7 @@ description: "Hand off current work to fresh Claude/Codex/OMX sessions or visibl
 
 # Handover
 
-Use this when the user wants current work moved to a new agent session/tab, Claude/Codex/OMX continuation, visible display-backed agent tabs, cross-agent coordination, or verified source-tab closure. Trigger phrases include `handover:omx`, `handover:claude`, `handover:codex`, "handover", "handoff", "새 세션", "새 탭에서 이어서", "Claude/Codex 번갈아", "서로 다른 LLM끼리 관찰", "교차 검증", "omx/claude로 넘겨", or "넘어가면 현재 탭 닫아".
+Use this when the user wants current work moved to a new agent session/tab, Claude/Codex/OMX continuation, visible display-backed agent tabs, cross-agent coordination that explicitly needs a fresh session, or verified source-tab closure. Trigger phrases include `handover:omx`, `handover:claude`, `handover:codex`, "handover", "handoff", "새 세션", "새 탭에서 이어서", "Claude/Codex 번갈아", "서로 다른 LLM끼리 관찰", "omx/claude로 넘겨", or "넘어가면 현재 탭 닫아".
 
 For ambiguous "continue/compact/clear/handoff?" questions, use `context-check` first; use this skill only after the decision is to hand off, self-refresh from a durable package, or launch a fresh/visible receiver.
 
@@ -56,6 +56,14 @@ Never close the current tab/session before READY is validated for every target. 
 
 ## Workflow
 
+Set `SKILL_DIR` to the absolute directory containing this `SKILL.md` (use the
+path supplied by the skill loader). Every helper command below is then safe to
+run from the target repository rather than the dotfiles checkout:
+
+```bash
+SKILL_DIR="/absolute/path/to/handover"
+```
+
 1. Resolve targets:
    - Explicit tags win: `handover:omx`, `handover:claude`, `handover:codex`, or combined forms like `handover:omx,claude`.
    - Without tags, infer from natural language: "omx랑 claude", "클로드로 넘겨", "codex 새 탭".
@@ -64,7 +72,7 @@ Never close the current tab/session before READY is validated for every target. 
 3. Create the handoff package:
 
    ```bash
-   python3 plugins/local-skills/skills/handover/scripts/handover.py init \
+   python3 "$SKILL_DIR/scripts/handover.py" init \
      --target-from "<raw user handover request, if available>" \
      --handshake fast \
      --target omx --target claude \
@@ -98,7 +106,7 @@ Never close the current tab/session before READY is validated for every target. 
 5. From the source session, wait and repair until the handshake completes:
 
    ```bash
-   python3 plugins/local-skills/skills/handover/scripts/handover.py wait \
+   python3 "$SKILL_DIR/scripts/handover.py" wait \
      --run-dir .omx/artifacts/handover-<UTC>-<random> \
      --timeout 900 \
      --interval 5
@@ -114,7 +122,7 @@ Never close the current tab/session before READY is validated for every target. 
 7. Close the source tab only after validation passes:
 
    ```bash
-   python3 plugins/local-skills/skills/handover/scripts/handover.py close-current \
+   python3 "$SKILL_DIR/scripts/handover.py" close-current \
      --run-dir .omx/artifacts/handover-<UTC>-<random> \
      --execute
    ```

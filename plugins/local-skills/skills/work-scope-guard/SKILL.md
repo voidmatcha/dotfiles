@@ -9,8 +9,15 @@ Use the tracked hook and keep it generic; do not hardcode secrets.
 
 ## Workflow
 
-1. Inspect `configs/hooks/work-scope-guard.sh` and `configs/claude-settings.json`.
-2. Verify the hook is linked by `install.sh` into `~/.claude/hooks/work-scope-guard.sh`.
+Resolve the checkout explicitly; never assume the caller's cwd:
+
+```bash
+DOTFILES_DIR="${DOTFILES_DIR:-$HOME/work/dotfiles}"
+test -f "$DOTFILES_DIR/configs/hooks/work-scope-guard.sh"
+```
+
+1. Inspect `$DOTFILES_DIR/configs/hooks/work-scope-guard.sh` and `$DOTFILES_DIR/configs/claude-settings.json`.
+2. Verify the hook is linked by `$DOTFILES_DIR/install.sh` into `~/.claude/hooks/work-scope-guard.sh`.
 3. Test with a synthetic hook payload and a temporary work-like cwd when changing behavior.
 4. Keep output advisory and fail-open. This guard must remind, not block ordinary tools.
 

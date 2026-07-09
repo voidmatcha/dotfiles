@@ -33,9 +33,12 @@ Jina Reader is often blocked by WeChat CAPTCHA; Exa crawl or a local browser wor
 ## RSS
 
 ```bash
-python3 - <<'PY'
-import feedparser
-for e in feedparser.parse('FEED_URL').entries[:5]:
-    print(f'{e.title} — {e.link}')
-PY
+FEED_URL="https://example.com/feed.xml"
+curl --proto '=https' --proto-redir '=https' --location --fail --silent --show-error \
+  --max-time 20 "$FEED_URL" \
+  | python3 "$SKILL_DIR/scripts/parse_feed.py" --limit 5
 ```
+
+The bundled parser accepts RSS and Atom XML on stdin and uses only the Python
+standard library. This avoids assuming that the caller's Python environment has
+`feedparser` installed. Fetch public HTTPS feeds only.

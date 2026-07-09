@@ -107,14 +107,15 @@ check_purplemux() {
 }
 
 check_local_bin_links() {
-  local broken count
+  local broken count local_bin_label
+  local_bin_label="$HOME/.local/bin"
   broken="$(find "$HOME/.local/bin" -maxdepth 1 -type l ! -exec test -e {} \; -print 2>/dev/null || true)"
   if [ -z "$broken" ]; then
-    ok "~/.local/bin has no broken symlinks"
+    ok "$local_bin_label has no broken symlinks"
     return
   fi
   count="$(printf '%s\n' "$broken" | wc -l | tr -d ' ')"
-  warn_check "~/.local/bin has $count broken symlink(s): $(printf '%s' "$broken" | tr '\n' ' ')"
+  warn_check "$local_bin_label has $count broken symlink(s): $(printf '%s' "$broken" | tr '\n' ' ')"
   warn_check "clean with: find ~/.local/bin -maxdepth 1 -type l ! -exec test -e {} \\; -delete"
 }
 

@@ -412,6 +412,7 @@ PY
         exit 1
       fi
       if config_has_headroom_marker; then
+        sanitize_headroom_model_provider
         printf '%s %s %s\n' "$$" "$port" "$target" > "$session_file"
         session_registered=1
         release_config_lock

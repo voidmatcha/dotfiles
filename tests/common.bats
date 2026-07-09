@@ -117,6 +117,12 @@ teardown() {
   [ "$status" -ne 0 ]
 }
 
+@test "with_timeout normalizes an unsupported inherited locale" {
+  run env LC_ALL=dotfiles_INVALID LC_CTYPE=dotfiles_INVALID LANG=dotfiles_INVALID \
+    bash -c "source '$COMMON'; with_timeout 5 sh -c 'test \"\$LC_ALL\" = C && test \"\$LC_CTYPE\" = C && test \"\$LANG\" = C'"
+  [ "$status" -eq 0 ]
+}
+
 @test "with_timeout kills slow command (exit 142 on SIGALRM)" {
   run bash -c "source '$COMMON'; with_timeout 1 sleep 5"
   # SIGALRM (perl alarm) terminates the process; exit code is 128+14=142.

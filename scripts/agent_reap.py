@@ -7,10 +7,9 @@ those children get reparented to launchd and can spin at 100% CPU forever with
 nobody left to read their output.
 
 Detection rules (every candidate row is tagged with one):
-  ORPHAN-INLINE  ppid==1 and the command is an interpreter running inline code
-                 (python -c / python - / sh -c / node -e ...). Humans don't
-                 launch stdin-script interpreters from launchd; a dead parent
-                 shell did.
+  ORPHAN-INLINE  ppid==1, old and high-CPU, and the command is an interpreter
+                 running inline code (python -c / python - / sh -c / node -e
+                 ...). Age and CPU gates avoid flagging legitimate launchd jobs.
   AGENT-CHILD    descendant of a live agent process, or spawned via a Claude
                  shell snapshot, pegging the CPU for longer than --min-age.
   ORPHAN-CPU     ppid==1 plain CLI tool (not a .app or system binary) pegging
@@ -34,11 +33,13 @@ import getpass
 import json
 import os
 import re
+import shlex
 import signal
 import subprocess
 import sys
 import time
 from collections import namedtuple
+from pathlib import Path
 
 Proc = namedtuple("Proc", "pid ppid pcpu etime user args")
 
@@ -124,9 +125,10 @@ def classify(p, anc_chain, procs, threshold, min_age_s, me):
         and INLINE_INTERP_RE.match(base)
         and tokens[1] in INLINE_FLAGS
     )
-    if p.ppid == 1 and inline:
+    aged_and_hot = p.pcpu >= threshold and etime_seconds(p.etime) >= min_age_s
+    if p.ppid == 1 and inline and aged_and_hot:
         return "ORPHAN-INLINE"
-    if p.pcpu >= threshold and etime_seconds(p.etime) >= min_age_s:
+    if aged_and_hot:
         if any(m in p.args for m in AGENT_SPAWN_MARKERS):
             return "AGENT-CHILD"
         for a in anc_chain:
@@ -190,8 +192,10 @@ def print_table(candidates):
     for r in rows:
         print(fmt.format(*r))
     pids = ",".join(str(p.pid) for _, p in candidates)
+    interpreter = shlex.quote(sys.executable or "python3")
+    script = shlex.quote(str(Path(__file__).resolve()))
     print(f"\n{len(candidates)} candidate(s). To kill after confirming:")
-    print(f"  python3 scripts/agent_reap.py --kill --pids {pids}")
+    print(f"  {interpreter} {script} --kill --pids {pids}")
 
 
 def do_kill(candidates, pids, force):

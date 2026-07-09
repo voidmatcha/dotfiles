@@ -30,6 +30,7 @@ brew "vercel-cli"               # Vercel deployment CLI
 brew "postgresql@18"            # PostgreSQL database (pinned major; keg-only — link/PATH as needed)
 brew "mole"
 brew "bats-core"                # Bash Automated Testing System
+brew "shellcheck"               # shell lint used by local and CI verification
 brew "gitleaks" # secret scanner for dotfiles pre-push checks
 brew "pipx"                     # isolated Python CLI installer (used for twitter-cli, rdt-cli)
 brew "oven-sh/bun/bun"          # Bun JS runtime — required by claude-mem@thedotmack hooks (scripts/bun-runner.js)

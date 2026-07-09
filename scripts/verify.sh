@@ -18,8 +18,8 @@ case "${1:-}" in
     cat <<'USAGE'
 Usage: scripts/verify.sh [--quick|--full]
 
---quick  shell syntax, JSON/TOML/plist parsing, plugin manifests, diff whitespace
---full   quick checks plus Bats when available (default)
+--quick  syntax, Python unit tests, config/plugin validation, diff whitespace
+--full   quick checks plus the required Bats suite (default)
 USAGE
     exit 0
     ;;
@@ -40,12 +40,63 @@ if command -v zsh &>/dev/null && [ -f configs/.zshrc ]; then
   zsh -n configs/.zshrc
 fi
 
+if command -v shellcheck &>/dev/null; then
+  info "ShellCheck"
+  while IFS= read -r file; do
+    shellcheck -S warning -e SC1091 -x "$file"
+  done < <(
+    {
+      printf '%s\n' install.sh bootstrap.sh update.sh
+      find scripts configs/hooks plugins/local-skills/skills -type f -name '*.sh'
+    } | sort -u
+  )
+elif [ "$mode" = "full" ]; then
+  error "--full requires shellcheck; install it via the Brewfile"
+  exit 1
+else
+  warn "shellcheck not found; skipped shell lint in quick mode"
+fi
+
 info "Python syntax"
 python_cache_dir="$(mktemp -d)"
 while IFS= read -r file; do
   PYTHONPYCACHEPREFIX="$python_cache_dir" python3 -m py_compile "$file"
 done < <(find scripts plugins/local-skills/skills -type f -name '*.py' | sort)
 rm -rf "$python_cache_dir"
+
+info "Python unit tests"
+while IFS= read -r test_dir; do
+  PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$test_dir" -p 'test_*.py'
+done < <(
+  {
+    find tests -type f -name 'test_*.py' -exec dirname {} \;
+    find plugins/local-skills/skills -type f -path '*/tests/test_*.py' -exec dirname {} \;
+  } | sort -u
+)
+
+info "skill frontmatter"
+python3 - <<'PY'
+import re
+from pathlib import Path
+
+skills = sorted(Path('plugins/local-skills/skills').glob('*/SKILL.md'))
+if not skills:
+    raise SystemExit('no local skills found')
+for skill in skills:
+    text = skill.read_text(encoding='utf-8')
+    match = re.search(r'\A---\n(.*?)\n---(?:\n|\Z)', text, re.S)
+    if not match:
+        raise SystemExit(f'missing YAML frontmatter: {skill}')
+    name = re.search(r'^name:\s*([^\s]+)\s*$', match.group(1), re.M)
+    description = re.search(r'^description:\s*["\']?(.*?)["\']?\s*$', match.group(1), re.M)
+    if not name or not description:
+        raise SystemExit(f'missing name/description: {skill}')
+    if name.group(1) != skill.parent.name:
+        raise SystemExit(f'name does not match directory: {skill}')
+    if '<' in description.group(1) or '>' in description.group(1):
+        raise SystemExit(f'description contains angle bracket rejected by skill validator: {skill}')
+print(f'validated {len(skills)} skill frontmatter file(s)')
+PY
 
 info "JSON manifests/configs"
 python3 - <<'PY'
@@ -271,7 +322,8 @@ if [ "$mode" = "full" ]; then
     info "Bats smoke tests"
     env LC_ALL=C LANG=C LC_CTYPE=C bats tests
   else
-    warn "bats not found; skipped Bats smoke tests"
+    error "--full requires bats; install bats-core before claiming full verification"
+    exit 1
   fi
 fi
 

@@ -1,0 +1,20 @@
+# Worktree-only policy: skip machine-local runtime/cache trees that are ignored
+# by git. Never use this config for repository-history or CI commit scans.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "dotfiles runtime/cache directories ignored by git"
+paths = [
+  '''(^|/)\.git/''',
+  '''(^|/)\.omx/''',
+  '''(^|/)\.serena/''',
+  '''(^|/)\.codegraph/''',
+  '''(^|/)\.sisyphus/''',
+  '''(^|/)__pycache__/''',
+  '''(^|/)\.pytest_cache/''',
+  '''(^|/)\.mypy_cache/''',
+  '''(^|/)\.ruff_cache/''',
+  '''(^|/)reviews/''',
+  '''(^|/)\.claude/hooks/\.logs/''',
+]

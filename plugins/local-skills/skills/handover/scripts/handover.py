@@ -10,8 +10,10 @@ import re
 import secrets
 import shlex
 import socket
+import stat
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,7 +32,9 @@ TARGET_ALIASES = {
     "codex": "codex",
     "코덱스": "codex",
 }
-TARGET_TAG_RE = re.compile(r"\b(?:handover|handoff|hand-over)\s*:\s*([A-Za-z0-9_,+|/-]+)", re.IGNORECASE)
+TARGET_TAG_RE = re.compile(r"\b(?:handover|handoff|hand-over)\s*:\s*([^\s]+)", re.IGNORECASE)
+SAFE_SLUG_RE = re.compile(r"[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?")
+MAX_SLUG_LENGTH = 128
 
 
 def utc_now() -> str:
@@ -53,6 +57,29 @@ def unique(values: list[str]) -> list[str]:
     return result
 
 
+def require_safe_slug(value: str, label: str) -> str:
+    if not isinstance(value, str):
+        raise SystemExit(f"{label} must be a string")
+    if not value or len(value) > MAX_SLUG_LENGTH or ".." in value or SAFE_SLUG_RE.fullmatch(value) is None:
+        raise SystemExit(
+            f"{label} must be a safe lowercase slug using letters, digits, '.', '_', or '-' "
+            "without leading/trailing separators or '..'"
+        )
+    return value
+
+
+def ensure_within(root: Path, candidate: Path, label: str) -> Path:
+    root = root.resolve()
+    candidate = candidate.resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError as exc:
+        raise SystemExit(f"{label} escapes its allowed root: {root}") from exc
+    if candidate == root:
+        raise SystemExit(f"{label} must be below its allowed root: {root}")
+    return candidate
+
+
 def normalize_target(value: str) -> str:
     normalized = re.sub(r"\s+", " ", value.strip().lower())
     return TARGET_ALIASES.get(normalized, normalized)
@@ -66,7 +93,10 @@ def infer_targets_from_text(text: str) -> tuple[list[str], bool]:
     """Return (targets, explicit) where explicit means handover:<target> syntax was used."""
     explicit: list[str] = []
     for match in TARGET_TAG_RE.finditer(text):
-        explicit.extend(split_target_list(match.group(1)))
+        tagged = match.group(1).rstrip(",;:!?")
+        if tagged.endswith(".") and not tagged.endswith(".."):
+            tagged = tagged[:-1]
+        explicit.extend(split_target_list(tagged))
     if explicit:
         return unique(explicit), True
 
@@ -82,12 +112,16 @@ def resolve_targets(cli_targets: list[str], target_from: str) -> tuple[list[str]
     cli = [normalize_target(target) for target in cli_targets]
     inferred, explicit = infer_targets_from_text(target_from)
     if explicit:
-        return unique(cli + inferred), "explicit-tag"
-    if cli:
-        return unique(cli), "cli-target"
-    if inferred:
-        return inferred, "text-inferred"
-    return ["omx"], "default"
+        targets, source = unique(cli + inferred), "explicit-tag"
+    elif cli:
+        targets, source = unique(cli), "cli-target"
+    elif inferred:
+        targets, source = inferred, "text-inferred"
+    else:
+        targets, source = ["omx"], "default"
+    for target in targets:
+        require_safe_slug(target, "target")
+    return targets, source
 
 
 def shell_join(parts: list[str]) -> str:
@@ -164,11 +198,36 @@ def git_snapshot(cwd: Path) -> dict[str, Any]:
     }
 
 
+def ensure_private_dir(path: Path) -> None:
+    if path.is_symlink():
+        raise SystemExit(f"private artifact directory must not be a symlink: {path}")
+    path.mkdir(parents=True, mode=0o700, exist_ok=True)
+    if path.is_symlink() or not path.is_dir():
+        raise SystemExit(f"private artifact path is not a directory: {path}")
+    if path.stat().st_uid != os.geteuid():
+        raise SystemExit(f"private artifact directory is not owned by the current user: {path}")
+    path.chmod(0o700)
+
+
 def atomic_write_text(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.tmp.{os.getpid()}")
-    tmp.write_text(text, encoding="utf-8")
-    tmp.replace(path)
+    ensure_private_dir(path.parent)
+    fd, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.tmp.", dir=str(path.parent))
+    temporary = Path(temporary_name)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if path.is_symlink():
+            raise SystemExit(f"private artifact file must not be a symlink: {path}")
+        os.replace(temporary, path)
+        path.chmod(0o600)
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def write_json(path: Path, data: dict[str, Any]) -> None:
@@ -179,12 +238,31 @@ def read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def read_private_object(path: Path, label: str) -> dict[str, Any]:
+    if path.is_symlink():
+        raise ValueError(f"{label} must not be a symlink")
+    info = path.stat()
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
+        raise ValueError(f"{label} must be a user-owned regular file")
+    data = read_json(path)
+    if not isinstance(data, dict):
+        raise ValueError(f"{label} must contain an object")
+    return data
+
+
 def append_event(run_dir: Path, event: str, **fields: Any) -> None:
     payload = {"at": utc_now(), "event": event, **fields}
     path = run_dir / "state.jsonl"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as handle:
+    ensure_private_dir(path.parent)
+    if path.is_symlink():
+        raise SystemExit(f"private event log must not be a symlink: {path}")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(path, flags, 0o600)
+    os.fchmod(fd, 0o600)
+    with os.fdopen(fd, "a", encoding="utf-8") as handle:
         handle.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
 
 
 def source_identity(args: argparse.Namespace, cwd: Path) -> dict[str, Any]:
@@ -203,15 +281,47 @@ def load_handoff(run_dir: Path) -> dict[str, Any]:
     path = run_dir / "handoff.json"
     if not path.exists():
         raise SystemExit(f"handoff.json not found: {path}")
-    return read_json(path)
+    if path.is_symlink():
+        raise SystemExit(f"handoff.json must not be a symlink: {path}")
+    handoff = read_json(path)
+    if not isinstance(handoff, dict):
+        raise SystemExit(f"handoff.json must contain an object: {path}")
+    if handoff.get("schema_version") != SCHEMA_VERSION:
+        raise SystemExit(f"handoff.json has unsupported schema_version: {handoff.get('schema_version')}")
+    require_safe_slug(handoff.get("run_id"), "handoff run_id")
+    if handoff.get("handshake") not in {"fast", "verified"}:
+        raise SystemExit("handoff handshake must be 'fast' or 'verified'")
+    token = handoff.get("token")
+    if not isinstance(token, str) or len(token) < 20:
+        raise SystemExit("handoff token is missing or invalid")
+    cwd = handoff.get("cwd")
+    if not isinstance(cwd, str) or not cwd or not Path(cwd).is_absolute():
+        raise SystemExit("handoff cwd must be a non-empty absolute path")
+    raw_targets = handoff.get("targets")
+    if not isinstance(raw_targets, list) or not raw_targets:
+        raise SystemExit("handoff targets must be a non-empty list")
+    names: list[str] = []
+    for index, item in enumerate(raw_targets):
+        if not isinstance(item, dict):
+            raise SystemExit(f"handoff target at index {index} must be an object")
+        names.append(require_safe_slug(item.get("name"), f"handoff target at index {index}"))
+    if len(names) != len(set(names)):
+        raise SystemExit("handoff targets must be unique")
+    return handoff
 
 
 def target_names(handoff: dict[str, Any]) -> list[str]:
-    return [item["name"] for item in handoff.get("targets", [])]
+    names = [item["name"] for item in handoff.get("targets", [])]
+    return [require_safe_slug(name, "handoff target") for name in names]
 
 
 def target_dir(run_dir: Path, target: str) -> Path:
-    return run_dir / "targets" / target
+    target = require_safe_slug(target, "target")
+    targets_root = run_dir / "targets"
+    candidate = targets_root / target
+    if targets_root.is_symlink() or candidate.is_symlink():
+        raise SystemExit("handoff target path must not contain symlinks")
+    return ensure_within(run_dir, candidate, "handoff target path")
 
 
 def handshake_mode(handoff: dict[str, Any]) -> str:
@@ -359,10 +469,17 @@ Source cwd: `{handoff['cwd']}`
 def cmd_init(args: argparse.Namespace) -> int:
     cwd = Path(args.cwd).expanduser().resolve()
     targets, target_source = resolve_targets(args.target or [], args.target_from or "")
-    run_id = args.run_id or default_run_id()
-    run_dir = (Path(args.out_root) / run_id).resolve() if Path(args.out_root).is_absolute() else (cwd / args.out_root / run_id).resolve()
+    run_id = require_safe_slug(args.run_id or default_run_id(), "run id")
+    out_root_arg = Path(args.out_root).expanduser()
+    out_root = out_root_arg.resolve() if out_root_arg.is_absolute() else (cwd / out_root_arg).resolve()
+    run_candidate = out_root / run_id
+    if run_candidate.is_symlink():
+        raise SystemExit(f"run directory must not be a symlink: {run_candidate}")
+    run_dir = ensure_within(out_root, run_candidate, "run directory")
     if run_dir.exists() and not args.force:
         raise SystemExit(f"run directory already exists: {run_dir} (use --force to overwrite)")
+    if run_dir.exists() and not run_dir.is_dir():
+        raise SystemExit(f"run directory is not a directory: {run_dir}")
 
     token = secrets.token_urlsafe(18)
     idempotency_key = hashlib.sha256(f"{run_id}|{cwd}|{','.join(targets)}".encode("utf-8")).hexdigest()[:24]
@@ -391,16 +508,17 @@ def cmd_init(args: argparse.Namespace) -> int:
         "launch_commands": launch_commands(targets, cwd, run_id),
     }
 
-    run_dir.mkdir(parents=True, exist_ok=True)
+    ensure_private_dir(run_dir)
     write_json(run_dir / "handoff.json", handoff)
     write_handoff_markdown(run_dir, handoff)
 
     script = Path(__file__).resolve()
     prompts_dir = run_dir / "target-prompts"
+    ensure_private_dir(run_dir / "targets")
     launch = handoff["launch_commands"]
     write_json(run_dir / "launch-commands.json", launch)
     for target in targets:
-        (target_dir(run_dir, target)).mkdir(parents=True, exist_ok=True)
+        ensure_private_dir(target_dir(run_dir, target))
         atomic_write_text(prompts_dir / f"{target}.txt", target_prompt(script, run_dir, target, handoff))
 
     append_event(run_dir, "offer_created", targets=targets, cwd=str(cwd))
@@ -422,7 +540,7 @@ def valid_ack(handoff: dict[str, Any], run_dir: Path, target: str) -> tuple[bool
     if not path.exists():
         return False, f"missing ACK for {target}: {path}", None
     try:
-        data = read_json(path)
+        data = read_private_object(path, f"ACK for {target}")
     except Exception as exc:
         return False, f"invalid ACK JSON for {target}: {exc}", None
     required = ["schema_version", "run_id", "target", "token", "status", "acknowledged_at", "cwd", "summary", "next_action", "git"]
@@ -439,6 +557,12 @@ def valid_ack(handoff: dict[str, Any], run_dir: Path, target: str) -> tuple[bool
         return False, f"ACK for {target} has wrong token", data
     if data.get("status") != "acknowledged":
         return False, f"ACK for {target} status is not acknowledged", data
+    if not isinstance(data.get("acknowledged_at"), str) or not data["acknowledged_at"].strip():
+        return False, f"ACK for {target} lacks acknowledged_at", data
+    if data.get("cwd") != handoff.get("cwd"):
+        return False, f"ACK for {target} has wrong cwd", data
+    if not valid_git_snapshot(data.get("git")):
+        return False, f"ACK for {target} has invalid git snapshot", data
     if not str(data.get("summary", "")).strip() or not str(data.get("next_action", "")).strip():
         return False, f"ACK for {target} lacks summary or next_action", data
     return True, "", data
@@ -449,9 +573,23 @@ def valid_confirm(handoff: dict[str, Any], run_dir: Path) -> tuple[bool, str, di
     if not path.exists():
         return False, f"missing source confirmation: {path}", None
     try:
-        data = read_json(path)
+        data = read_private_object(path, "source confirmation")
     except Exception as exc:
         return False, f"invalid source confirmation JSON: {exc}", None
+    required = ["schema_version", "run_id", "token", "status", "confirmed_at", "targets", "acknowledged_at"]
+    missing = [field for field in required if field not in data]
+    if missing:
+        return False, f"source confirmation missing fields: {', '.join(missing)}", data
+    if data.get("schema_version") != SCHEMA_VERSION:
+        return False, f"source confirmation has schema_version={data.get('schema_version')}", data
+    if data.get("status") != "confirmed":
+        return False, "source confirmation status is not confirmed", data
+    if not isinstance(data.get("confirmed_at"), str) or not data["confirmed_at"].strip():
+        return False, "source confirmation lacks confirmed_at", data
+    if not isinstance(data.get("targets"), list) or not all(isinstance(item, str) for item in data["targets"]):
+        return False, "source confirmation targets must be a string list", data
+    if not isinstance(data.get("acknowledged_at"), dict):
+        return False, "source confirmation acknowledged_at must be an object", data
     if data.get("token") != handoff.get("token"):
         return False, "source confirmation has wrong token", data
     if data.get("run_id") != handoff.get("run_id"):
@@ -460,6 +598,14 @@ def valid_confirm(handoff: dict[str, Any], run_dir: Path) -> tuple[bool, str, di
     expected = set(target_names(handoff))
     if confirmed != expected:
         return False, f"source confirmation targets mismatch: expected={sorted(expected)} got={sorted(confirmed)}", data
+    expected_acknowledged_at: dict[str, str] = {}
+    for target in target_names(handoff):
+        ack_ok, ack_error, ack = valid_ack(handoff, run_dir, target)
+        if not ack_ok or ack is None:
+            return False, f"source confirmation cannot validate ACK: {ack_error}", data
+        expected_acknowledged_at[target] = ack["acknowledged_at"]
+    if data.get("acknowledged_at") != expected_acknowledged_at:
+        return False, "source confirmation does not match current ACK timestamps", data
     return True, "", data
 
 
@@ -468,7 +614,7 @@ def valid_ready(handoff: dict[str, Any], run_dir: Path, target: str) -> tuple[bo
     if not path.exists():
         return False, f"missing READY for {target}: {path}", None
     try:
-        data = read_json(path)
+        data = read_private_object(path, f"READY for {target}")
     except Exception as exc:
         return False, f"invalid READY JSON for {target}: {exc}", None
     required = ["schema_version", "run_id", "target", "token", "status", "ready_at"]
@@ -479,17 +625,37 @@ def valid_ready(handoff: dict[str, Any], run_dir: Path, target: str) -> tuple[bo
     missing = [field for field in required if field not in data]
     if missing:
         return False, f"READY for {target} missing fields: {', '.join(missing)}", data
+    if data.get("schema_version") != SCHEMA_VERSION:
+        return False, f"READY for {target} has schema_version={data.get('schema_version')}", data
     if data.get("token") != handoff.get("token"):
         return False, f"READY for {target} has wrong token", data
     if data.get("run_id") != handoff.get("run_id") or data.get("target") != target:
         return False, f"READY for {target} has wrong run_id or target", data
     if data.get("status") != "ready":
         return False, f"READY for {target} status is not ready", data
+    if not isinstance(data.get("ready_at"), str) or not data["ready_at"].strip():
+        return False, f"READY for {target} lacks ready_at", data
+    if data.get("cwd") != handoff.get("cwd"):
+        return False, f"READY for {target} has wrong cwd", data
+    if not valid_git_snapshot(data.get("git")):
+        return False, f"READY for {target} has invalid git snapshot", data
+    if handshake_mode(handoff) == "verified":
+        confirm_ok, confirm_error, confirm = valid_confirm(handoff, run_dir)
+        if not confirm_ok or confirm is None:
+            return False, f"READY for {target} cannot verify source confirmation: {confirm_error}", data
+        seen = data.get("saw_source_confirmed_at")
+        if not isinstance(seen, str) or not seen.strip() or seen != confirm.get("confirmed_at"):
+            return False, f"READY for {target} has wrong source confirmation timestamp", data
     if handshake_mode(handoff) == "fast" and (
         not str(data.get("summary", "")).strip() or not str(data.get("next_action", "")).strip()
     ):
         return False, f"READY for {target} lacks summary or next_action", data
     return True, "", data
+
+
+def valid_git_snapshot(value: Any) -> bool:
+    required = {"branch", "head", "upstream", "ahead_behind", "status_short", "diff_stat"}
+    return isinstance(value, dict) and set(value) == required and all(isinstance(value[key], str) for key in required)
 
 
 def validation_report(run_dir: Path) -> dict[str, Any]:
@@ -532,10 +698,34 @@ def validation_report(run_dir: Path) -> dict[str, Any]:
 def cmd_ack(args: argparse.Namespace) -> int:
     run_dir = Path(args.run_dir).resolve()
     handoff = load_handoff(run_dir)
-    target = args.target.strip().lower()
+    target = require_safe_slug(args.target.strip().lower(), "target")
     if target not in target_names(handoff):
         raise SystemExit(f"target {target!r} not offered in handoff")
-    cwd = Path(handoff["cwd"]).resolve()
+    offered_cwd = Path(handoff["cwd"]).resolve()
+    cwd = Path.cwd().resolve()
+    if cwd != offered_cwd:
+        raise SystemExit(f"receiver cwd mismatch: expected {offered_cwd}, got {cwd}")
+    workspace = args.workspace or os.environ.get("CMUX_WORKSPACE_ID") or ""
+    surface = args.surface or os.environ.get("CMUX_SURFACE_ID") or ""
+    ack_path = target_dir(run_dir, target) / "ack.json"
+    existing_ok, _, existing = valid_ack(handoff, run_dir, target)
+    if existing_ok and existing is not None and all(
+        (
+            existing.get("summary") == args.summary,
+            existing.get("next_action") == args.next_action,
+            existing.get("cwd") == str(cwd),
+            existing.get("host") == socket.gethostname(),
+            existing.get("cmux_workspace", "") == workspace,
+            existing.get("cmux_surface", "") == surface,
+        )
+    ):
+        print(
+            json.dumps(
+                {"ack": True, "reused": True, "target": target, "path": str(ack_path)},
+                ensure_ascii=False,
+            )
+        )
+        return 0
     ack = {
         "schema_version": SCHEMA_VERSION,
         "run_id": handoff["run_id"],
@@ -548,13 +738,13 @@ def cmd_ack(args: argparse.Namespace) -> int:
         "cwd": str(cwd),
         "host": socket.gethostname(),
         "pid": os.getpid(),
-        "cmux_workspace": args.workspace or os.environ.get("CMUX_WORKSPACE_ID") or "",
-        "cmux_surface": args.surface or os.environ.get("CMUX_SURFACE_ID") or "",
+        "cmux_workspace": workspace,
+        "cmux_surface": surface,
         "git": git_snapshot(cwd),
     }
-    write_json(target_dir(run_dir, target) / "ack.json", ack)
+    write_json(ack_path, ack)
     append_event(run_dir, "target_ack", target=target)
-    print(json.dumps({"ack": True, "target": target, "path": str(target_dir(run_dir, target) / "ack.json")}, ensure_ascii=False))
+    print(json.dumps({"ack": True, "target": target, "path": str(ack_path)}, ensure_ascii=False))
     return 0
 
 
@@ -573,6 +763,15 @@ def cmd_confirm(args: argparse.Namespace) -> int:
         print(json.dumps({"confirmed": False, "errors": errors}, ensure_ascii=False, indent=2), file=sys.stderr)
         append_event(run_dir, "source_confirm_failed", errors=errors)
         return 1
+    existing_ok, _, _ = valid_confirm(handoff, run_dir)
+    if existing_ok:
+        print(
+            json.dumps(
+                {"confirmed": True, "reused": True, "path": str(run_dir / "source-confirmed.json")},
+                ensure_ascii=False,
+            )
+        )
+        return 0
     confirm = {
         "schema_version": SCHEMA_VERSION,
         "run_id": handoff["run_id"],
@@ -597,7 +796,7 @@ def cmd_confirm(args: argparse.Namespace) -> int:
 def cmd_ready(args: argparse.Namespace) -> int:
     run_dir = Path(args.run_dir).resolve()
     handoff = load_handoff(run_dir)
-    target = args.target.strip().lower()
+    target = require_safe_slug(args.target.strip().lower(), "target")
     if target not in target_names(handoff):
         raise SystemExit(f"target {target!r} not offered in handoff")
     if handshake_mode(handoff) == "verified":
@@ -606,7 +805,10 @@ def cmd_ready(args: argparse.Namespace) -> int:
             raise SystemExit(confirm_error)
     else:
         confirm = {}
-    cwd = Path(handoff["cwd"]).resolve()
+    offered_cwd = Path(handoff["cwd"]).resolve()
+    cwd = Path.cwd().resolve()
+    if cwd != offered_cwd:
+        raise SystemExit(f"receiver cwd mismatch: expected {offered_cwd}, got {cwd}")
     ready = {
         "schema_version": SCHEMA_VERSION,
         "run_id": handoff["run_id"],
@@ -656,7 +858,9 @@ def cmd_wait(args: argparse.Namespace) -> int:
             return 0
         last_errors = report["errors"]
         if handshake_mode(handoff) == "verified" and all_acks_valid(run_dir):
-            cmd_confirm(argparse.Namespace(run_dir=str(run_dir), workspace="", surface=""))
+            confirm_ok, _, _ = valid_confirm(handoff, run_dir)
+            if not confirm_ok and cmd_confirm(argparse.Namespace(run_dir=str(run_dir), workspace="", surface="")) == 0:
+                continue
         if time.monotonic() >= deadline:
             append_event(run_dir, "wait_timeout", errors=last_errors)
             print(json.dumps({"complete": False, "run_dir": str(run_dir), "errors": last_errors}, ensure_ascii=False, indent=2), file=sys.stderr)

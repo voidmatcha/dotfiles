@@ -14,6 +14,7 @@ set -euo pipefail
 
 REPO_URL="${DOTFILES_REPO_URL:-https://github.com/voidmatcha/dotfiles.git}"
 DOTFILES_DIR="${DOTFILES_DIR:-$HOME/dotfiles}"
+SKIP_COMPANY_OVERLAY="${SKIP_COMPANY_OVERLAY:-false}"
 
 color() { [ -t 1 ] && printf '\033[%sm%s\033[0m' "$1" "$2" || printf '%s' "$2"; }
 info()  { echo "$(color '0;32' '[bootstrap]') $*"; }
@@ -37,11 +38,27 @@ fi
 
 # ── 2. Clone or update ──
 if [ -d "$DOTFILES_DIR/.git" ]; then
+  canonical_dotfiles_dir="$(cd "$DOTFILES_DIR" 2>/dev/null && pwd -P)" || \
+    die "cannot resolve existing checkout path: $DOTFILES_DIR"
+  checkout_root="$(git -C "$DOTFILES_DIR" rev-parse --show-toplevel 2>/dev/null)" || \
+    die "existing path is not a valid git checkout: $DOTFILES_DIR"
+  if [ "$checkout_root" != "$canonical_dotfiles_dir" ]; then
+    die "existing checkout root mismatch (expected $canonical_dotfiles_dir, git reports $checkout_root); refusing to pull or install"
+  fi
+  if ! checkout_status="$(git -C "$DOTFILES_DIR" status --porcelain 2>/dev/null)"; then
+    die "failed to inspect existing checkout status; refusing to pull or install"
+  fi
+  if [ -n "$checkout_status" ]; then
+    die "existing checkout has uncommitted changes; refusing to pull or install from an unrefreshed tree"
+  fi
   info "Repo already present at $DOTFILES_DIR — pulling latest..."
-  git -C "$DOTFILES_DIR" pull --ff-only || warn "fast-forward pull failed; leaving repo as-is"
+  git -C "$DOTFILES_DIR" pull --ff-only || \
+    die "fast-forward pull failed; refusing to install from a stale checkout"
   info "Updating submodules..."
-  git -C "$DOTFILES_DIR" submodule update --init --recursive || \
-    warn "submodule update failed (likely no auth to internal git host — install.sh will run without the company overlay)"
+  if ! git -C "$DOTFILES_DIR" submodule update --init --recursive; then
+    warn "submodule update failed (likely no auth to internal git host — company overlay will be skipped)"
+    SKIP_COMPANY_OVERLAY="true"
+  fi
 else
   info "Cloning $REPO_URL → $DOTFILES_DIR"
   # Clone the parent first (always succeeds for the public repo).
@@ -68,8 +85,10 @@ else
       set -e
       if [ $ssh_rc -eq 0 ] || [ $ssh_rc -eq 1 ]; then
         info "SSH auth OK — initializing company/ submodule"
-        git -C "$DOTFILES_DIR" submodule update --init --recursive || \
-          warn "submodule update unexpectedly failed; install.sh will proceed without the company overlay"
+        if ! git -C "$DOTFILES_DIR" submodule update --init --recursive; then
+          warn "submodule update unexpectedly failed; company overlay will be skipped"
+          SKIP_COMPANY_OVERLAY="true"
+        fi
       else
         warn "SSH auth to $submodule_host failed (exit $ssh_rc)."
         warn "If this is a corporate machine, set up SSH access before continuing:"
@@ -79,16 +98,20 @@ else
         if [ -t 0 ]; then
           read -rp "Press Enter when SSH is set up to retry submodule init, or 's' to skip: " resp
           if [ "${resp:-}" != "s" ] && [ "${resp:-}" != "S" ]; then
-            git -C "$DOTFILES_DIR" submodule update --init --recursive 2>/dev/null || \
-              warn "submodule update still failing — proceeding without company overlay (you can run it later: git -C $DOTFILES_DIR submodule update --init)"
+            if ! git -C "$DOTFILES_DIR" submodule update --init --recursive 2>/dev/null; then
+              warn "submodule update still failing — company overlay will be skipped (you can run it later: git -C $DOTFILES_DIR submodule update --init)"
+              SKIP_COMPANY_OVERLAY="true"
+            fi
           else
             info "Skipping company/ submodule — install.sh will proceed without the overlay"
+            SKIP_COMPANY_OVERLAY="true"
           fi
         else
           # Non-interactive (curl | bash): can't prompt, so just skip and tell
           # the user how to enable it later.
           warn "Running non-interactively — skipping. Re-run after SSH setup:"
           warn "  git -C $DOTFILES_DIR submodule update --init"
+          SKIP_COMPANY_OVERLAY="true"
         fi
       fi
     fi
@@ -97,4 +120,5 @@ fi
 
 # ── 3. Hand off ──
 info "Handing off to install.sh ..."
+export SKIP_COMPANY_OVERLAY
 exec "$DOTFILES_DIR/install.sh" "$@"

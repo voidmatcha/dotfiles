@@ -1,6 +1,6 @@
 ---
 name: asset-improver
-description: "Auto-research and improve a repo's skills, hooks, and scripts: external real-world web research + internal audit + Codex cross-model verification, behind a propose -> approve -> apply gate with freeze-on-success/auto-revert. Use when asked to improve, audit, harden, or research-improve skills/hooks/scripts in the current repo."
+description: "Auto-research and improve a repo's skills, hooks, and scripts: external real-world web research + internal audit + Codex cross-model verification, behind a propose then approve then apply gate with freeze-on-success and auto-revert. Use when asked to improve, audit, harden, or research-improve skills/hooks/scripts in the current repo."
 ---
 
 # Asset Improver

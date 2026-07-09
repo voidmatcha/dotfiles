@@ -1,21 +1,4 @@
-# Keep default gitleaks rules, but do not scan machine-local runtime state.
-# scripts/secret-scan.sh uses --no-git so gitleaks would otherwise inspect
-# ignored agent artifacts such as .omx handover tokens.
+# Keep the repository/history policy strict. Runtime/cache exclusions belong in
+# .gitleaks-worktree.toml so an ignored path cannot hide a committed secret.
 [extend]
 useDefault = true
-
-[allowlist]
-description = "dotfiles runtime/cache directories ignored by git"
-paths = [
-  '''(^|/)\.git/''',
-  '''(^|/)\.omx/''',
-  '''(^|/)\.serena/''',
-  '''(^|/)\.codegraph/''',
-  '''(^|/)\.sisyphus/''',
-  '''(^|/)__pycache__/''',
-  '''(^|/)\.pytest_cache/''',
-  '''(^|/)\.mypy_cache/''',
-  '''(^|/)\.ruff_cache/''',
-  '''(^|/)reviews/''',
-  '''(^|/)\.claude/hooks/\.logs/''',
-]

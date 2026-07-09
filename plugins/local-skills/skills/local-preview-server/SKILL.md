@@ -1,6 +1,6 @@
 ---
 name: local-preview-server
-description: "Serve local files, HTML reports, static directories, dashboards, or build artifacts through verified private/tailnet browser URLs. Use when asked to serve, preview, open, expose, share, or make local web output accessible, including 서버 켜줘, 접속 가능하게 해줘, 웹에서 볼 수 있게 해줘, or HTML 보여줘."
+description: "Serve local files, HTML reports, static directories, dashboards, or build artifacts through verified private/tailnet browser URLs. Use when asked to serve, preview, expose, share, or make generated local web output accessible, including 서버 켜줘, 접속 가능하게 해줘, 웹에서 볼 수 있게 해줘, or HTML 보여줘. Do not use to browse source code or open an existing git worktree in code-server."
 ---
 
 # Local / Tailnet Preview Server
@@ -38,12 +38,12 @@ scripts/local-preview-server.sh stop --port 8377
 ## Workflow
 
 1. Resolve the target path.
-   - File target: serve the parent directory and report the encoded file URL.
+   - File target: copy only the requested file into a private per-port serving root, then report its encoded URL; sibling files are never exposed.
    - Directory target: report `/` and rely on `index.html` if present.
 2. Start or restart a durable server.
    - Prefer tmux session `local-preview-PORT`.
    - Fall back to background PID/state files only when tmux is unavailable.
-   - Logs go to `/tmp/local-preview-PORT.log` by default.
+   - Logs and private JSON state go to `${XDG_STATE_HOME:-$HOME/.local/state}/local-preview-server/` by default.
 3. Verify before reporting success.
    - Confirm the known session/PID exists.
    - Confirm the port accepts local connections.

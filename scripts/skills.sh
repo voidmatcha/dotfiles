@@ -70,13 +70,13 @@ install_upstream_skill_from_url() {
   if ! curl -fsSL "$url" -o "$tmp_file"; then
     rm -f "$tmp_file"
     warn "Failed upstream $tool_name skill download: $skill_name ($url)"
-    return 0
+    return 1
   fi
 
   if ! grep -q '^name: '"$skill_name"'$' "$tmp_file"; then
     rm -f "$tmp_file"
     warn "Downloaded upstream skill has unexpected name; skipping: $skill_name"
-    return 0
+    return 1
   fi
 
   if [ -L "$dest" ]; then
@@ -110,7 +110,7 @@ install_codex_local_skills() {
 
   if [ ! -d "$LOCAL_SKILLS_DIR" ]; then
     warn "local skills directory not found: $LOCAL_SKILLS_DIR"
-    return 0
+    return 1
   fi
 
   ensure_dir "$skills_dir"
@@ -156,43 +156,185 @@ install_codex_local_skills() {
   done < <(find "$LOCAL_SKILLS_DIR" -mindepth 1 -maxdepth 1 -type d | sort)
 }
 
+local_plugin_skill_snapshot() {
+  local skills_dir="$1"
+  python3 - "$skills_dir" <<'PY'
+import hashlib
+import os
+import stat
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+if not root.is_dir():
+    raise SystemExit(0)
+
+def distributable(path: Path) -> bool:
+    relative = path.relative_to(root)
+    if any(part in {"__pycache__", ".pytest_cache"} for part in relative.parts):
+        return False
+    return path.name != ".DS_Store" and path.suffix not in {".pyc", ".pyo"}
+
+
+for path in sorted(
+    (candidate for candidate in root.rglob("*") if distributable(candidate)),
+    key=lambda item: item.relative_to(root).as_posix(),
+):
+    relative = path.relative_to(root).as_posix()
+    if path.is_symlink():
+        print(f"L\t{relative}\t{os.readlink(path)}")
+    elif path.is_file():
+        mode = stat.S_IMODE(path.stat().st_mode)
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        print(f"F\t{relative}\t{mode:04o}\t{digest}")
+PY
+}
+
+local_plugin_skill_count() {
+  local skills_dir="$1"
+  if [ ! -d "$skills_dir" ]; then
+    printf '0'
+    return 0
+  fi
+  find "$skills_dir" -mindepth 2 -maxdepth 2 -type f -name SKILL.md | wc -l | tr -d ' '
+}
+
 install_claude_local_plugin() {
-  if [ ! -f "$DOTFILES_DIR/.claude-plugin/marketplace.json" ] || [ ! -f "$LOCAL_PLUGIN_DIR/.claude-plugin/plugin.json" ]; then
+  local marketplace_manifest="$DOTFILES_DIR/.claude-plugin/marketplace.json"
+  local claude_manifest="$LOCAL_PLUGIN_DIR/.claude-plugin/plugin.json"
+  local codex_manifest="$LOCAL_PLUGIN_DIR/.codex-plugin/plugin.json"
+  local marketplace_version claude_version codex_version
+  local failed=0
+
+  if [ ! -f "$marketplace_manifest" ] || [ ! -f "$claude_manifest" ] || [ ! -f "$codex_manifest" ]; then
     warn "local Claude plugin manifest missing under $DOTFILES_DIR/.claude-plugin or $LOCAL_PLUGIN_DIR/.claude-plugin"
+    return 1
+  fi
+
+  # A fresh-machine dry run happens before jq/Claude are installed. Keep the
+  # preview useful without claiming machine-state knowledge or reading cached
+  # inventories that cannot yet be validated.
+  if $DRY_RUN && ! command -v jq &>/dev/null; then
+    info "[dry-run] add or update local Claude marketplace: $DOTFILES_DIR"
+    info "[dry-run] install or update local Claude plugin: $CLAUDE_PLUGIN_ID"
     return 0
   fi
 
+  if ! command -v jq &>/dev/null; then
+    warn "jq not found; cannot validate local plugin manifest/inventory state"
+    return 1
+  fi
+
+  marketplace_version=$(jq -er --arg n "local-skills" \
+    '.plugins[] | select(.name == $n) | .version' "$marketplace_manifest" 2>/dev/null) || {
+      warn "local Claude marketplace has no version for local-skills"
+      return 1
+    }
+  claude_version=$(jq -er '.version' "$claude_manifest" 2>/dev/null) || {
+    warn "local Claude plugin manifest has no version"
+    return 1
+  }
+  codex_version=$(jq -er '.version' "$codex_manifest" 2>/dev/null) || {
+    warn "local Codex plugin manifest has no version"
+    return 1
+  }
+  if [ "$marketplace_version" != "$claude_version" ] || [ "$claude_version" != "$codex_version" ]; then
+    warn "local plugin manifest version drift: marketplace=$marketplace_version claude=$claude_version codex=$codex_version"
+    return 1
+  fi
+
   if $DRY_RUN; then
-    info "[dry-run] claude plugin marketplace add $DOTFILES_DIR"
-    info "[dry-run] claude plugin install $CLAUDE_PLUGIN_ID"
+    # shellcheck disable=SC2016 # jq variables are passed via --arg.
+    if json_entry_exists "$CLAUDE_KNOWN_MARKETPLACES_JSON" 'has($n)' --arg n "$CLAUDE_MARKETPLACE_NAME"; then
+      info "[dry-run] claude plugin marketplace update $CLAUDE_MARKETPLACE_NAME"
+    else
+      info "[dry-run] claude plugin marketplace add $DOTFILES_DIR"
+    fi
+    # shellcheck disable=SC2016 # jq variables are passed via --arg.
+    if json_entry_exists "$CLAUDE_INSTALLED_PLUGINS_JSON" '.plugins | has($p)' --arg p "$CLAUDE_PLUGIN_ID"; then
+      info "[dry-run] claude plugin update $CLAUDE_PLUGIN_ID"
+    else
+      info "[dry-run] claude plugin install $CLAUDE_PLUGIN_ID"
+    fi
     return 0
   fi
 
   if ! command -v claude &>/dev/null; then
-    warn "claude not found; skipping local Claude plugin install"
-    return 0
+    warn "claude not found; cannot install the local Claude plugin"
+    return 1
   fi
 
   ensure_dir "$HOME/.claude/plugins"
 
   # shellcheck disable=SC2016 # jq variables are passed via --arg.
   if json_entry_exists "$CLAUDE_KNOWN_MARKETPLACES_JSON" 'has($n)' --arg n "$CLAUDE_MARKETPLACE_NAME"; then
-    info "Local Claude marketplace already registered: $CLAUDE_MARKETPLACE_NAME"
+    if with_timeout 180 claude plugin marketplace update "$CLAUDE_MARKETPLACE_NAME" </dev/null; then
+      info "Updated local Claude marketplace: $CLAUDE_MARKETPLACE_NAME"
+    else
+      warn "Failed to update local Claude marketplace: $CLAUDE_MARKETPLACE_NAME"
+      failed=1
+    fi
   elif with_timeout 180 claude plugin marketplace add "$DOTFILES_DIR" </dev/null; then
     info "Added local Claude marketplace: $CLAUDE_MARKETPLACE_NAME"
   else
     warn "Failed local Claude marketplace: $CLAUDE_MARKETPLACE_NAME (timeout or error — re-run manually if needed)"
-    return 0
+    failed=1
   fi
 
   # shellcheck disable=SC2016 # jq variables are passed via --arg.
   if json_entry_exists "$CLAUDE_INSTALLED_PLUGINS_JSON" '.plugins | has($p)' --arg p "$CLAUDE_PLUGIN_ID"; then
-    info "Local Claude plugin already installed: $CLAUDE_PLUGIN_ID"
+    if with_timeout 180 claude plugin update "$CLAUDE_PLUGIN_ID" </dev/null; then
+      info "Updated local Claude plugin: $CLAUDE_PLUGIN_ID"
+    else
+      warn "Failed to update local Claude plugin: $CLAUDE_PLUGIN_ID"
+      failed=1
+    fi
   elif with_timeout 180 claude plugin install "$CLAUDE_PLUGIN_ID" </dev/null; then
     info "Installed local Claude plugin: $CLAUDE_PLUGIN_ID"
   else
     warn "Failed local Claude plugin: $CLAUDE_PLUGIN_ID (timeout or error — re-run manually if needed)"
+    failed=1
   fi
+
+  # Claude copies installed plugins into a versioned cache and records that
+  # path/version in installed_plugins.json. A successful CLI exit is not enough:
+  # stale inventory leaves new source skills invisible until a later session.
+  local installed_entry install_path cached_version
+  local source_skill_snapshot cached_skill_snapshot source_skill_count cached_skill_count
+  installed_entry=$(jq -cer --arg p "$CLAUDE_PLUGIN_ID" --arg v "$claude_version" \
+    '([.plugins[$p][]? | select(.version == $v)] | last) // empty' \
+    "$CLAUDE_INSTALLED_PLUGINS_JSON" 2>/dev/null) || installed_entry=""
+  if [ -z "$installed_entry" ]; then
+    warn "local Claude plugin inventory/cache drift: expected $CLAUDE_PLUGIN_ID@$claude_version in $CLAUDE_INSTALLED_PLUGINS_JSON"
+    failed=1
+  else
+    install_path=$(printf '%s' "$installed_entry" | jq -er '.installPath' 2>/dev/null) || install_path=""
+    cached_version=""
+    if [ -n "$install_path" ] && [ -f "$install_path/.claude-plugin/plugin.json" ]; then
+      cached_version=$(jq -er '.version' "$install_path/.claude-plugin/plugin.json" 2>/dev/null) || cached_version=""
+    fi
+    case "$install_path" in
+      "$HOME/.claude/plugins/cache/"*) ;;
+      *) install_path="" ;;
+    esac
+    if [ -z "$install_path" ] || [ "$cached_version" != "$claude_version" ]; then
+      warn "local Claude plugin inventory/cache drift: expected cached manifest version $claude_version"
+      failed=1
+    else
+      source_skill_snapshot=$(local_plugin_skill_snapshot "$LOCAL_SKILLS_DIR")
+      cached_skill_snapshot=$(local_plugin_skill_snapshot "$install_path/skills")
+      source_skill_count=$(local_plugin_skill_count "$LOCAL_SKILLS_DIR")
+      cached_skill_count=$(local_plugin_skill_count "$install_path/skills")
+      if [ -z "$source_skill_snapshot" ] || [ "$source_skill_snapshot" != "$cached_skill_snapshot" ]; then
+        warn "local Claude plugin skill content drift: source=$source_skill_count cached=$cached_skill_count"
+        failed=1
+      else
+        info "Verified local Claude plugin content/cache: $CLAUDE_PLUGIN_ID@$claude_version ($source_skill_count skills)"
+      fi
+    fi
+  fi
+
+  return "$failed"
 }
 
 case "$mode" in

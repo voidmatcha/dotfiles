@@ -1,6 +1,6 @@
 ---
 name: verify-output
-description: "Use when an AI answer needs fact-checking before you trust or publish it — claims, numbers, file/command references, or causal/security statements headed into a README, PR, docs, report, or decision. Triggers: 'verify this', 'fact-check this', 'is this accurate', 'check for hallucinations', '검증해줘', '이거 맞아', '환각 확인'."
+description: "Use when a prior AI answer, supplied text, report, or explicit claim needs fact-checking before you trust or publish it — especially numbers, file/command references, or causal/security statements headed into a README, PR, docs, report, or decision. Triggers include 'fact-check this answer', 'is this claim accurate', 'check this report for hallucinations', '이 답변 검증해줘', '이 주장 맞아', or '환각 확인'. Do not use for ordinary code test execution or general repository verification."
 ---
 # Verify Output
 

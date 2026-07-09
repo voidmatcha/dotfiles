@@ -9,8 +9,17 @@ Use the repo-local doctor before changing MCP config.
 
 ## Workflow
 
-1. Run `python3 scripts/code_intel_doctor.py` from the dotfiles repo root.
-   - Pass a target repo when needed: `python3 scripts/code_intel_doctor.py /path/to/repo`
+Resolve the checkout explicitly; never assume the caller's cwd:
+
+```bash
+DOTFILES_DIR="${DOTFILES_DIR:-$HOME/work/dotfiles}"
+test -f "$DOTFILES_DIR/scripts/code_intel_doctor.py"
+```
+
+1. Run `python3 "$DOTFILES_DIR/scripts/code_intel_doctor.py"`.
+   - Pass a target repo when needed: `python3 "$DOTFILES_DIR/scripts/code_intel_doctor.py" /path/to/repo`.
+   - For automation, add `--json`; add `--strict` to exit nonzero when commands, config, indexes, or codegraph status are unhealthy.
+   - `--strict` treats missing or malformed `reindexRecommended`, `pendingChanges`, and `worktreeMismatch` status fields as failures rather than assuming a clean index.
 2. Check the reported config, live install, and per-repo index statuses.
 3. If a dependency is missing, prefer documented setup commands already present in this dotfiles repo.
 4. Re-run the doctor after any fix and report status with remaining gaps.

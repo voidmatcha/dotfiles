@@ -5,13 +5,16 @@ description: "Check Claude/Codex/OMX context, cache, headroom, and handover pres
 
 # Context Check
 
-Use this skill as an advisory context/cache gate. It should not mutate session state by itself.
+Use this skill as an advisory gate for the current session. It should not audit
+historical feedback or mutate session state by itself.
 
 ## Quick workflow
 
-1. From the dotfiles repo root, run:
+1. Set `SKILL_DIR` to the absolute directory containing this `SKILL.md` (use the
+   path supplied by the skill loader), then run the bundled helper from any cwd:
    ```bash
-   python3 plugins/local-skills/skills/context-check/scripts/context_check.py diagnose --cwd "$PWD"
+   SKILL_DIR="/absolute/path/to/context-check"
+   python3 "$SKILL_DIR/scripts/context_check.py" diagnose --cwd "$PWD"
    ```
 2. Read the recommendation and evidence.
 3. Apply the policy manually:

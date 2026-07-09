@@ -175,7 +175,15 @@ bash "$DOTFILES_DIR/scripts/services.sh"
 # company/ 는 git submodule로 별도의 사내 git 저장소에 호스팅된다.
 # 새 머신: git clone --recurse-submodules ... 또는 git submodule update --init
 info "12/12 Applying company overlay (if available)..."
-if [ -x "$DOTFILES_DIR/company/install.sh" ]; then
+
+if [ "${SKIP_COMPANY_OVERLAY:-false}" = "true" ]; then
+  warn "Company overlay explicitly skipped because its submodule was not refreshed safely."
+elif [ -x "$DOTFILES_DIR/company/install.sh" ]; then
+  if ! company_overlay_current "$DOTFILES_DIR"; then
+    error "Refusing stale, dirty, or unverifiable company overlay: company/ must be clean and match the parent gitlink."
+    error "Repair with: git -C $DOTFILES_DIR submodule update --init --recursive"
+    exit 1
+  fi
   echo ""
   info "Detected company/install.sh — running company overlay..."
   bash "$DOTFILES_DIR/company/install.sh"
