@@ -39,6 +39,14 @@ These symbols read as machine/AI output in Korean prose and are removed by defau
 
 **Preserve (do not touch):** dashes, arrows, quotes, and middle-dots inside code, locators (`data-testid`), table separators (`| --- |`), math/chemical formulas, diagrams (`a → b`), string literals, and official proper-noun spellings.
 
+## Parenthetical period placement (Korean)
+
+When a parenthetical is a trailing aside or citation at or after the end of a Korean sentence, put the period **before** the opening paren, not after the closing paren.
+
+- Rewrite `문장입니다 (부연).` → `문장입니다. (부연)`
+- Applies to trailing notes, source citations, and "(PR #5290)"-style references that sit at a sentence boundary.
+- **Skip** when the parenthesis is a grammatical part of the sentence — a gloss or subject (`React(리액트)는 …`), an inline unit (`8080(포트)`), or a mid-sentence qualifier — where no sentence-final period is involved.
+
 ## Workflow
 
 1. **Fix the edit scope**
