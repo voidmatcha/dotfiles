@@ -1,6 +1,6 @@
 ---
 name: korean-technical-terminology
-description: "Review and edit Korean technical docs, READMEs, UI copy, and prompts when terminology sounds machine-translated or a canonical English term was unnecessarily translated. Classify each disputed term as canonical English to preserve, established Korean to keep, or an awkward calque to rewrite naturally. Use for 기술 용어, 번역투, 직역, 영어로 써야 할 표현, 원어 유지, 한글화가 어색함, 용어 통일, Korean technical writing, or terminology review. Do not use as a general spelling or tone checker."
+description: "Review and edit Korean technical docs, READMEs, UI copy, and prompts when terminology sounds machine-translated or a canonical English term was unnecessarily translated. Classify each disputed term as canonical English to preserve, established Korean to keep, or an awkward calque to rewrite naturally. Also strips surface AI-tell symbols from Korean prose — em/en dashes and spaced --, arrows (→), curly/smart quotes, ellipsis (…), and middle-dot (·) bullets or noun enumerations. Use for 기술 용어, 번역투, 직역, 영어로 써야 할 표현, 원어 유지, 한글화가 어색함, 용어 통일, 화살표 제거, em대시 없애, 가운뎃점 없애, AI 티 기호, AI slop 기호, Korean technical writing, or terminology review. Do not use as a general spelling or tone checker."
 ---
 
 # Korean Technical Terminology
@@ -19,7 +19,25 @@ Use this skill for terminology decisions in technical writing:
 - awkward calques and machine-translated phrases
 - inconsistent terminology across headings, tables, examples, and FAQs
 
-Do not use it for ordinary spelling, punctuation, honorifics, or broad prose humanization. Route those tasks to a grammar, style, or Korean humanization skill instead.
+Do not use it for ordinary spelling, honorifics, or broad prose humanization (rhythm, tone, sentence-level rewriting). Route those to a grammar, style, or Korean humanization skill instead.
+
+**In scope (punctuation exception):** surface AI-tell symbols in Korean prose — em/en dashes and spaced `--`, arrows (`→`), curly/smart quotes, ellipsis (`…`), and the middle-dot (`·`) used as a leading bullet or to chain a noun enumeration. These are mechanical deletions, not tone edits. See "Surface AI-tell symbols" below.
+
+## Surface AI-tell symbols
+
+These symbols read as machine/AI output in Korean prose and are removed by default. This is deletion, not a terminology decision, so it runs independently of the classify step.
+
+**Default: remove all of these from prose.**
+
+- **Em/en dash (`—` `–`) and spaced `--`** — replace with a comma, period, colon, or parentheses, or split into separate sentences. Korean prose almost never needs them.
+- **Arrows (`→` `⟶` `➔`)** — write the relation out ("A에서 B로", "A는 B가 된다", "A하면 B한다") or split into sentences.
+- **Curly/smart quotes (`" "` `' '`)** — use straight quotes or Korean corner brackets (「」 『』); if the quotes were only emphasis, drop them.
+- **Ellipsis (`…`)** — end with a period or delete. Keep only for a genuine trailing-off in essay/fiction voice (1–2 max).
+- **Middle-dot (`·`)** — remove in both forms:
+  - as a leading bullet ("· 첫째 …"): convert to prose or a standard Markdown bullet.
+  - as a noun enumeration ("ChatGPT·Claude·Gemini 등", "탐지·분류·검증"): rewrite with commas plus one of "~나 / ~와·과 / ~등", e.g. "ChatGPT, Claude, Gemini 같은".
+
+**Preserve (do not touch):** dashes, arrows, quotes, and middle-dots inside code, locators (`data-testid`), table separators (`| --- |`), math/chemical formulas, diagrams (`a → b`), string literals, and official proper-noun spellings.
 
 ## Workflow
 
@@ -29,6 +47,7 @@ Do not use it for ordinary spelling, punctuation, honorifics, or broad prose hum
 
 2. **Inventory disputed terms**
    - Find awkward literal translations, unnecessary transliterations, canonical English names translated into Korean, and inconsistent variants of the same concept.
+   - Also flag surface AI-tell symbols for removal (see "Surface AI-tell symbols"): dashes, arrows, curly quotes, ellipsis, and middle-dot bullets or enumerations in prose.
    - Inspect every occurrence before choosing a replacement so headings, tables, body text, and FAQs stay aligned.
 
 3. **Classify before editing**
