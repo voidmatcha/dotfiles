@@ -47,6 +47,18 @@ When a parenthetical is a trailing aside or citation at or after the end of a Ko
 - Applies to trailing notes, source citations, and "(PR #5290)"-style references that sit at a sentence boundary.
 - **Skip** when the parenthesis is a grammatical part of the sentence — a gloss or subject (`React(리액트)는 …`), an inline unit (`8080(포트)`), or a mid-sentence qualifier — where no sentence-final period is involved.
 
+## Preferred phrasings (Korean)
+
+Prefer the standard technical register over colloquial verbs, and keep these terms in English rather than transliterating or calquing them.
+
+- **Standard verb form over colloquial:**
+  - `더해집니다` / `더합니다` → `추가되었습니다` / `추가합니다`
+  - `잽니다` → `측정합니다`
+  - `뺍니다` / `뺀다` → `제거했습니다` / `제거합니다`
+- **Keep the English term:**
+  - `인라인` → `inline` (e.g. `인라인으로` → `inline으로`)
+  - task/issue ownership `맡다` / `맡기다` / `담당` → `assign`, e.g. `아무도 안 맡은` → `아무도 assign 하지 않은`
+
 ## Workflow
 
 1. **Fix the edit scope**
