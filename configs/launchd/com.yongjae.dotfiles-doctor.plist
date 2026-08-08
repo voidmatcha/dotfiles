@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.yongjae.dotfiles-doctor</string>
+  <!--
+    주간 점검. claude-mem 이 두 달 밀린 근본 원인은 검사가 틀렸다는 것이
+    아니라 아무도 아무것도 돌리지 않았다는 것이다. 검사를 자동으로 돌리되,
+    결과를 조용한 로그에만 남기면 같은 실패를 반복한다 - 문제가 있을 때만
+    알림을 띄우고, 전체 출력은 로그에 둔다.
+
+    출력은 매주 덮어쓰지 않고 누적한다. 언제부터 나빠졌는지가 대부분의
+    진단에서 가장 중요한 정보였다.
+  -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>-lc</string>
+    <string>d="${DOTFILES_DIR:-$(for l in "$HOME/.zshrc" "$HOME/.agent/AGENTS.md" "$HOME/.claude/settings.json"; do t=$(readlink "$l" 2&gt;/dev/null) || continue; r=$(cd "$(dirname "$t")/.." 2&gt;/dev/null &amp;&amp; pwd) || continue; [ -d "$r/scripts" ] &amp;&amp; printf %s "$r" &amp;&amp; break; done)}"
+[ -n "$d" ] || { echo "doctor: dotfiles checkout not found" &gt;&amp;2; exit 1; }
+log="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles"
+mkdir -p "$log"
+out=$(cd "$d" &amp;&amp; bash scripts/doctor.sh 2&gt;&amp;1); status=$?
+{ printf '\n===== %s (exit %s) =====\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$status"; printf '%s\n' "$out"; } &gt;&gt; "$log/doctor.log"
+bad=$(printf '%s\n' "$out" | grep -cE '^(warn|fail)' || true)
+if [ "$status" -ne 0 ] || [ "${bad:-0}" -gt 0 ]; then
+  osascript -e "display notification \"$bad warn/fail - see $log/doctor.log\" with title \"dotfiles doctor\"" 2&gt;/dev/null || true
+fi
+exit 0</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key><integer>1</integer>
+    <key>Hour</key><integer>10</integer>
+    <key>Minute</key><integer>0</integer>
+  </dict>
+  <key>StandardOutPath</key><string>/tmp/dotfiles-doctor.log</string>
+  <key>StandardErrorPath</key><string>/tmp/dotfiles-doctor.err</string>
+</dict>
+</plist>

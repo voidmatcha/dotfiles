@@ -6,6 +6,7 @@ TAG="doctor"
 # shellcheck disable=SC1091
 source "$(cd "$(dirname "$0")" && pwd)/lib/common.sh"
 
+
 cd "$DOTFILES_DIR"
 
 status_ok=0
@@ -162,6 +163,17 @@ check_symlink "HOME/.agent/AGENTS.md" "$DOTFILES_DIR/configs/AGENTS.md" "$HOME/.
 check_headroom
 check_purplemux
 check_local_bin_links
+
+# LLM 도구 계층: 설치 성공과 반영 완료는 다르다. 버전이 아니라 결과를 본다.
+printf '\n-- llm tooling --\n'
+while IFS=$'\t' read -r check state detail; do
+  [ -z "$check" ] && continue
+  case "$state" in
+    ok|same) ok "$check: $detail" ;;
+    missing|stale|error|local) warn_check "$check: $detail" ;;
+    *)       printf 'info  %s: %s\n' "$check" "$detail" ;;
+  esac
+done < <(python3 "$DOTFILES_DIR/scripts/agent_tooling_doctor.py" 2>/dev/null)
 
 printf '\nsummary: %s ok, %s warn, %s fail\n' "$status_ok" "$status_warn" "$status_fail"
 [ "$status_fail" -eq 0 ]
