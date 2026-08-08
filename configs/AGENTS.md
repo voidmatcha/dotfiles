@@ -10,11 +10,12 @@ tool-routing tables and exact one-liners, open this dotfiles repo's
 - If something is genuinely ambiguous, stop, state what is unclear, and ask.
 - Do not touch code unrelated to the request; do not clean up what you did not break.
 - Do not recommend tool installs that are not in this dotfiles setup.
-- Do not transit sensitive/internal URLs through hosted services such as Jina or Exa. Use local alternatives such as `agent-browser` for sensitive browsing.
-- Do not bulk-scrape platforms; X, Reddit, LinkedIn, Jina, and Exa can flag accounts or rate-limit.
+- Public web research goes through the `agent-reach` skill; it carries the source-routing and no-bulk-scrape boundaries. Sensitive/internal URLs never transit hosted readers (Jina, Exa) — fetch locally with `defuddle` or `agent-browser`.
+- On authenticated platforms (LinkedIn, X, Reddit) use your own session at human pace. Automated polling or bulk collection risks the account itself.
 - Keep enabled MCPs lean per project: aim for <10 enabled servers and <80 total active tools. Disable per-project via `/mcp` rather than uninstalling globally.
 - Do not create stray top-level `*.md` files (`NOTES.md`, `SUMMARY.md`, `FINDINGS.md`, etc.) without explicit approval. Named policy files (`README`, `CLAUDE`, `AGENTS`, `CONTRIBUTING`, `LICENSE`, `CHANGELOG`, `SKILL`, `SECURITY`) and files under `docs/`, `skills/`, `.claude/`, `agents/`, or `commands/` are allowed.
 - Use `*.local.md` only for machine/private overrides documented by a tracked file; these overrides are gitignored and must not weaken tracked safety or verification rules.
+- Verify external facts where the research happens, not where it is reported: a research subagent runs `verify-output` on acquisitions, shutdowns, funding, licences, retirements, and version/date claims before returning them, and labels the rest unverified. Subagent output is a draft, not a source.
 
 ## Default tool routing
 
@@ -31,9 +32,26 @@ tool-routing tables and exact one-liners, open this dotfiles repo's
   `python3 plugins/local-skills/skills/context-check/scripts/context_check.py diagnose --cwd "$PWD"`.
 - Claude Bash output is compressed by RTK; use `rtk proxy <cmd>` when raw output
   is required.
-- Long Claude/Codex/OMX sessions default through Headroom wrappers when
-  installed; bypass with `HEADROOM_DEFAULT=0`, a per-tool env override, or
-  `command claude|codex|omx`.
+
+## llmwiki
+
+- Questions about past decisions, failed attempts, or prior work on a project:
+  search the vault first —
+  `cd ~/dotfiles && python3 -m scripts.llmwiki search "<query>"`.
+  Deep cross-session search stays with `mem-search`.
+- The vault's hand-written sections (`## 실패한 시도`, `## 결정과 근거`) are
+  human-owned. Do not write them unprompted; curation goes through the
+  `llmwiki-curate` skill.
+- `projects/` is compiled from sessions — never hand-write there. Notes go to
+  `concepts/` (reusable judgement), `records/` (facts and tracking), `tasks/`
+  (`llmwiki new --project`), or `library/` (imported source). Build artifacts
+  stay outside the vault.
+- Copy frontmatter keys from a neighbouring file before writing, then run
+  `cd ~/dotfiles && python3 -m scripts.llmwiki lint`. A note is not done until
+  lint is clean.
+- Design and spec documents go to the vault's `library/` with `type: library`
+  frontmatter. This overrides any skill's default spec path. `voidmatcha/dotfiles`
+  is a public repo — plans, finances, and career material never land there.
 
 ## Commit message protocol
 

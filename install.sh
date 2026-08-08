@@ -130,6 +130,74 @@ link_file "$DOTFILES_DIR/configs/hooks/pretool-guard.sh" "$HOME/.claude/hooks/pr
 link_file "$DOTFILES_DIR/configs/hooks/skill-md-edit-warn.sh" "$HOME/.claude/hooks/skill-md-edit-warn.sh"
 link_file "$DOTFILES_DIR/configs/hooks/work-scope-guard.sh" "$HOME/.claude/hooks/work-scope-guard.sh"
 link_file "$DOTFILES_DIR/configs/hooks/context-check.sh" "$HOME/.claude/hooks/context-check.sh"
+link_file "$DOTFILES_DIR/configs/llmwiki/hook-session-start.sh" "$HOME/.claude/hooks/llmwiki-session-start.sh"
+link_file "$DOTFILES_DIR/configs/llmwiki/hook-user-prompt.sh" "$HOME/.claude/hooks/llmwiki-user-prompt.sh"
+
+# llmwiki 첫 부트스트랩. compile 은 config.toml 없이 돌기를 거부한다 - 설정이
+# 없으면 blocklist 와 mapping 이 비어 Documents 나 tmp 같은 프로젝트 페이지가
+# 생기기 때문이다. 그 거부가 옳지만, 아무도 init 을 부르지 않으면 새 머신은
+# 야간 작업이 매일 같은 오류로 멈춘 채 방치된다.
+#
+# 조건은 config.toml 의 존재다. 볼트가 비었는지로 판단하면 사용자가 페이지를
+# 지웠을 때 설정까지 다시 만들어 덮어쓴다.
+_llmwiki_home="${LLMWIKI_HOME:-$HOME/.local/share/llmwiki}"
+if [ ! -f "$_llmwiki_home/config.toml" ]; then
+  if $DRY_RUN; then
+    info "[dry-run] python3 -m scripts.llmwiki init (첫 설치)"
+  # 조건을 판정한 경로와 init 이 실제로 쓸 경로가 같아야 한다. 내보내지
+  # 않으면 셸이 본 값과 파이썬이 본 값이 갈라져, 이미 설정된 볼트에 대고
+  # "부트스트랩했다"고 보고할 수 있다.
+  # LLMWIKI_VAULT 를 벗겨낸다. 설치하는 셸에 그것이 있으면 init 은 env 를
+  # 따라 그 경로에 볼트를 만들고 seed config 에는 vault = "" 가 남는다.
+  # 훅과 launchd 는 셸 env 를 보지 못하므로 첫날부터 볼트가 둘로 갈라지고,
+  # 그 상태를 잡을 doctor 검사조차 launchd 아래에서는 env 를 못 봐서
+  # 구조적으로 발동하지 않는다.
+  elif (cd "$DOTFILES_DIR" && unset LLMWIKI_VAULT && LLMWIKI_HOME="$_llmwiki_home" \
+        python3 -m scripts.llmwiki init >/dev/null 2>&1); then
+    info "llmwiki bootstrapped -> $_llmwiki_home"
+  else
+    # init 은 비어 있지 않은 볼트를 거부한다. 복원한 볼트에 새 home 을 붙인
+    # 경우가 그렇고, 그때는 매 설치마다 같은 경고가 나면서 야간 작업은
+    # 영원히 설정 없음으로 멈춘다. 무엇을 해야 하는지 말해준다.
+    # cd 와 unset 을 함께 적는다. 저장소 밖에서는 모듈을 못 찾고,
+    # LLMWIKI_VAULT 가 남은 셸에서 실행하면 방금 막은 볼트 분리를 그대로
+    # 다시 만든다.
+    warn "llmwiki init failed - the nightly job will stop at the missing config."
+    warn "  if the vault already exists, seed the config without touching it:"
+    warn "    (cd \"$DOTFILES_DIR\" && unset LLMWIKI_VAULT && python3 -m scripts.llmwiki init --force)"
+  fi
+fi
+
+# llmwiki 야간 작업. 훅은 세션 중에만 기록한다. 적재/컴파일/스냅샷은 아무도
+# 부르지 않으면 영원히 돌지 않는다 - 실측으로 볼트가 14시간 밀린 적이 있다.
+ensure_dir "$HOME/Library/LaunchAgents"
+copy_file "$DOTFILES_DIR/configs/llmwiki/com.yongjae.llmwiki.plist" \
+  "$HOME/Library/LaunchAgents/com.yongjae.llmwiki.plist"
+copy_file "$DOTFILES_DIR/configs/llmwiki/com.yongjae.llmwiki-web.plist" \
+  "$HOME/Library/LaunchAgents/com.yongjae.llmwiki-web.plist"
+if command -v launchctl >/dev/null 2>&1; then
+  for _job in com.yongjae.llmwiki com.yongjae.llmwiki-web; do
+    launchctl bootout "gui/$(id -u)/$_job" 2>/dev/null || true
+    launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/$_job.plist" 2>/dev/null \
+      || warn "could not load $_job"
+  done
+fi
+# 주간 점검. 검사가 있어도 아무도 돌리지 않으면 두 달이 지나간다.
+copy_file "$DOTFILES_DIR/configs/launchd/com.yongjae.dotfiles-doctor.plist" \
+  "$HOME/Library/LaunchAgents/com.yongjae.dotfiles-doctor.plist"
+if command -v launchctl >/dev/null 2>&1; then
+  launchctl bootout "gui/$(id -u)/com.yongjae.dotfiles-doctor" 2>/dev/null || true
+  launchctl bootstrap "gui/$(id -u)" \
+    "$HOME/Library/LaunchAgents/com.yongjae.dotfiles-doctor.plist" 2>/dev/null \
+    || warn "could not load com.yongjae.dotfiles-doctor - weekly health check will not run"
+fi
+
+# 읽기 전용 뷰어를 tailnet 에만 연다. Funnel(공개)은 쓰지 않는다.
+if command -v tailscale >/dev/null 2>&1; then
+  tailscale serve status 2>/dev/null | grep -q ":8391" \
+    || tailscale serve --bg --https=8391 http://127.0.0.1:8391 >/dev/null 2>&1 \
+    || warn "could not publish llmwiki viewer on the tailnet"
+fi
 link_file "$DOTFILES_DIR/configs/agents/scout.md"     "$HOME/.claude/agents/scout.md"
 link_file "$DOTFILES_DIR/configs/agents/critic.md"    "$HOME/.claude/agents/critic.md"
 link_file "$DOTFILES_DIR/configs/agents/debugger.md"  "$HOME/.claude/agents/debugger.md"

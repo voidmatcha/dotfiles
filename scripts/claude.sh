@@ -293,8 +293,8 @@ info "Installing Claude Code Plugins..."
 # `claude plugin` is interactive when the marketplace/plugin is already
 # registered (confirmation prompt) — and stdin redirect doesn't bypass it
 # because Claude Code reads from /dev/tty. So we check state JSON first and
-# skip if already present. 180s timeout is the last-resort safety net for
-# first-time installs that legitimately stall.
+# route to install or update accordingly. 180s timeout is the last-resort
+# safety net for first-time installs that legitimately stall.
 KNOWN_MARKETPLACES_JSON="$HOME/.claude/plugins/known_marketplaces.json"
 INSTALLED_PLUGINS_JSON="$HOME/.claude/plugins/installed_plugins.json"
 # shellcheck disable=SC2016 # jq variables are passed via --arg.
@@ -317,11 +317,30 @@ for marketplace in "${PLUGIN_MARKETPLACES[@]}"; do
   fi
 done
 
+# Refresh every registered marketplace before the install/update pass. Without
+# this, `claude plugin update` compares against a stale cached manifest and
+# reports "already up to date" even when upstream has newer releases. Bare
+# `marketplace update` refreshes all of them.
+if $DRY_RUN; then
+  info "[dry-run] claude plugin marketplace update"
+else
+  with_timeout 180 claude plugin marketplace update </dev/null >/dev/null \
+    || warn "marketplace refresh failed/timed out — plugin updates may be stale"
+fi
+
+# Install what is missing, update what is present. Skipping installed plugins
+# entirely lets them drift: claude-mem sat on 13.2.0 while upstream shipped
+# 13.13.1, which cost us two months of Codex hook fixes. `plugin update` is a
+# no-op when already current, so running it unconditionally is cheap.
 for plugin in "${PLUGINS[@]}"; do
   if $DRY_RUN; then
-    info "[dry-run] claude plugin install $plugin"
+    info "[dry-run] claude plugin install-or-update $plugin"
   elif json_entry_exists "$INSTALLED_PLUGINS_JSON" "$INSTALLED_PLUGIN_FILTER" --arg p "$plugin"; then
-    info "Plugin already installed: $plugin"
+    if with_timeout 300 claude plugin update "$plugin" </dev/null; then
+      info "Checked for updates: $plugin"
+    else
+      warn "Update check failed for $plugin (timeout or error — re-run manually if needed)"
+    fi
   else
     if with_timeout 180 claude plugin install "$plugin" </dev/null; then
       info "Installed plugin: $plugin"

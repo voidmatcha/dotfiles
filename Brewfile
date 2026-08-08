@@ -32,6 +32,7 @@ brew "mole"
 brew "bats-core"                # Bash Automated Testing System
 brew "shellcheck"               # shell lint used by local and CI verification
 brew "gitleaks" # secret scanner for dotfiles pre-push checks
+brew "lefthook"                 # git hooks manager; install.sh activates the pre-push gate
 brew "pipx"                     # isolated Python CLI installer (used for twitter-cli, rdt-cli)
 brew "oven-sh/bun/bun"          # Bun JS runtime — required by claude-mem@thedotmack hooks (scripts/bun-runner.js)
 brew "yt-dlp"                   # YouTube/Bilibili/1800+ sites — metadata + subtitle extraction

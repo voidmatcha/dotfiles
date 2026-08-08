@@ -149,11 +149,14 @@ Local skills turn recurring session decisions into named, checkable procedures. 
 | Decide what agent surfaces to prune. | [`agent-usage-audit`](plugins/local-skills/skills/agent-usage-audit/SKILL.md) | Audits installed agents, skills, commands, MCPs, and recent usage. |
 | Diagnose stale code intelligence. | [`code-intel-doctor`](plugins/local-skills/skills/code-intel-doctor/SKILL.md) | Checks codegraph and serena setup, Codex config, per-repo indexes, and live CodeGraph status; `--strict` fails closed on unknown status fields. |
 | Decide continue, compact, clear, or hand off. | [`context-check`](plugins/local-skills/skills/context-check/SKILL.md) | Reads context, cache, Headroom, and handoff pressure before changing session state. |
+| Apply dotfiles changes to this machine. | [`dotfiles-sync`](plugins/local-skills/skills/dotfiles-sync/SKILL.md) | Judges the LLM tooling layer — plugin delivery, hook registration, skill pins, and which side wins when repo and machine diverge — then delegates every mutation to `update.sh`. |
 | Verify dotfiles before install or publish. | [`dotfiles-verify`](plugins/local-skills/skills/dotfiles-verify/SKILL.md) | Runs install, config, and plugin smoke checks for this repo. |
 | Transfer work to another session. | [`handover`](plugins/local-skills/skills/handover/SKILL.md) | Creates durable handoff artifacts and fail-closed ACK or READY checks. |
 | Debug a bug, regression, or flaky failure. | [`hypothesis-debugging`](plugins/local-skills/skills/hypothesis-debugging/SKILL.md) | Separates facts from assumptions and tracks falsifiable hypotheses. |
 | Mine local agent sessions for repeated feedback. | [`session-feedback-audit`](plugins/local-skills/skills/session-feedback-audit/SKILL.md) | Extracts recurring corrections and re-requests from local JSONL with extensible phrase pattern packs, then produces rules only from cross-file evidence. |
 | Review terminology in Korean technical writing. | [`korean-technical-terminology`](plugins/local-skills/skills/korean-technical-terminology/SKILL.md) | Keeps canonical English where precision matters, follows established Korean usage, and rewrites awkward calques without becoming a general grammar checker. |
+| Rewrite AI-sounding Korean prose so it reads as human-written. | [`humanize-korean`](plugins/local-skills/skills/humanize-korean/SKILL.md) | Detects 40+ tells across ten categories — translationese, mechanical parallelism, passive overuse, uniform rhythm — and rewrites style only, leaving the content untouched. Technical-document editing goes to `korean-tech-humanizer` instead. |
+| Curate the llmwiki vault by hand. | [`llmwiki-curate`](plugins/local-skills/skills/llmwiki-curate/SKILL.md) | Writes the two things the nightly job cannot: `## 실패한 시도` lessons judged one candidate at a time, and Library notes from material dropped in `raw/`. Collection, compile, and snapshot stay automatic and LLM-free. |
 | Serve a local report or build preview. | [`local-preview-server`](plugins/local-skills/skills/local-preview-server/SKILL.md) | Starts verified localhost or tailnet preview URLs. Default bind is `127.0.0.1`. |
 | Stress-test a risky plan. | [`premortem`](plugins/local-skills/skills/premortem/SKILL.md) | Lists likely failure modes before execution. |
 | Track imported workflow assets. | [`source-provenance`](plugins/local-skills/skills/source-provenance/SKILL.md) | Records standard Agent Skills provenance metadata and audits source, license, import mode, and local modifications. |
@@ -198,6 +201,32 @@ Do not route internal URLs through hosted tools such as [Exa], [Jina Reader], or
 | Session context policy. | [`context-check`](plugins/local-skills/skills/context-check/SKILL.md) | Returns continue, compact, clear, or handoff advice. |
 
 Web tooling note: [defuddle] is installed with `npm install -g defuddle`. [graphify] is installed by [`scripts/dev.sh`](scripts/dev.sh).
+
+#### Research fact policy
+
+`configs/AGENTS.md` requires external facts to be verified where the research
+happens, not where it is reported. The reason is failure-mode specific: a false
+claim relayed at report time has already shaped the reasoning that cites it, and
+re-checking a finished report is both late and expensive. At research time the
+subagent still has its sources open.
+
+Rules a research subagent follows:
+
+- **Facts vs interpretation.** Acquisitions, shutdowns, funding, licence
+  changes, product retirements, and version/date claims are facts. "Threat is
+  low", "worth borrowing" are interpretation. Report them in separate sections.
+- **Evidence bar for facts.** A primary source (company announcement, the
+  project's own repo/registry, or a command whose output is quoted) or two
+  independent major outlets. A personal blog, SEO roundup, vendor marketing
+  page, or aggregator alone is never sufficient — label it unverified or drop it.
+- **Refute first.** [`verify-output`](plugins/local-skills/skills/verify-output/SKILL.md)
+  searches for disconfirming evidence before accepting a claim. Run it on the
+  fact list, not on the prose.
+- **Verify hardest what you want to be true.** A claim that supports the
+  conclusion already forming gets *more* scrutiny, not less. This is the failure
+  that motivated the rule.
+- **Subagent output is a draft, not a source.** Never quote an unchecked fact
+  claim onward; check the cited link's nature before repeating its content.
 
 ## Claude Code operational tripwires, not security controls
 

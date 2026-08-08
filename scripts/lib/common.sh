@@ -98,6 +98,33 @@ link_file() {
   info "Linked: $src -> $dst"
 }
 
+# launchd 전용. plist 는 심링크가 아니라 실파일로 둔다.
+#
+# 로그인 시점의 launchd 스캔이 심링크를 따라간다는 보장이 없고, 그것은
+# 재부팅해야만 확인되는 종류의 가정이다. 이 머신의 다른 LaunchAgent 는
+# 전부 실파일이므로 관례도 그쪽이다. 대가는 사본이 낡을 수 있다는 것인데,
+# 그건 doctor 의 launchd-drift 검사가 본다.
+copy_file() {
+  local src="$1"
+  local dst="$2"
+
+  if $DRY_RUN; then
+    info "[dry-run] cp $src -> $dst"
+    return 0
+  fi
+
+  if [ -L "$dst" ]; then
+    rm -f "$dst"
+  fi
+  mkdir -p "$(dirname "$dst")"
+  if [ -f "$dst" ] && cmp -s "$src" "$dst"; then
+    return 0
+  fi
+  cp "$src" "$dst"
+  chmod 0644 "$dst"
+  info "Copied: $src -> $dst"
+}
+
 # with_timeout <secs> <cmd> [args...]
 # macOS has no `timeout`; perl's alarm sends SIGALRM after N seconds (exit 142).
 # Use to bound third-party CLIs that may hang on first-run downloads, network

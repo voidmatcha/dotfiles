@@ -53,7 +53,12 @@ from pathlib import Path
 
 root = Path(sys.argv[1])
 hangul = re.compile(r"[\u3131-\u318e\uac00-\ud7a3]")
-allowed_trees = {"handover", "korean-technical-terminology", "session-feedback-audit"}
+# humanize-korean 은 AI 가 쓴 한글을 윤문하는 스킬이다. 본문이 한국어인 것이
+# 이 테스트가 허용하는 "Korean-specific surface" 그 자체다.
+# llmwiki-curate 는 한글 볼트를 편집한다. 절 제목("## 실패한 시도 (다시 하지
+# 말 것)")과 CLI 출력이 한글이라 지시문이 그 문자열을 그대로 인용해야 한다.
+allowed_trees = {"handover", "humanize-korean", "korean-technical-terminology",
+                 "llmwiki-curate", "session-feedback-audit"}
 
 for path in sorted((root / "skills").rglob("*")):
     if not path.is_file() or path.parts[-2:-1] == ("__pycache__",):

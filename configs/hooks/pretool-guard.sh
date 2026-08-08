@@ -100,8 +100,21 @@ if tool_name == 'Bash':
             continue
 
         if len(tokens) >= 2 and tokens[0] == 'git' and tokens[1] == 'push':
-            if any(token in {'-f', '--force'} or token.startswith('--force-with-lease') or token.startswith('+') for token in tokens[2:]):
+            rest = tokens[2:]
+            if any(token in {'-f', '--force'} or token.startswith('+') for token in rest):
                 deny('Blocked risky Bash command: force push')
+            # --force-with-lease is allowed (fails if the remote ref moved),
+            # except toward protected branches.
+            if any(token.startswith('--force-with-lease') for token in rest):
+                protected = {'main', 'master'}
+                def lease_target(token):
+                    if token.startswith('--force-with-lease='):
+                        return token.split('=', 1)[1].split(':', 1)[0].split('/')[-1]
+                    return None
+                for token in rest:
+                    ref = token.split(':', 1)[-1].split('/')[-1] if not token.startswith('-') else lease_target(token)
+                    if ref in protected:
+                        deny('Blocked risky Bash command: force push to protected branch')
 
         if tokens[0] == 'rm':
             flags = ''.join(token[1:] for token in tokens[1:] if token.startswith('-') and token != '--')
