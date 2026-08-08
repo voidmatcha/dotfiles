@@ -1,5 +1,34 @@
 # Local skills conventions
 
+## Ownership: local skills win
+
+Skills under `plugins/local-skills/skills/` are owned by this repo. Upstream
+skills pulled by `scripts/skills.sh` are pinned copies that can be re-fetched at
+any time. When a name appears on both sides, the local skill wins and the
+upstream install is skipped — enforced in `install_upstream_skill_from_url`, not
+just documented here.
+
+The asymmetry is deliberate. A local skill has its only original in this repo,
+while an upstream skill is one `curl` away from the pinned SHA. Losing the local
+one is unrecoverable; skipping the upstream one costs nothing.
+
+Two related guarantees in the same function:
+
+- A locally edited upstream skill is backed up to `SKILL.md.backup` before being
+  replaced, and identical content is left untouched so mtimes stay stable.
+- Replacing a symlink logs where it pointed first. The install path deletes
+  symlinks to swap in a directory, so without that line the target is gone with
+  no record.
+
+## Cache propagation
+
+Claude Code reads a cached copy of this plugin, not the working tree, and
+invalidates it on `plugin.json`'s `version` alone. Editing a skill without
+bumping the version leaves the edit invisible while every command reports
+success — measured once at 27 days stale and two skills short. `skills.sh`
+detects the divergence and bumps the patch version to force a refresh; commit
+the bumped manifests along with the skill change.
+
 ## Local-only overrides
 
 Use `*.local.md` for machine-, company-, or project-private instructions that
@@ -38,6 +67,8 @@ not the name. This index is for the judgment-call ones that are easy to forget:
 | Decide whether overlapping agent surfaces should be pruned | `agent-usage-audit` |
 | Mine repeated corrections from local session JSONL | `session-feedback-audit` |
 | Review Korean technical terminology without general copy-editing | `korean-technical-terminology` |
+| Humanize general (non-technical) Korean prose / strip AI-tell rhythm | `humanize-korean` |
+| Korean technical docs — humanize, translation post-edit, term consistency, delta audit | `korean-tech-humanizer` (external repo `~/Documents/korean-tech-humanizer`) |
 | Verify this dotfiles repo before install | `dotfiles-verify` |
 | Decide continue / compact / clear / hand off | `context-check` |
 | Hand work to a fresh Claude/Codex/OMX session | `handover` |

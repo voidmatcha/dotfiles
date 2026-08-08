@@ -60,9 +60,27 @@ install_upstream_skill_from_url() {
   local dest="$skills_dir/$skill_name"
   local tmp_file backup_dst
 
+  # 로컬 스킬이 이깁니다.
+  #
+  # 이 저장소가 소유한 스킬과 이름이 겹치면 업스트림을 설치하지 않는다. 아래
+  # 설치 경로는 심링크를 rm 으로 지우고 디렉터리로 갈아끼우므로, 가드가 없으면
+  # 내가 쓴 스킬을 가리키던 링크가 어디를 가리켰는지 기록도 없이 사라진다.
+  # 로컬 스킬은 저장소에 원본이 있고 업스트림은 언제든 다시 받을 수 있으니,
+  # 충돌 시 잃으면 안 되는 쪽은 로컬이다.
+  if [ -d "$LOCAL_SKILLS_DIR/$skill_name" ]; then
+    warn "skipping upstream $tool_name skill '$skill_name': this repo owns a local skill with that name"
+    return 0
+  fi
+
   if $DRY_RUN; then
     info "[dry-run] install upstream $tool_name skill $skill_name from $url -> $dest"
     return 0
+  fi
+
+  # 심링크를 지우기 전에 어디를 가리켰는지 남긴다. 위 가드가 로컬 스킬은 이미
+  # 막았지만, 사람이 손으로 만든 링크는 여전히 여기로 온다.
+  if [ -L "$dest" ]; then
+    warn "replacing symlink $dest -> $(readlink "$dest" 2>/dev/null || printf '?')"
   fi
 
   ensure_dir "$skills_dir"
@@ -89,6 +107,20 @@ install_upstream_skill_from_url() {
     mkdir -p "$dest"
   else
     mkdir -p "$dest"
+  fi
+
+  # 로컬 수정을 조용히 버리지 않는다. 정상 설치 상태에서는 $dest 가 디렉터리라
+  # 위쪽 백업 분기를 타지 않으므로, 여기서 파일 단위로 한 번 더 본다.
+  # 내용이 같으면 아무것도 하지 않아 mtime 이 흔들리지 않는다.
+  if [ -f "$dest/SKILL.md" ]; then
+    if cmp -s "$dest/SKILL.md" "$tmp_file"; then
+      rm -f "$tmp_file"
+      info "Upstream $tool_name skill already current: $skill_name"
+      return 0
+    fi
+    backup_dst="$(next_backup_path "$dest/SKILL.md")"
+    warn "Local edits found in $skill_name; backing up -> $backup_dst"
+    cp "$dest/SKILL.md" "$backup_dst"
   fi
 
   mv "$tmp_file" "$dest/SKILL.md"
@@ -154,6 +186,16 @@ install_codex_local_skills() {
     ln -s "$skill_dir" "$dest"
     info "Installed local Codex skill: $skill_name -> $dest"
   done < <(find "$LOCAL_SKILLS_DIR" -mindepth 1 -maxdepth 1 -type d | sort)
+}
+
+# plugin.json 의 patch 자리를 하나 올린다. 사람이 버전을 기억할 필요를 없앤다.
+# 저장소가 진실이므로 여기서 쓰고, 커밋은 사람이 한다.
+bump_local_plugin_patch_version() {
+  if $DRY_RUN; then
+    info "[dry-run] bump local plugin patch version"
+    return 0
+  fi
+  python3 "$DOTFILES_DIR/scripts/bump_local_plugin_version.py" "$LOCAL_PLUGIN_DIR"
 }
 
 local_plugin_skill_snapshot() {
@@ -326,8 +368,22 @@ install_claude_local_plugin() {
       source_skill_count=$(local_plugin_skill_count "$LOCAL_SKILLS_DIR")
       cached_skill_count=$(local_plugin_skill_count "$install_path/skills")
       if [ -z "$source_skill_snapshot" ] || [ "$source_skill_snapshot" != "$cached_skill_snapshot" ]; then
+        # 경고만 하면 매번 같은 줄이 나오고 결국 무시하게 된다. 실측에서 캐시가
+        # 27일 묵어 있었고 스킬 두 개가 통째로 빠져 있었다.
+        #
+        # 캐시 무효화는 plugin.json 의 version 기준이므로, 내용이 바뀌었으면
+        # 패치 자리를 올려서 update 가 실제로 새 사본을 뜨게 한다.
         warn "local Claude plugin skill content drift: source=$source_skill_count cached=$cached_skill_count"
-        failed=1
+        if bump_local_plugin_patch_version; then
+          if with_timeout 300 claude plugin update "$CLAUDE_PLUGIN_ID" </dev/null; then
+            info "bumped local plugin version and refreshed the cache"
+          else
+            warn "version bumped but 'claude plugin update' failed; run it manually"
+            failed=1
+          fi
+        else
+          failed=1
+        fi
       else
         info "Verified local Claude plugin content/cache: $CLAUDE_PLUGIN_ID@$claude_version ($source_skill_count skills)"
       fi

@@ -22,9 +22,11 @@ The helper discovers the code-server base URL in this order:
 
 1. `CODE_SERVER_BASE_URL` explicit override.
 2. `CODE_SERVER_TAILSCALE_HOST` explicit tailnet host.
-3. `tailscale status --json` MagicDNS name.
-4. `tailscale ip -4` IPv4 fallback.
-5. Local bind fallback from `~/.config/code-server/config.yaml`, then
+3. `tailscale serve status --json` mapping that proxies the configured local
+   code-server bind address.
+4. `tailscale status --json` MagicDNS name with the default/override port.
+5. `tailscale ip -4` IPv4 fallback.
+6. Local bind fallback from `~/.config/code-server/config.yaml`, then
    `http://127.0.0.1:8088`.
 
 Tailscale links use HTTPS on port `8443` by default. Override with

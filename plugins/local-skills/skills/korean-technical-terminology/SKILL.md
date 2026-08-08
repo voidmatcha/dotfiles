@@ -55,6 +55,7 @@ Prefer the standard technical register over colloquial verbs, and keep these ter
   - `더해집니다` / `더합니다` → `추가되었습니다` / `추가합니다`
   - `잽니다` → `측정합니다`
   - `뺍니다` / `뺀다` → `제거했습니다` / `제거합니다`
+  - `X로 처리합니다` (when it means "use X") → `X를 사용합니다`
 - **Keep the English term:**
   - `인라인` → `inline` (e.g. `인라인으로` → `inline으로`)
   - task/issue ownership `맡다` / `맡기다` / `담당` → `assign`, e.g. `아무도 안 맡은` → `아무도 assign 하지 않은`
@@ -115,3 +116,17 @@ Report only decisions that help review the change:
 ```
 
 Keep the final prose natural. The decision labels are for the review report, not text that must be inserted into the document.
+
+## Relationship to `humanize-korean`
+
+This skill stays narrow: terminology decisions, awkward calques, canonical English preservation, and mechanical Korean prose symbols in technical text.
+
+Use `humanize-korean` instead when the request is broader than terminology:
+
+- general Korean humanizing / AI-tell removal,
+- full paragraph rhythm and tone rewriting,
+- English source + Korean draft translation post-editing,
+- good technical translation vs LLM baseline delta analysis,
+- long-form technical documentation polish.
+
+When both apply, run the terminology inventory first, then let `humanize-korean`'s Technical Korean pass rewrite the prose while preserving the term decisions.

@@ -12,7 +12,13 @@ Use the tracked hook and keep it generic; do not hardcode secrets.
 Resolve the checkout explicitly; never assume the caller's cwd:
 
 ```bash
-DOTFILES_DIR="${DOTFILES_DIR:-$HOME/work/dotfiles}"
+DOTFILES_DIR="${DOTFILES_DIR:-$(
+  for l in "$HOME/.zshrc" "$HOME/.agent/AGENTS.md" "$HOME/.claude/settings.json"; do
+    t=$(readlink "$l" 2>/dev/null) || continue
+    r=$(cd "$(dirname "$t")/.." 2>/dev/null && pwd) || continue
+    [ -d "$r/scripts" ] && printf '%s' "$r" && break
+  done
+)}"
 test -f "$DOTFILES_DIR/configs/hooks/work-scope-guard.sh"
 ```
 

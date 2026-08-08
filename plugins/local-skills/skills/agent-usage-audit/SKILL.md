@@ -13,7 +13,13 @@ raw command output, private paths, or project text.
 Resolve the dotfiles checkout explicitly before running its repo-backed helpers:
 
 ```bash
-DOTFILES_DIR="${DOTFILES_DIR:-$HOME/work/dotfiles}"
+DOTFILES_DIR="${DOTFILES_DIR:-$(
+  for l in "$HOME/.zshrc" "$HOME/.agent/AGENTS.md" "$HOME/.claude/settings.json"; do
+    t=$(readlink "$l" 2>/dev/null) || continue
+    r=$(cd "$(dirname "$t")/.." 2>/dev/null && pwd) || continue
+    [ -d "$r/scripts" ] && printf '%s' "$r" && break
+  done
+)}"
 test -f "$DOTFILES_DIR/scripts/agent_usage_audit.py"
 ```
 

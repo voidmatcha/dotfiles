@@ -9,6 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 from urllib.parse import quote
+from urllib.parse import urlparse
 
 DEFAULT_PORT = "8443"
 LOCAL_FALLBACK = "http://127.0.0.1:8088"
@@ -56,15 +57,49 @@ def local_bind_base() -> str:
     return f"http://{addr}" if addr else LOCAL_FALLBACK
 
 
+def tailscale_serve_base(local_base: str) -> str:
+    """Return the public Serve URL proxying the configured code-server bind."""
+    status = run(["tailscale", "serve", "status", "--json"])
+    if status.returncode != 0 or not status.stdout.strip():
+        return ""
+    try:
+        payload = json.loads(status.stdout)
+        web = payload.get("Web") or {}
+        tcp_config = payload.get("TCP") or {}
+    except json.JSONDecodeError:
+        return ""
+
+    target = urlparse(local_base)
+    target_host = target.hostname or ""
+    target_port = target.port
+    for public, config in web.items():
+        handlers = (config or {}).get("Handlers") or {}
+        for handler in handlers.values():
+            proxy = (handler or {}).get("Proxy") or ""
+            parsed = urlparse(proxy)
+            proxy_host = parsed.hostname or ""
+            same_loopback = {target_host, proxy_host} <= {"127.0.0.1", "localhost"}
+            if target_port == parsed.port and (target_host == proxy_host or same_loopback):
+                port = public.rsplit(":", 1)[-1]
+                protocol = tcp_config.get(port) or {}
+                scheme = "https" if protocol.get("HTTPS") else "http"
+                return f"{scheme}://{public}"
+    return ""
+
+
 def base_url() -> str:
     explicit = os.environ.get("CODE_SERVER_BASE_URL", "").strip()
     if explicit:
         return explicit.rstrip("/")
+    local_base = local_bind_base().rstrip("/")
+    detected = tailscale_serve_base(local_base)
+    if detected:
+        return detected
     host = tailscale_host()
     if host:
         port = os.environ.get("CODE_SERVER_TAILSCALE_PORT", DEFAULT_PORT).strip() or DEFAULT_PORT
         return f"https://{host}:{port}"
-    return local_bind_base().rstrip("/")
+    return local_base
 
 
 def git_root(path: Path) -> Path | None:
