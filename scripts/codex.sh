@@ -189,6 +189,179 @@ print(changed)
 PY
 }
 
+# claude-mem 은 Claude Code 플러그인으로 설치되지만 Codex 훅은 스스로 등록하지
+# 않는다. 그 결과 Codex 세션은 두 달 가까이 하나도 기록되지 않았고, 아무 도구도
+# 실패를 알리지 않았다 — 손으로 병합해서 복구했는데, 손으로 한 복구는 다음
+# 머신에서 그대로 사라진다. 그래서 여기서 소유한다.
+#
+# 훅 명령은 플러그인이 배포하는 hooks/codex-hooks.json 을 그대로 쓴다. 명령을
+# 이 저장소에 복사하면 claude-mem 이 경로 해석 방식을 바꿀 때마다 조용히 낡는다.
+ensure_claude_mem_codex_hooks() {
+  local hooks_file="$CODEX_CONFIG_DIR/hooks.json"
+  local cache_root="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/thedotmack/claude-mem"
+
+  # stdout 은 호출부가 카운트로 읽는다. 로그는 전부 stderr 로 보낸다.
+  [ -d "$cache_root" ] || { info "claude-mem plugin not installed — skipping Codex hook merge" >&2; return 0; }
+
+  if $DRY_RUN; then
+    info "[dry-run] merge claude-mem Codex hooks into $hooks_file" >&2
+    return 0
+  fi
+
+  python3 - "$cache_root" "$hooks_file" <<'PY'
+import json, sys
+from pathlib import Path
+
+cache_root, hooks_path = Path(sys.argv[1]), Path(sys.argv[2])
+
+
+def version_key(d):
+    base = d.name.split("-")[0]
+    parts = [int(x) if x.isdigit() else 0 for x in base.split(".")[:3]]
+    parts += [0] * (3 - len(parts))
+    return (*parts, "-" not in d.name)
+
+
+versions = [d for d in cache_root.iterdir()
+            if d.is_dir() and d.name[:1].isdigit() and not (d / ".orphaned_at").exists()]
+if not versions:
+    print("no-plugin-version")
+    raise SystemExit(0)
+
+template = max(versions, key=version_key) / "hooks" / "codex-hooks.json"
+if not template.is_file():
+    print("no-template")
+    raise SystemExit(0)
+
+try:
+    wanted = json.loads(template.read_text()).get("hooks", {})
+except ValueError:
+    # 읽을 수 없는 템플릿은 원하는 집합을 모른다는 뜻이다. 이 상태로
+    # 진행하면 아래 정리 단계가 claude-mem 훅을 전부 지운다.
+    print("bad-template")
+    raise SystemExit(0)
+
+if not any(g.get("hooks") for entries in wanted.values() for g in entries):
+    # 빈 템플릿도 마찬가지다. "원하는 것이 없다" 가 아니라 "무엇을 원하는지
+    # 모른다" 이므로 아무것도 지우지 않는다. 이것을 원하는 집합으로 취급하면
+    # Codex 기록이 조용히 멈춘다 - 이 저장소가 두 달을 잃은 방식이다.
+    print("empty-template")
+    raise SystemExit(0)
+
+try:
+    # 0바이트는 손상이 아니라 아직 아무것도 없는 상태다. 잘린 쓰기로 흔히
+    # 생기고 안전하게 대체할 수 있는데, 거부하면 병합이 영원히 막힌다.
+    raw_live = hooks_path.read_text().strip() if hooks_path.is_file() else ""
+    live = json.loads(raw_live) if raw_live else {}
+except ValueError:
+    # 읽을 수 없는 hooks.json 을 덮어쓰면 다른 도구의 훅까지 날아간다.
+    # 가만히 두고 소리를 낸다 - 지금까지는 traceback 이 stderr 로만 가고
+    # stdout 이 비어 호출부가 "할 일 없음" 으로 읽었다.
+    print("bad-hooks-file")
+    raise SystemExit(0)
+live.setdefault("hooks", {})
+
+# 이 파일에는 OMX, orca, ui-clone 훅이 같은 이벤트에 공존한다. 그래서
+# claude-mem 이 소유한 항목만 골라내야 하는데, 명령 문자열은 버전마다
+# 바뀐다 - 실측으로 13.2.0 은 7개, 13.13.1 은 5개이고 겹치는 문자열이
+# 하나도 없다. 추가만 하면 업그레이드할 때마다 옛 명령이 남아 같은
+# 이벤트에서 두 번 발동하고, 아무것도 그것을 지우지 않는다.
+#
+# 소유 표식은 플러그인 캐시 경로다. 두 버전 템플릿 모두 전 명령이 이것을
+# 담고 있고, 이 파일의 다른 도구 훅 중에는 하나도 없다.
+MARKER = "thedotmack/claude-mem"
+
+wanted_commands = {str(h.get("command", ""))
+                   for entries in wanted.values()
+                   for g in entries for h in g.get("hooks", [])}
+
+removed = 0
+for event, entries in list(live["hooks"].items()):
+    kept_groups = []
+    for group in entries:
+        keep = []
+        for hook in group.get("hooks", []):
+            cmd = str(hook.get("command", ""))
+            if MARKER in cmd and cmd not in wanted_commands:
+                removed += 1
+                continue
+            keep.append(hook)
+        if keep:
+            kept_groups.append({**group, "hooks": keep})
+    live["hooks"][event] = kept_groups
+
+def commands(entries):
+    return {str(h.get("command", ""))
+            for g in entries for h in g.get("hooks", [])}
+
+
+added = 0
+for event, entries in wanted.items():
+    have = commands(live["hooks"].get(event, []))
+    for group in entries:
+        fresh = [h for h in group.get("hooks", [])
+                 if str(h.get("command", "")) not in have]
+        if not fresh:
+            continue
+        live["hooks"].setdefault(event, []).append({**group, "hooks": fresh})
+        added += len(fresh)
+
+if added or removed:
+    backup = hooks_path.with_suffix(f".json.pre-claude-mem-merge")
+    if hooks_path.is_file() and not backup.exists():
+        backup.write_text(hooks_path.read_text())
+    hooks_path.parent.mkdir(parents=True, exist_ok=True)
+    hooks_path.write_text(json.dumps(live, indent=2, ensure_ascii=False) + "\n")
+print(added)
+PY
+}
+
+# llmwiki 훅. Claude 쪽은 settings.json 이 저장소 심링크라 등록이 곧 커밋이지만
+# ~/.codex/hooks.json 은 실파일이고 OMX 가 재작성한다. 그래서 여기서 매번 확인한다.
+ensure_llmwiki_codex_hooks() {
+  local hooks_file="$CODEX_CONFIG_DIR/hooks.json"
+  local dir="$DOTFILES_DIR/configs/llmwiki"
+
+  [ -f "$dir/hook-session-start.sh" ] || { info "llmwiki hooks not in this checkout — skipping" >&2; return 0; }
+
+  if $DRY_RUN; then
+    info "[dry-run] register llmwiki hooks in $hooks_file" >&2
+    return 0
+  fi
+
+  python3 - "$hooks_file" "$dir" <<'PY'
+import json, sys
+from pathlib import Path
+
+hooks_path, hook_dir = Path(sys.argv[1]), Path(sys.argv[2])
+wanted = {
+    "SessionStart": hook_dir / "hook-session-start.sh",
+    "UserPromptSubmit": hook_dir / "hook-user-prompt.sh",
+}
+
+live = json.loads(hooks_path.read_text()) if hooks_path.is_file() else {}
+live.setdefault("hooks", {})
+
+added = 0
+for event, script in wanted.items():
+    present = any(str(script) in str(h.get("command", ""))
+                  for g in live["hooks"].get(event, []) for h in g.get("hooks", []))
+    if present:
+        continue
+    live["hooks"].setdefault(event, []).append(
+        {"hooks": [{"type": "command", "command": f'sh "{script}"', "timeout": 10}]})
+    added += 1
+
+if added:
+    backup = hooks_path.with_suffix(".json.pre-llmwiki")
+    if hooks_path.is_file() and not backup.exists():
+        backup.write_text(hooks_path.read_text())
+    hooks_path.parent.mkdir(parents=True, exist_ok=True)
+    hooks_path.write_text(json.dumps(live, indent=2, ensure_ascii=False) + "\n")
+print(added)
+PY
+}
+
 install_codex_cmux_skill() {
   local skills_dir="$CODEX_CONFIG_DIR/skills"
   local dest="$skills_dir/cmux"
@@ -291,6 +464,8 @@ if $DRY_RUN; then
     info "[dry-run] omx not installed — would install with oh-my-codex"
   fi
   install_codex_cmux_skill
+  ensure_claude_mem_codex_hooks >/dev/null
+  ensure_llmwiki_codex_hooks >/dev/null
   sanitize_omx_native_agent_providers
   if [ -x "$DOTFILES_DIR/scripts/skills.sh" ]; then
     bash "$DOTFILES_DIR/scripts/skills.sh" codex
@@ -378,6 +553,19 @@ if $UPGRADE; then
 fi
 
 install_codex_cmux_skill
+
+merged=$(ensure_claude_mem_codex_hooks || true)
+llmwiki_added=$(ensure_llmwiki_codex_hooks || true)
+[ "${llmwiki_added:-0}" = "0" ] || info "registered $llmwiki_added llmwiki hook(s) in Codex"
+case "${merged:-0}" in
+  0|"") : ;;
+  no-plugin-version|no-template|empty-template|bad-template|bad-hooks-file)
+    # 어느 쪽이든 원하는 훅 집합을 모른다. 그 상태에서 조용히 넘어가면
+    # Codex 기록이 멈춘 것을 아무도 모른다.
+    warn "claude-mem Codex hook template unusable ($merged) — Codex sessions will not be recorded"
+    warn "  existing hooks were left untouched; check the plugin install" ;;
+  *) info "merged $merged claude-mem hook(s) into Codex — Codex sessions are recorded again" ;;
+esac
 sanitize_omx_native_agent_providers
 if [ -x "$DOTFILES_DIR/scripts/skills.sh" ]; then
   bash "$DOTFILES_DIR/scripts/skills.sh" codex
