@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.yongjae.llmwiki-web</string>
+  <!--
+    읽기 전용 뷰어. tmux 안에서 돌던 것을 옮겼다 - 창을 닫거나 재부팅하면
+    사라졌고, 죽어도 아무도 몰랐다.
+
+    localhost 에만 바인딩한다. tailnet 노출은 `tailscale serve` 가 앞단에서
+    맡고, 이 프로세스는 외부에 직접 열리지 않는다. Funnel 은 쓰지 않는다.
+
+    파이썬 해석은 야간 작업 plist 와 같은 이유로 여기서도 필요하다: launchd
+    는 ~/.zshrc 를 읽지 않아 tomllib 없는 3.9 를 잡는다.
+  -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>-lc</string>
+    <string>set -e
+d="${DOTFILES_DIR:-$(for l in "$HOME/.zshrc" "$HOME/.agent/AGENTS.md" "$HOME/.claude/settings.json"; do t=$(readlink "$l" 2&gt;/dev/null) || continue; r=$(cd "$(dirname "$t")/.." 2&gt;/dev/null &amp;&amp; pwd) || continue; [ -d "$r/scripts" ] &amp;&amp; printf %s "$r" &amp;&amp; break; done)}"
+[ -n "$d" ] || { echo "llmwiki-web: dotfiles checkout not found" &gt;&amp;2; exit 1; }
+py=
+for c in "$HOME/.pyenv/shims/python3" /opt/homebrew/bin/python3 /usr/local/bin/python3 "$(command -v python3 2&gt;/dev/null)"; do
+  [ -x "$c" ] || continue
+  "$c" -c "import tomllib" 2&gt;/dev/null || continue
+  py="$c"; break
+done
+[ -n "$py" ] || { echo "llmwiki-web: no python3 with tomllib (needs 3.11+)" &gt;&amp;2; exit 1; }
+cd "$d"
+exec "$py" -m scripts.llmwiki serve --port 8391 --refresh 60</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>/tmp/llmwiki-web.log</string>
+  <key>StandardErrorPath</key><string>/tmp/llmwiki-web.err</string>
+</dict>
+</plist>
