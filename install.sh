@@ -205,10 +205,6 @@ link_file "$DOTFILES_DIR/configs/agents/test-engineer.md" "$HOME/.claude/agents/
 link_file "$DOTFILES_DIR/configs/agents/security-reviewer.md" "$HOME/.claude/agents/security-reviewer.md"
 link_file "$DOTFILES_DIR/configs/agents/git-master.md" "$HOME/.claude/agents/git-master.md"
 
-# Cursor
-ensure_dir "$HOME/.cursor/rules"
-link_file "$DOTFILES_DIR/configs/AGENTS.md" "$HOME/.cursor/rules/AGENTS.md"
-
 # Codex CLI
 ensure_dir "$HOME/.codex"
 # Codex config is a mutable local file. scripts/codex.sh copies the portable

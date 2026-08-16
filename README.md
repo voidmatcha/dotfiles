@@ -11,7 +11,7 @@ One local operating layer for:
 
 Start points:
 
-- **Policy**: [`configs/AGENTS.md`](configs/AGENTS.md), [`configs/CLAUDE.md`](configs/CLAUDE.md), [`configs/codex/config.toml`](configs/codex/config.toml)
+- **Policy**: [`configs/AGENTS.md`](configs/AGENTS.md), [`configs/CLAUDE.md`](configs/CLAUDE.md), [`configs/codex/AGENTS.md`](configs/codex/AGENTS.md), [`configs/codex/config.toml`](configs/codex/config.toml)
 - **Measurement**: [Evidence summary](#evidence-summary-2026-07-06), [`configs/RTK.md`](configs/RTK.md)
 - **Safety**: [`configs/hooks/pretool-guard.sh`](configs/hooks/pretool-guard.sh), [`plugins/local-skills/skills`](plugins/local-skills/skills)
 - **Verification**: [`scripts/verify.sh`](scripts/verify.sh), [`tests/scripts.bats`](tests/scripts.bats), [`scripts/doctor.sh`](scripts/doctor.sh)

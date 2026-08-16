@@ -69,11 +69,35 @@ class HooksTest(unittest.TestCase):
             home, vault = Path(d) / "h", Path(d) / "v"
             for _ in range(20):
                 TK.create(home, vault, "p", title="제" * 100)
-            proc = run_cli(["hook-session-start"], {"session_id": "s1", "cwd": str(vault)},
+            # cwd 의 basename 이 곧 프로젝트 슬러그다. 태스크와 다른 값을 주면
+            # 필터가 전부 걸러 이 테스트가 빈 문자열을 재는 공허한 검사가 된다.
+            proc = run_cli(["hook-session-start"], {"session_id": "s1", "cwd": str(Path(d) / "p")},
                            home, vault)
             self.assertEqual(proc.returncode, 0)
             context = json.loads(proc.stdout)["hookSpecificOutput"]["additionalContext"]
+            self.assertTrue(context)
             self.assertLessEqual(len(context), 1000)
+
+    def test_session_start_injects_only_the_cwd_project(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            home, vault = Path(d) / "h", Path(d) / "v"
+            mine = TK.create(home, vault, "alpha", title="내 프로젝트")
+            other = TK.create(home, vault, "beta", title="남의 프로젝트")
+            proc = run_cli(["hook-session-start"], {"session_id": "s1", "cwd": str(Path(d) / "alpha")},
+                           home, vault)
+            self.assertEqual(proc.returncode, 0)
+            context = json.loads(proc.stdout)["hookSpecificOutput"]["additionalContext"]
+            self.assertIn(mine, context)
+            self.assertNotIn(other, context)
+
+    def test_session_start_without_cwd_falls_back_to_all_projects(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            home, vault = Path(d) / "h", Path(d) / "v"
+            tid = TK.create(home, vault, "alpha", title="t")
+            proc = run_cli(["hook-session-start"], {"session_id": "s1"}, home, vault)
+            self.assertEqual(proc.returncode, 0)
+            context = json.loads(proc.stdout)["hookSpecificOutput"]["additionalContext"]
+            self.assertIn(tid, context)
 
     def test_user_prompt_records_cwd_once_per_change(self) -> None:
         with tempfile.TemporaryDirectory() as d:

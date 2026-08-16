@@ -128,7 +128,20 @@ def _payload() -> dict:
         return {}
 
 
-def _hook_session_start(home: Path, vault: Path) -> None:
+def _project_at(cfg, payload: dict) -> str | None:
+    """cwd 를 compile 과 같은 정제를 거쳐 프로젝트 슬러그로 바꾼다.
+
+    정제를 여기서 새로 구현하면 compile 이 프론트매터에 쓴 슬러그와 어긋나
+    필터가 아무것도 못 맞춘다. blocklist 와 mapping 은 config 가 소유하므로
+    (스펙 5.4) 그 경로를 그대로 탄다.
+    """
+    cwd = str(payload.get("cwd") or "")
+    if not cwd:
+        return None
+    return _load("compiler").safe_slug(cfg.resolve_project(Path(cwd).name))
+
+
+def _hook_session_start(home: Path, vault: Path, cfg) -> None:
     payload = _payload()
     session_id = str(payload.get("session_id") or "")
     name = str(payload.get("session_name") or "")
@@ -136,7 +149,12 @@ def _hook_session_start(home: Path, vault: Path) -> None:
     if session_id and TASK_NAME.match(name) and tasks.path_for(vault, name).exists():
         tasks.bind(home, session_id, name)
     queries = _load("queries")
-    context = queries.brief(queries.list_open(vault), max_chars=1000)
+    # 스펙 8.3 은 "해당 프로젝트의" 열린 태스크를 주입하라고 한다. 필터가
+    # 없으면 A 프로젝트 세션에 B 프로젝트 태스크가 섞여 5건 상한을 채우고,
+    # 8.2 가 막으려던 혼입이 주입 경로로 되돌아온다.
+    context = queries.brief(
+        queries.list_open(vault, project=_project_at(cfg, payload)), max_chars=1000
+    )
     print(json.dumps(
         {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": context}},
         ensure_ascii=False,
@@ -163,7 +181,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command in ("hook-session-start", "hook-user-prompt"):
         try:
             if args.command == "hook-session-start":
-                _hook_session_start(home, vault)
+                _hook_session_start(home, vault, cfg)
             else:
                 _hook_user_prompt(home, vault)
         except BaseException:
