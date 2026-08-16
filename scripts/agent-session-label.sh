@@ -80,10 +80,6 @@ if [ -n "${TMUX:-}" ] && command -v tmux >/dev/null 2>&1; then
   fi
 fi
 
-if [ -n "${OMX_SESSION_ID:-}" ]; then
-  clean_label "omx:${OMX_SESSION_ID}"
-  exit 0
-fi
 if [ -n "${CODEX_SESSION_ID:-}" ]; then
   clean_label "codex:${CODEX_SESSION_ID}"
   exit 0

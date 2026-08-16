@@ -781,7 +781,7 @@ JSON
   [[ "$output" == *"CLI output suppressed"* ]]
 }
 
-@test "Codex upgrade dry-run previews OMX asset refresh without executing tools" {
+@test "Codex upgrade dry-run previews the npm upgrade without executing tools" {
   root="$TMPDIR_TEST/codex-dry-root"
   home="$TMPDIR_TEST/codex-dry-home"
   fakebin="$TMPDIR_TEST/codex-dry-bin"
@@ -792,14 +792,12 @@ JSON
 #!/bin/bash
 exit 0
 SH
-  for cmd in codex omx; do
-    cat > "$fakebin/$cmd" <<'SH'
+  cat > "$fakebin/codex" <<'SH'
 #!/bin/bash
 printf '%s\n' "$0 $*" >> "$CALL_LOG"
 exit 97
 SH
-    make_executable "$fakebin/$cmd"
-  done
+  make_executable "$fakebin/codex"
   make_executable "$root/scripts/skills.sh"
 
   run env HOME="$home" CODEX_HOME="$home/.codex" DOTFILES_DIR="$root" \
@@ -807,12 +805,12 @@ SH
     bash "$REPO_ROOT/scripts/codex.sh"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"omx update --stable"*"refresh generated user assets"* ]]
+  [[ "$output" == *"would: npm install -g @openai/codex@latest"* ]]
   [ ! -e "$log" ]
   [ ! -e "$home/.codex" ]
 }
 
-@test "Codex upgrade uses OMX stable update to refresh generated user assets" {
+@test "Codex upgrade installs the latest Codex CLI through npm" {
   root="$TMPDIR_TEST/codex-root"
   home="$TMPDIR_TEST/codex-home"
   fakebin="$TMPDIR_TEST/codex-bin"
@@ -834,16 +832,6 @@ SH
 printf 'npm %s\n' "$*" >> "$CALL_LOG"
 exit 0
 SH
-  cat > "$fakebin/omx" <<'SH'
-#!/bin/bash
-printf 'omx %s\n' "$*" >> "$CALL_LOG"
-if [ "$1" = "update" ] && [ "$2" = "--stable" ]; then
-  mkdir -p "$HOME/.codex/agents"
-  printf '%s\n' 'generated-by-omx-update' > "$HOME/.codex/agents/generated.toml"
-fi
-if [ "$1" = "--version" ]; then printf '%s\n' 'omx 1.0.0'; fi
-exit 0
-SH
   cat > "$fakebin/git" <<'SH'
 #!/bin/bash
 if [ "$1" = "clone" ]; then
@@ -858,7 +846,7 @@ if [ "$1" = "-C" ] && [ "$3" = "sparse-checkout" ]; then
 fi
 exit 0
 SH
-  chmod +x "$root/scripts/skills.sh" "$fakebin/codex" "$fakebin/npm" "$fakebin/omx" "$fakebin/git"
+  chmod +x "$root/scripts/skills.sh" "$fakebin/codex" "$fakebin/npm" "$fakebin/git"
 
   run env HOME="$home" CODEX_HOME="$home/.codex" DOTFILES_DIR="$root" \
     UPGRADE=true NON_INTERACTIVE=true PATH="$fakebin:$PATH" CALL_LOG="$log" \
@@ -866,6 +854,6 @@ SH
 
   [ "$status" -eq 0 ]
   grep -Fq 'npm install -g @openai/codex@latest' "$log"
-  grep -Fxq 'omx update --stable' "$log"
-  [ -f "$home/.codex/agents/generated.toml" ]
+  run grep -Ei 'omx|oh-my-codex' "$log"
+  [ "$status" -ne 0 ]
 }

@@ -1,6 +1,6 @@
 # Display adapter contract for handover
 
-Read this before `handover` launches or controls a visible receiver tab. This is an internal adapter contract, not a new public skill: `handover` still owns the task package, ACK/READY markers, validation, and source-session closure rules. Display backends only provide a place to show and control a Claude/Codex/OMX session.
+Read this before `handover` launches or controls a visible receiver tab. This is an internal adapter contract, not a new public skill: `handover` still owns the task package, ACK/READY markers, validation, and source-session closure rules. Display backends only provide a place to show and control a Claude/Codex session.
 
 ## Backend selection
 
@@ -24,7 +24,7 @@ Every visible backend must support these operations before `handover` uses it:
 | Send input | A smoke command writes a marker file in the repo before any agent prompt is sent. |
 | Read status/output | A command/API response can show whether the target received input or is idle/stuck. |
 | Close target/source | Only close known ids, only after `handover.py validate` is complete or the user explicitly asked to close a failed target. |
-| Record evidence | Store ids, commands, marker path, and status/result snippets under `.omx/artifacts/<run>/`. |
+| Record evidence | Store ids, commands, marker path, and status/result snippets under `.handover/artifacts/<run>/`. |
 
 ## Backend references
 
@@ -37,7 +37,7 @@ Do not mix commands across backends. A cmux `surface:*` id is not a purplemux ta
 
 - Do not send an agent prompt to a target that has not passed its smoke marker check.
 - Do not infer successful launch from "tab created" or "workspace exists" alone.
-- Do not background TTY-bound agent CLIs; keep Claude/Codex/OMX foregrounded in the visible terminal.
+- Do not background TTY-bound agent CLIs; keep Claude/Codex foregrounded in the visible terminal.
 - Do not kill or close unrelated tabs/surfaces while recovering.
 - Do not claim source-tab closure for purplemux unless a concrete workspace id and tab id were closed and recorded.
 - When evidence is missing, keep the handover package and target prompt as the recovery artifact.

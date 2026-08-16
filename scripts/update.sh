@@ -13,7 +13,7 @@ source "$(cd "$(dirname "$0")" && pwd)/lib/common.sh"
 #                 ~/.zshrc etc. live immediately.
 #   2. install.sh --upgrade   the full idempotent setup, where each sub-script
 #                 ALSO bumps its own tool versions (brew upgrade, uv tool upgrade,
-#                 oh-my-zsh / plugin pulls, codex + oh-my-codex). One pass — no
+#                 oh-my-zsh / plugin pulls, codex). One pass — no
 #                 separate version list to keep in sync, so "update" is just
 #                 install.sh --upgrade by construction (nothing is left out).
 #

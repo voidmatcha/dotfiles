@@ -1,6 +1,6 @@
 ---
 name: session-feedback-audit
-description: "Analyze historical local Codex, Claude, or OMX JSONL session logs for repeated user corrections, re-requests, execution preferences, and agent failure patterns, then turn cross-session evidence into concise anti-repeat rules. Use for historical session-feedback audit, JSONL analysis, repeated corrections, recurring instructions, 매번 요청, 반복 안 되게, 재발 방지, or requests to learn durable guidance from past agent conversations. Do not use for current-document cleanup or writing review. Built-in Korean and English pattern packs are extensible with custom JSON patterns; this is not a Korean-only writing skill."
+description: "Analyze historical local Codex or Claude JSONL session logs for repeated user corrections, re-requests, execution preferences, and agent failure patterns, then turn cross-session evidence into concise anti-repeat rules. Use for historical session-feedback audit, JSONL analysis, repeated corrections, recurring instructions, 매번 요청, 반복 안 되게, 재발 방지, or requests to learn durable guidance from past agent conversations. Do not use for current-document cleanup or writing review. Built-in Korean and English pattern packs are extensible with custom JSON patterns; this is not a Korean-only writing skill."
 ---
 
 # Session Feedback Audit
@@ -22,7 +22,7 @@ Do not use it to proofread a document or decide Korean technical terminology. Us
 
 Accept one or more of:
 
-- Codex, Claude, or OMX `*.jsonl` session or rollout files
+- Codex or Claude `*.jsonl` session or rollout files
 - directories containing JSONL files
 - no explicit path, which defaults to recent Codex sessions under `~/.codex/sessions`
 - an optional JSON pattern pack for another language or project vocabulary

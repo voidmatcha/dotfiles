@@ -125,21 +125,6 @@ if tool_name == 'Bash':
         if tokens[0] in read_commands and any(is_dotenv_token(token) for token in tokens[1:]):
             deny('Blocked risky Bash command: dotenv read')
 
-        broad_kill_command = tokens[0] in {'pkill', 'killall'} or re.search(r'(^|\s)(?:/usr/bin/|/bin/|/opt/homebrew/bin/)?(?:pkill|killall)\b', segment)
-        if broad_kill_command:
-            parent_scoped = any(t == '-P' or t.startswith('-P') for t in tokens[1:]) or re.search(r'(^|\s)-P(?:\s|\d)', segment)
-            shared_marker = re.search(r'headroom|--port\s*8787|wrap\s+claude', segment)
-            if shared_marker and not parent_scoped:
-                deny(
-                    'Blocked broad pkill/killall on shared infrastructure. Every claude '
-                    'session runs as "headroom wrap claude --port 8787" and shares the '
-                    'localhost:8787 proxy socket, so a substring match SIGTERMs all sessions '
-                    'and the proxy owner -> API ConnectionRefused for everyone. Target the '
-                    'specific PID tree instead: '
-                    'RW=$(pgrep -f "run-worker.sh <slug>"); pkill -P "$RW"   (parent-scoped, '
-                    'allowed), or kill the exact child PID.'
-                )
-
     deny_patterns = [
         ('git reset --hard', re.compile(r'\bgit\s+reset\s+--hard\b')),
         ('shell pipe from network', re.compile(r'\b(?:curl|wget)\b[^\n|]*\|\s*(?:/usr/bin/|/bin/)?(?:sh|bash)\b')),

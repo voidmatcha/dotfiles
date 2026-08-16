@@ -7,7 +7,7 @@ useDefault = true
 description = "dotfiles runtime/cache directories ignored by git"
 paths = [
   '''(^|/)\.git/''',
-  '''(^|/)\.omx/''',
+  '''(^|/)\.handover/''',
   '''(^|/)\.serena/''',
   '''(^|/)\.codegraph/''',
   '''(^|/)\.sisyphus/''',

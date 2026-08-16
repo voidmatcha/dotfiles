@@ -66,15 +66,6 @@ check_lefthook() {
   fi
 }
 
-check_headroom() {
-  local port="${HEADROOM_PORT:-8787}"
-  if command -v curl >/dev/null 2>&1 && curl -fsS --max-time 2 "http://127.0.0.1:$port/livez" >/dev/null 2>&1; then
-    ok "Headroom proxy live on :$port"
-  else
-    warn_check "Headroom proxy not live on :$port (ok when wrappers are unused)"
-  fi
-}
-
 check_purplemux() {
   local bin real target
   bin="$(command -v purplemux 2>/dev/null || true)"
@@ -160,7 +151,6 @@ check_symlink "HOME/.gitconfig" "$DOTFILES_DIR/configs/.gitconfig" "$HOME/.gitco
 check_symlink "HOME/.gitignore_global" "$DOTFILES_DIR/configs/.gitignore_global" "$HOME/.gitignore_global"
 check_symlink "HOME/.agent/AGENTS.md" "$DOTFILES_DIR/configs/AGENTS.md" "$HOME/.agent/AGENTS.md"
 
-check_headroom
 check_purplemux
 check_local_bin_links
 

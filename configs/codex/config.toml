@@ -1,14 +1,9 @@
-# oh-my-codex top-level settings (must be before any [table])
-# Resolve the global oh-my-codex install at runtime instead of pinning an
-# npm/Homebrew absolute path into this shared dotfiles repo.
-notify = ["env", "-u", "LC_ALL", "-u", "LC_CTYPE", "bash", "-lc", "exec node \"$(npm root -g)/oh-my-codex/dist/scripts/notify-hook.js\" \"$@\"", "omx-notify"]
+# Top-level settings (must be before any [table])
 model_reasoning_effort = "xhigh"
 suppress_unstable_features_warning = true
-developer_instructions = "You have oh-my-codex installed. AGENTS.md is the orchestration brain and main control surface. Follow AGENTS.md for skill/keyword routing, $name workflow invocation, and role-specialized subagents. Use outcome-first, concise progress updates: state the target result, constraints, validation evidence, and stop condition before adding process detail. Native subagents live in .codex/agents and may handle independent parallel subtasks within one Codex session or team pane. Skills load from .codex/skills, not native-agent TOMLs. Treat installed prompts as narrower execution surfaces under AGENTS.md authority."
-# oh-my-codex seeded behavioral defaults (uninstall removes unchanged defaults)
+developer_instructions = "AGENTS.md is the main control surface. Follow it for skill/keyword routing and role-specialized subagents. Use outcome-first, concise progress updates: state the target result, constraints, validation evidence, and stop condition before adding process detail. Native subagents live in .codex/agents and may handle independent parallel subtasks within one Codex session. Skills load from .codex/skills, not native-agent TOMLs. Treat installed prompts as narrower execution surfaces under AGENTS.md authority."
 model_context_window = 250000
 model_auto_compact_token_limit = 200000
-# End oh-my-codex seeded behavioral defaults
 
 # Codex CLI configuration (~/.codex/config.toml).
 # Copied to ~/.codex/config.toml by scripts/codex.sh; Codex mutates its live
@@ -18,10 +13,8 @@ model_auto_compact_token_limit = 200000
 # https://gist.github.com/spilist/c468cbf1ed0ffc91100f813aabdcd520
 # (each setting below is verified against the official Codex docs linked inline.)
 
-model = "gpt-5.5"
-# Leave model_provider unset so Codex uses its OpenAI default. Headroom injects
-# a temporary provider at runtime; keeping a template-level provider here creates
-# a duplicate TOML key during wrapped Codex/OMX launches.
+model = "gpt-5.6-sol"
+# Leave model_provider unset so Codex uses its OpenAI default.
 approval_policy = "on-request"
 sandbox_mode = "workspace-write"
 
@@ -103,7 +96,7 @@ startup_timeout_sec = 15
 url = "https://developers.openai.com/mcp"
 startup_timeout_sec = 15
 
-# Figma hosted — personal/default Codex/OMX design-context path.
+# Figma hosted — personal/default Codex design-context path.
 # Company overlay disables this hosted server by default and uses company
 # figma-developer-mcp instead. Authenticate once per machine with:
 # codex mcp login figma
@@ -120,29 +113,23 @@ enabled = false
 startup_timeout_sec = 5
 tool_timeout_sec = 120
 
-[tui.model_availability_nux]
-"gpt-5.5" = 4
+# korean-tech-humanizer 저장소의 로컬 번역 Worker. 이 템플릿은 모든 머신에
+# 그대로 복사되므로 체크아웃 경로를 담을 수 없다. 그래서 경로 대신 런처 이름을
+# 부르고, 런처는 저장소의 `pnpm setup:local`이 ~/.local/bin에 깔면서 자기
+# 체크아웃을 가리키게 만든다. 저장소가 없는 머신에는 런처가 없어 이 서버가
+# failed로 뜬다 — enabled 상태는 이 템플릿 소유라 머신별로 나눌 수 없다.
+# 실제로 붙으려면 Worker가 떠 있어야 한다:
+# pnpm --filter @translation-mcp/server dev
+[mcp_servers.translation-mcp]
+command = "translation-mcp-bridge"
+enabled = true
+startup_timeout_sec = 15
 
-[shell_environment_policy.set]
-USE_OMX_EXPLORE_CMD = "0"
-
-OMX_DEFAULT_SPARK_MODEL = "gpt-5.5"
-OMX_SPARK_MODEL = "gpt-5.5"
-OMX_DEFAULT_FRONTIER_MODEL = "gpt-5.5"
 [agents]
 max_threads = 6
 max_depth = 2
 
-# ============================================================
-# oh-my-codex (OMX) Configuration
-# Managed by omx setup - manual edits preserved on next setup
-# ============================================================
-
-# OMX TUI StatusLine (Codex CLI v0.101.0+)
+# Codex CLI v0.101.0+ built-in status line.
 [tui]
-# omx:managed-status-line
 status_line = ["model-with-reasoning", "git-branch", "context-remaining", "total-input-tokens", "total-output-tokens", "five-hour-limit", "weekly-limit"]
 terminal_title = ["project-name", "git-branch"]
-
-# ============================================================
-# End oh-my-codex

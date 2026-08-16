@@ -1,11 +1,11 @@
 ---
 name: handover
-description: "Hand off current work to fresh Claude/Codex/OMX sessions or visible cmux/purplemux display backends with durable artifacts, ACK/READY checks, optional source-tab closure, and fail-closed recovery."
+description: "Hand off current work to fresh Claude/Codex sessions or visible cmux/purplemux display backends with durable artifacts, ACK/READY checks, optional source-tab closure, and fail-closed recovery."
 ---
 
 # Handover
 
-Use this when the user wants current work moved to a new agent session/tab, Claude/Codex/OMX continuation, visible display-backed agent tabs, cross-agent coordination that explicitly needs a fresh session, or verified source-tab closure. Trigger phrases include `handover:omx`, `handover:claude`, `handover:codex`, "handover", "handoff", "새 세션", "새 탭에서 이어서", "Claude/Codex 번갈아", "서로 다른 LLM끼리 관찰", "omx/claude로 넘겨", or "넘어가면 현재 탭 닫아".
+Use this when the user wants current work moved to a new agent session/tab, Claude/Codex continuation, visible display-backed agent tabs, cross-agent coordination that explicitly needs a fresh session, or verified source-tab closure. Trigger phrases include `handover:claude`, `handover:codex`, "handover", "handoff", "새 세션", "새 탭에서 이어서", "Claude/Codex 번갈아", "서로 다른 LLM끼리 관찰", "codex/claude로 넘겨", or "넘어가면 현재 탭 닫아".
 
 For ambiguous "continue/compact/clear/handoff?" questions, use `context-check` first; use this skill only after the decision is to hand off, self-refresh from a durable package, or launch a fresh/visible receiver.
 
@@ -13,7 +13,7 @@ For ambiguous "continue/compact/clear/handoff?" questions, use `context-check` f
 
 - Use **compact** when staying in the same session and most prior context is still relevant; it is quick but lossy because history is replaced by a summary.
 - Use **resume/fork/native Codex Handoff** when the same product already preserves the thread/worktree safely.
-- Use **this handover skill** when crossing tools or tabs (`omx` -> `claude`, `codex` -> `omx`), freeing the current cmux surface, or needing proof that a new receiver actually picked up the task.
+- Use **this handover skill** when crossing tools or tabs (`claude` -> `codex`, `codex` -> `claude`), freeing the current cmux surface, or needing proof that a new receiver actually picked up the task.
 - Do **not** use this as a routine compact replacement inside the same tool/session; the launch + handshake overhead only pays off when a fresh context, cross-tool transfer, or source-tab closure is valuable.
 
 Cache-aware rule:
@@ -26,7 +26,7 @@ Efficient handover is not a raw transcript dump. Use a structured brief with poi
 
 For source-backed rationale, read `references/handover-patterns.md` only when the user asks about compact/resume tradeoffs or handover design.
 
-When launching, displaying, monitoring, or recovering Claude/Codex/OMX sessions in a visible display backend, read `references/display-adapter-contract.md` first. Select the backend by explicit user request > current attached surface (`CMUX_WORKSPACE_ID`/`CMUX_SURFACE_ID` or `PMUX_PORT`/`PMUX_TOKEN` plus a chosen workspace/tab) > available backend > artifact-only fallback. Then read the backend-specific guardrail before any send: `references/cmux-display.md` for cmux, `references/purplemux-display.md` for purplemux. Keep cmux and purplemux as topology/display backends; this skill owns the handoff package, ACK/READY markers, and loop decisions.
+When launching, displaying, monitoring, or recovering Claude/Codex sessions in a visible display backend, read `references/display-adapter-contract.md` first. Select the backend by explicit user request > current attached surface (`CMUX_WORKSPACE_ID`/`CMUX_SURFACE_ID` or `PMUX_PORT`/`PMUX_TOKEN` plus a chosen workspace/tab) > available backend > artifact-only fallback. Then read the backend-specific guardrail before any send: `references/cmux-display.md` for cmux, `references/purplemux-display.md` for purplemux. Keep cmux and purplemux as topology/display backends; this skill owns the handoff package, ACK/READY markers, and loop decisions.
 
 When the request asks multiple LLMs or sessions to observe different surfaces, divide roles, or cross-check each other, read `references/cross-agent-coordination.md`. Treat it as a handover profile: one coordinator owns sequencing, targets receive bounded executor/reviewer/verifier/researcher roles, and agents exchange artifacts instead of raw transcripts.
 
@@ -38,7 +38,7 @@ A handover is complete only when all requested target sessions prove the transfe
 
 Best for ordinary single- or multi-target tab handover where the source only needs proof before closing:
 
-1. **OFFER**: source writes a repo-local package under `.omx/artifacts/handover-<UTC>-<random>/`.
+1. **OFFER**: source writes a repo-local package under `.handover/artifacts/handover-<UTC>-<random>/`.
 2. **READY**: each target reads the package and writes `targets/<target>/ready.json` with the shared token, cwd, git snapshot, understanding summary, and next action.
 3. **Close**: source validates every READY and closes its current cmux surface only after `validate` returns complete.
 
@@ -46,7 +46,7 @@ Best for ordinary single- or multi-target tab handover where the source only nee
 
 Use only when the receiver must wait until the source confirms its ACK before doing substantive work:
 
-1. **OFFER**: source writes a repo-local package under `.omx/artifacts/handover-<UTC>-<random>/`.
+1. **OFFER**: source writes a repo-local package under `.handover/artifacts/handover-<UTC>-<random>/`.
 2. **ACK**: each target writes `targets/<target>/ack.json` with the shared token, cwd, git snapshot, understanding summary, and next action.
 3. **CONFIRM**: source validates every ACK and writes `source-confirmed.json`.
 4. **READY**: each target sees source confirmation, writes `targets/<target>/ready.json`, then starts work.
@@ -65,9 +65,9 @@ SKILL_DIR="/absolute/path/to/handover"
 ```
 
 1. Resolve targets:
-   - Explicit tags win: `handover:omx`, `handover:claude`, `handover:codex`, or combined forms like `handover:omx,claude`.
-   - Without tags, infer from natural language: "omx랑 claude", "클로드로 넘겨", "codex 새 탭".
-   - If unspecified, default to `omx` and do not ask unless target choice is materially risky.
+   - Explicit tags win: `handover:claude`, `handover:codex`, or combined forms like `handover:claude,codex`.
+   - Without tags, infer from natural language: "claude랑 codex", "클로드로 넘겨", "codex 새 탭", "코덱스로 넘겨".
+   - If unspecified, default to `codex` and do not ask unless target choice is materially risky.
 2. Capture the current state: objective, constraints, changed files, test evidence, unresolved risks, and the exact next action.
 3. Create the handoff package:
 
@@ -75,7 +75,7 @@ SKILL_DIR="/absolute/path/to/handover"
    python3 "$SKILL_DIR/scripts/handover.py" init \
      --target-from "<raw user handover request, if available>" \
      --handshake fast \
-     --target omx --target claude \
+     --target codex --target claude \
      --task "<current objective and next action>" \
      --success "<what proves the receiver can continue>" \
      --completed "<what has already been done>" \
@@ -90,24 +90,24 @@ SKILL_DIR="/absolute/path/to/handover"
    If using `--target-from`, omit `--target` unless you need to add an explicit target programmatically. `--target` is still useful for deterministic coordinator scripts.
 
 4. Launch a real display tab/surface for each target when visible continuation is needed. Before any backend send to an agent, you MUST read and apply `references/display-adapter-contract.md` plus the selected backend reference. For cmux, use `references/cmux-display.md`; for purplemux, use `references/purplemux-display.md`.
-   - Use the generated `.omx/artifacts/handover-<UTC>-<random>/launch-commands.json` so targets start with the user's usual launch shape.
-   - Rename target tabs/surfaces using the generated title, e.g. `handover-omx-a1b2c3`, so multiple handovers in one folder do not get confused.
+   - Use the generated `.handover/artifacts/handover-<UTC>-<random>/launch-commands.json` so targets start with the user's usual launch shape.
+   - Rename target tabs/surfaces using the generated title, e.g. `handover-codex-a1b2c3`, so multiple handovers in one folder do not get confused.
    - Defaults:
-     - `omx`: `omx --direct --xhigh --madmax` (matches this dotfiles repo's `configs/.zshrc` wrapper)
      - `claude`: `claude` through an interactive zsh command so the local `claude()` wrapper can add the Serena system-prompt override
-     - `codex`: `codex` using the installed Codex config/profile defaults
-   - Override per run with exact command env vars: `HANDOVER_OMX_COMMAND`, `HANDOVER_CLAUDE_COMMAND`, `HANDOVER_CODEX_COMMAND`.
-   - Or append args with: `HANDOVER_OMX_ARGS`, `HANDOVER_CLAUDE_ARGS`, `HANDOVER_CODEX_ARGS`.
+     - `codex`: `codex --yolo` on top of the installed Codex config/profile defaults
+   - A handover target starts unattended and cannot answer approval prompts, so Codex is launched with `--yolo` (a hidden alias of `--dangerously-bypass-approvals-and-sandbox`). This mirrors Claude's auto permission mode. It is a deliberate, documented risk: the receiver runs without sandbox or approval gates, so hand over only work you would let an unattended agent perform in that repo, and drop the flag with `HANDOVER_CODEX_ARGS`/`HANDOVER_CODEX_COMMAND` when that is not acceptable.
+   - Override per run with exact command env vars: `HANDOVER_CLAUDE_COMMAND`, `HANDOVER_CODEX_COMMAND`.
+   - Or append args with: `HANDOVER_CLAUDE_ARGS`, `HANDOVER_CODEX_ARGS`.
    - Prefer a verified existing workspace/surface when available.
    - Otherwise create a new target (cmux workspace/surface or purplemux tab) with `cwd` set to the repo root.
-   - Start the target CLI in the foreground (`omx`, `claude`, or `codex`). Do not background TTY-bound agent CLIs.
+   - Start the target CLI in the foreground (`claude` or `codex`). Do not background TTY-bound agent CLIs.
    - Paste/send the generated `target-prompts/<target>.txt` as the first instruction to that session.
 
 5. From the source session, wait and repair until the handshake completes:
 
    ```bash
    python3 "$SKILL_DIR/scripts/handover.py" wait \
-     --run-dir .omx/artifacts/handover-<UTC>-<random> \
+     --run-dir .handover/artifacts/handover-<UTC>-<random> \
      --timeout 900 \
      --interval 5
    ```
@@ -123,7 +123,7 @@ SKILL_DIR="/absolute/path/to/handover"
 
    ```bash
    python3 "$SKILL_DIR/scripts/handover.py" close-current \
-     --run-dir .omx/artifacts/handover-<UTC>-<random> \
+     --run-dir .handover/artifacts/handover-<UTC>-<random> \
      --execute
    ```
 

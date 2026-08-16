@@ -15,6 +15,15 @@ setup() {
   export GIT_CONFIG_NOSYSTEM=1
   export GIT_CONFIG_GLOBAL="$TMPDIR_TEST/gitconfig"
   : > "$GIT_CONFIG_GLOBAL"
+
+  PYTHON_TOMLLIB=""
+  for candidate in "$HOME/.pyenv/shims/python3" /opt/homebrew/bin/python3 \
+      /usr/local/bin/python3 "$(command -v python3)"; do
+    [ -x "$candidate" ] || continue
+    "$candidate" -c 'import tomllib' >/dev/null 2>&1 || continue
+    PYTHON_TOMLLIB="$candidate"
+    break
+  done
 }
 
 teardown() {
@@ -239,65 +248,25 @@ SH
   [ ! -e "$home/.codex" ]
 }
 
-@test "codex setup removes stale Headroom provider from Spark explore agent" {
-  home="$TMPDIR_TEST/codex-native-agent-home"
-  dotfiles="$TMPDIR_TEST/dotfiles-min"
-  bin="$TMPDIR_TEST/codex-native-agent-bin"
-  mkdir -p "$home/.codex/agents" "$dotfiles/configs/codex" "$bin"
-  cp "$REPO_ROOT/configs/codex/config.toml" "$dotfiles/configs/codex/config.toml"
-  cat > "$home/.codex/agents/explore.toml" <<'TOML'
-# oh-my-codex agent: explore
-name = "explore"
-model = "gpt-5.5"
-model_provider = "headroom"
-model_reasoning_effort = "low"
-TOML
-  cat > "$bin/codex" <<'SH'
-#!/bin/sh
-printf 'codex-cli test
-'
-SH
-  cat > "$bin/omx" <<'SH'
-#!/bin/sh
-printf 'oh-my-codex test
-'
-SH
-  cat > "$bin/git" <<'SH'
-#!/bin/sh
-exit 1
-SH
-  chmod +x "$bin/codex" "$bin/omx" "$bin/git"
-
-  run env HOME="$home" DOTFILES_DIR="$dotfiles" PATH="$bin:/usr/bin:/bin"     bash "$REPO_ROOT/scripts/codex.sh" --non-interactive
-
-  [ "$status" -eq 0 ]
-  grep -q '^model = "gpt-5.5"' "$home/.codex/agents/explore.toml"
-  run grep -q '^model_provider = "headroom"' "$home/.codex/agents/explore.toml"
-  [ "$status" -eq 1 ]
-}
-
-@test "codex dry-run does not execute codex or omx probes" {
+@test "codex dry-run announces probes without executing the codex binary" {
   home="$TMPDIR_TEST/codex-home"
   bin="$TMPDIR_TEST/bin"
   mkdir -p "$home" "$bin"
-  for cmd in codex omx; do
-    cat > "$bin/$cmd" <<'SH'
+  cat > "$bin/codex" <<'SH'
 #!/bin/sh
-printf 'codex/omx probe should not run in dry-run\n' >&2
+printf 'codex probe should not run in dry-run\n' >&2
 exit 42
 SH
-    chmod +x "$bin/$cmd"
-  done
+  chmod +x "$bin/codex"
 
   run env HOME="$home" DOTFILES_DIR="$REPO_ROOT" DRY_RUN=true PATH="$bin:/usr/bin:/bin" bash "$REPO_ROOT/scripts/codex.sh"
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"codex --version"* ]]
-  [[ "$output" == *"omx --version"* ]]
   [[ "$output" == *"install Codex cmux skill"* ]]
   [[ "$output" == *"install local Codex skill dotfiles-verify"* ]]
   [[ "$output" == *"codex login status"* ]]
-  [[ "$output" != *"codex/omx probe should not run"* ]]
+  [[ "$output" != *"codex probe should not run"* ]]
   [ ! -e "$home/.codex" ]
 }
 
@@ -311,21 +280,6 @@ SH
   [ "$status" -eq 0 ]
   [[ "$output" != *"SKILL_URLS[@]: unbound variable"* ]]
   [[ "$output" == *"Claude Code setup done"* ]]
-}
-
-@test "headroom installer dry-run installs CLI and wrapper entrypoints" {
-  home="$TMPDIR_TEST/headroom-home"
-  mkdir -p "$home"
-
-  run env HOME="$home" DOTFILES_DIR="$REPO_ROOT" DRY_RUN=true PATH="/usr/bin:/bin" \
-    bash "$REPO_ROOT/scripts/headroom.sh"
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"uv tool install -p 3.13 'headroom-ai[proxy,mcp,code]'"* ]]
-  [[ "$output" == *"ln -sf $REPO_ROOT/scripts/headroom-agent.sh -> $home/.local/bin/claudeh"* ]]
-  [[ "$output" == *"ln -sf $REPO_ROOT/scripts/headroom-agent.sh -> $home/.local/bin/codexh"* ]]
-  [[ "$output" == *"ln -sf $REPO_ROOT/scripts/headroom-agent.sh -> $home/.local/bin/omxh"* ]]
-  [ ! -e "$home/.local/bin" ]
 }
 
 @test "statusline installer dry-run installs session-label helpers" {
@@ -429,240 +383,42 @@ SH
   ! grep -q 'configs/AGENTS.md for the one-liners' "$REPO_ROOT/scripts/dev.sh"
 }
 
-@test "zshrc defaults agent entrypoints through Headroom with opt-out" {
+@test "zshrc agent entrypoint keeps the serena system-prompt override" {
   zshrc="$REPO_ROOT/configs/.zshrc"
 
-  grep -q 'HEADROOM_DEFAULT:-1' "$zshrc"
-  grep -q 'HEADROOM_DISABLE' "$zshrc"
-  grep -q 'HEADROOM_CLAUDE:-1' "$zshrc"
-  grep -q 'HEADROOM_CODEX:-1' "$zshrc"
-  grep -q 'HEADROOM_OMX:-1' "$zshrc"
-  grep -q 'command claudeh' "$zshrc"
-  grep -q 'command codexh' "$zshrc"
-  grep -q 'command omxh' "$zshrc"
-  grep -q 'command omx --direct --xhigh --madmax' "$zshrc"
-  grep -q '__dotfiles_codex_base' "$zshrc"
-  grep -q 'a missing probe should not' "$zshrc"
+  # claude(): serena system-prompt override, then plain `command claude`.
+  grep -q 'serena prompts print-cc-system-prompt-override' "$zshrc"
+  grep -q -- '--system-prompt=' "$zshrc"
+  grep -q 'command claude ' "$zshrc"
+
+  # No proxy wrapper entrypoints remain on the agent launch path.
+  ! grep -q 'claudeh' "$zshrc"
+  ! grep -q 'codexh' "$zshrc"
+
+  # oh-my-codex is gone: no wrapper, no reaper, no launch-policy export.
+  # `run` + status, not `! grep`: bash suppresses errexit for negated commands,
+  # so a bare `! grep` here would never fail the test.
+  run grep -i 'omx' "$zshrc"
+  [ "$status" -ne 0 ]
 }
-@test "dev setup runs headroom installer before agent-browser" {
-  headroom_line=$(grep -n 'scripts/headroom.sh' "$REPO_ROOT/scripts/dev.sh" | head -1 | cut -d: -f1)
+
+@test "dev setup runs statusline installer before agent-browser" {
   statusline_line=$(grep -n 'scripts/statusline.sh' "$REPO_ROOT/scripts/dev.sh" | head -1 | cut -d: -f1)
   agent_browser_line=$(grep -n 'Checking agent-browser' "$REPO_ROOT/scripts/dev.sh" | head -1 | cut -d: -f1)
 
-  [ -n "$headroom_line" ]
   [ -n "$statusline_line" ]
   [ -n "$agent_browser_line" ]
-  [ "$headroom_line" -lt "$agent_browser_line" ]
-  [ "$headroom_line" -lt "$statusline_line" ]
   [ "$statusline_line" -lt "$agent_browser_line" ]
 }
 
-@test "omxh wrapper protects cmux-style concurrent sessions" {
-  script="$REPO_ROOT/scripts/headroom-agent.sh"
-
-  grep -q 'headroom-agent/codex-config' "$script"
-  grep -q 'managed-by-headroom-agent' "$script"
-  grep -q 'neutralized-model-provider' "$script"
-  grep -q 'neutralize_top_level_model_provider' "$script"
-  grep -q 'restore_top_level_model_provider' "$script"
-  grep -q 'active_session_count' "$script"
-  grep -q 'another Codex-config Headroom session is already using port' "$script"
-  grep -q 'trap cleanup EXIT INT TERM HUP' "$script"
-  grep -q '/livez' "$script"
-  grep -q 'target.*!=.*claude' "$script"
-  grep -q -- '--no-serena' "$script"
-  grep -q 'custom CODEX_HOME' "$script"
-  grep -q 'headroom unwrap codex --port "$port" --no-stop-proxy' "$script"
-  grep -q 'codex) run_codex_config_wrapped codex codex' "$script"
-  grep -q 'omx) run_codex_config_wrapped omx omx' "$script"
-}
-
-@test "headroom codex wrapper neutralizes duplicate template provider during launch" {
-  home="$TMPDIR_TEST/headroom-provider-home"
-  bin="$TMPDIR_TEST/headroom-provider-bin"
-  mkdir -p "$home/.codex" "$bin"
-  cat > "$home/.codex/config.toml" <<'TOML'
-model = "gpt-5.5"
-model_provider = "openai"
-
-[features]
-goals = true
-TOML
-
-  cat > "$bin/headroom" <<'SH'
-#!/bin/sh
-case "$1" in
-  proxy)
-    sleep 120
-    ;;
-  wrap)
-    # Simulate prepare-only success. The wrapper owns provider neutralization.
-    exit 0
-    ;;
-  unwrap)
-    exit 0
-    ;;
-esac
-exit 0
-SH
-  cat > "$bin/codex" <<'SH'
-#!/bin/sh
-if grep -q '^model_provider = "openai"' "$HOME/.codex/config.toml"; then
-  echo "provider duplicate was not neutralized" >&2
-  exit 42
-fi
-grep -q 'disabled by headroom-agent' "$HOME/.codex/config.toml"
-SH
-  chmod +x "$bin/headroom" "$bin/codex"
-
-  run env HOME="$home" PATH="$bin:/usr/bin:/bin" HEADROOM_WAIT_SECONDS=0 HEADROOM_CODEX_MCP=0 \
-    bash "$REPO_ROOT/scripts/headroom-agent.sh" codex
-
-  [ "$status" -eq 0 ]
-  grep -q '^model_provider = "openai"' "$home/.codex/config.toml"
-  run grep -q 'disabled by headroom-agent' "$home/.codex/config.toml"
-  [ "$status" -eq 1 ]
-}
-
-@test "headroom codex wrapper disables stale injected provider without provider table" {
-  home="$TMPDIR_TEST/headroom-stale-provider-home"
-  bin="$TMPDIR_TEST/headroom-stale-provider-bin"
-  mkdir -p "$home/.codex" "$bin"
-  cat > "$home/.codex/config.toml" <<'TOML'
-model = "gpt-5.5"
-
-[features]
-goals = true
-TOML
-
-  cat > "$bin/headroom" <<'SH'
-#!/bin/sh
-case "$1" in
-  proxy)
-    sleep 120
-    ;;
-  wrap)
-    tmp="$HOME/.codex/config.toml.tmp"
-    {
-      echo '# --- Headroom proxy (auto-injected by headroom wrap codex) ---'
-      echo 'model_provider = "headroom"'
-      echo 'openai_base_url = "http://127.0.0.1:8787/v1"'
-      echo '# --- end Headroom ---'
-      cat "$HOME/.codex/config.toml"
-    } > "$tmp"
-    mv "$tmp" "$HOME/.codex/config.toml"
-    exit 0
-    ;;
-  unwrap)
-    exit 0
-    ;;
-esac
-exit 0
-SH
-  cat > "$bin/codex" <<'SH'
-#!/bin/sh
-if grep -q '^model_provider = "headroom"' "$HOME/.codex/config.toml"; then
-  echo "stale headroom provider was not disabled" >&2
-  exit 43
-fi
-grep -q '^# model_provider = "headroom".*openai_base_url routes the built-in OpenAI provider' "$HOME/.codex/config.toml"
-grep -q '^openai_base_url = "http://127.0.0.1:8787/v1"' "$HOME/.codex/config.toml"
-SH
-  chmod +x "$bin/headroom" "$bin/codex"
-
-  run env HOME="$home" PATH="$bin:/usr/bin:/bin" HEADROOM_WAIT_SECONDS=0 HEADROOM_CODEX_MCP=0 \
-    bash "$REPO_ROOT/scripts/headroom-agent.sh" codex
-
-  [ "$status" -eq 0 ]
-}
-
-@test "headroom codex wrapper prepares config when live marker exists without route" {
-  home="$TMPDIR_TEST/headroom-active-marker-home"
-  bin="$TMPDIR_TEST/headroom-active-marker-bin"
-  state="$TMPDIR_TEST/headroom-active-marker-state"
-  mkdir -p "$home/.codex" "$bin" "$state/headroom-agent/codex-config/sessions"
-  cat > "$home/.codex/config.toml" <<'TOML'
-model = "gpt-5.5"
-TOML
-  # Simulate an already-running wrapper session on the same port whose PID is
-  # still alive, but whose Codex config route was lost/restored.
-  printf '%s 8787 omx
-' "$$" > "$state/headroom-agent/codex-config/sessions/session-existing"
-
-  cat > "$bin/headroom" <<'SH'
-#!/bin/sh
-case "$1" in
-  proxy)
-    sleep 120
-    ;;
-  wrap)
-    printf 'called
-' > "$HOME/wrap-called.txt"
-    tmp="$HOME/.codex/config.toml.tmp"
-    {
-      echo '# --- Headroom proxy (auto-injected by headroom wrap codex) ---'
-      echo 'model_provider = "headroom"'
-      echo 'openai_base_url = "http://127.0.0.1:8787/v1"'
-      echo '# --- end Headroom ---'
-      cat "$HOME/.codex/config.toml"
-    } > "$tmp"
-    mv "$tmp" "$HOME/.codex/config.toml"
-    exit 0
-    ;;
-  unwrap)
-    exit 0
-    ;;
-esac
-exit 0
-SH
-  cat > "$bin/codex" <<'SH'
-#!/bin/sh
-[ -e "$HOME/wrap-called.txt" ] || { echo "headroom prepare was skipped" >&2; exit 44; }
-grep -q '^# model_provider = "headroom".*openai_base_url routes the built-in OpenAI provider' "$HOME/.codex/config.toml"
-grep -q '^openai_base_url = "http://127.0.0.1:8787/v1"' "$HOME/.codex/config.toml"
-SH
-  chmod +x "$bin/headroom" "$bin/codex"
-
-  run env HOME="$home" XDG_STATE_HOME="$state" PATH="$bin:/usr/bin:/bin" HEADROOM_WAIT_SECONDS=0 HEADROOM_CODEX_MCP=0     bash "$REPO_ROOT/scripts/headroom-agent.sh" codex
-
-  [ "$status" -eq 0 ]
-}
-
-@test "headroom omx wrapper does not duplicate default flags already supplied" {
-  home="$TMPDIR_TEST/headroom-omx-flags-home"
-  bin="$TMPDIR_TEST/headroom-omx-flags-bin"
-  mkdir -p "$home/.codex" "$bin"
-  cat > "$home/.codex/config.toml" <<'TOML'
-model = "gpt-5.5"
-TOML
-
-  cat > "$bin/headroom" <<'SH'
-#!/bin/sh
-case "$1" in
-  proxy) exit 0 ;;
-  wrap|unwrap) exit 0 ;;
-esac
-exit 0
-SH
-  cat > "$bin/omx" <<'SH'
-#!/bin/sh
-printf '%s\n' "$*" > "$HOME/omx-args.txt"
-SH
-  chmod +x "$bin/headroom" "$bin/omx"
-
-  run env HOME="$home" PATH="$bin:/usr/bin:/bin" HEADROOM_WAIT_SECONDS=0 HEADROOM_OMX_MCP=0 \
-    bash "$REPO_ROOT/scripts/headroom-agent.sh" omx --direct --xhigh --madmax
-
-  [ "$status" -eq 0 ]
-  [ "$(cat "$home/omx-args.txt")" = "--direct --xhigh --madmax" ]
-}
-@test "context-check treats Headroom as primary" {
+@test "context-check prefers agentsview and keeps ccusage opt-in" {
   skill="$REPO_ROOT/plugins/local-skills/skills/context-check/SKILL.md"
   script="$REPO_ROOT/plugins/local-skills/skills/context-check/scripts/context_check.py"
 
-  grep -q 'Headroom active' "$skill"
-  grep -q '_collect_headroom_signal' "$script"
-  grep -q 'HEADROOM_AGENT_ACTIVE' "$script"
+  grep -q 'agentsview' "$skill"
+  grep -q -- '--include-ccusage' "$skill"
+  grep -q '_collect_agentsview_signal' "$script"
+  grep -q '_collect_ccusage_signal' "$script"
   ! grep -qi 'owl' "$script"
   ! grep -qi 'owl' "$skill"
   ! grep -rinw 'owl' "$REPO_ROOT/plugins/local-skills/skills/handover" "$REPO_ROOT/README.md"
@@ -690,71 +446,6 @@ assert stored["severity"] == "info", stored
 stored_turns = [s for s in data["signals"] if s["name"] == "stored_turns"][0]
 assert stored_turns["severity"] == "info", stored_turns
 '
-}
-
-@test "headroom wrappers default to one worker for CCR retrieval safety" {
-  home="$TMPDIR_TEST/headroom-workers-home"
-  bin="$TMPDIR_TEST/headroom-workers-bin"
-  mkdir -p "$home" "$bin"
-
-  cat > "$bin/headroom" <<'SH'
-#!/bin/sh
-printf '%s\n' "$HEADROOM_WORKERS" > "$HOME/workers.txt"
-exit 0
-SH
-  # The claude wrapper path resolves the real agent binary up front (to keep
-  # headroom validates the target binary before wrapping, so a stub must exist.
-  cat > "$bin/claude" <<'SH'
-#!/bin/sh
-exit 0
-SH
-  chmod +x "$bin/headroom" "$bin/claude"
-
-  run env -u HEADROOM_WORKERS HOME="$home" PATH="$bin:/usr/bin:/bin" HEADROOM_WAIT_SECONDS=0 HEADROOM_CLAUDE_MCP=0 \
-    bash "$REPO_ROOT/scripts/headroom-agent.sh" claude
-
-  [ "$status" -eq 0 ]
-  [ "$(cat "$home/workers.txt")" = "1" ]
-  grep -q 'HEADROOM_WORKERS:-1' "$REPO_ROOT/configs/.zshrc"
-  grep -q 'HEADROOM_WORKERS:-1' "$REPO_ROOT/scripts/headroom-agent.sh"
-  ! grep -q 'HEADROOM_WORKERS:-7' "$REPO_ROOT/configs/.zshrc"
-  # Stale inherited multi-worker values must self-heal in interactive shells.
-  grep -q 'export HEADROOM_WORKERS=1' "$REPO_ROOT/configs/.zshrc"
-}
-
-@test "headroom daemon install respects opt-out, global disable, and dry-run" {
-  home="$TMPDIR_TEST/headroom-daemon-home"
-  bin="$TMPDIR_TEST/headroom-daemon-bin"
-  mkdir -p "$home" "$bin"
-
-  # Fake headroom records whenever `install apply` is invoked.
-  cat > "$bin/headroom" <<'SH'
-#!/bin/sh
-if [ "$1" = "install" ] && [ "$2" = "apply" ]; then
-  printf 'called\n' >> "$HOME/install-apply.log"
-fi
-exit 0
-SH
-  chmod +x "$bin/headroom"
-
-  # HEADROOM_DAEMON=0 -> must NOT install the persistent service.
-  run env HOME="$home" DOTFILES_DIR="$REPO_ROOT" PATH="$bin:/usr/bin:/bin" \
-    HEADROOM_DAEMON=0 bash "$REPO_ROOT/scripts/headroom.sh"
-  [ "$status" -eq 0 ]
-  [ ! -e "$home/install-apply.log" ]
-
-  # Global Headroom bypass (HEADROOM_DEFAULT=0) must also skip the install.
-  run env HOME="$home" DOTFILES_DIR="$REPO_ROOT" PATH="$bin:/usr/bin:/bin" \
-    HEADROOM_DEFAULT=0 bash "$REPO_ROOT/scripts/headroom.sh"
-  [ "$status" -eq 0 ]
-  [ ! -e "$home/install-apply.log" ]
-
-  # Dry-run prints the command but never executes it.
-  run env HOME="$home" DOTFILES_DIR="$REPO_ROOT" DRY_RUN=true PATH="$bin:/usr/bin:/bin" \
-    bash "$REPO_ROOT/scripts/headroom.sh"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"headroom install apply"* ]]
-  [ ! -e "$home/install-apply.log" ]
 }
 
 @test "install --upgrade bumps versions; default install does not (brew.sh)" {
@@ -788,12 +479,6 @@ SH
   grep -q 'UPGRADE="${UPGRADE:-false}"' "$REPO_ROOT/scripts/lib/common.sh"
 }
 
-@test "zshrc resets a stale inherited HEADROOM_WORKERS to one" {
-  guard="$(grep -A1 'export HEADROOM_WORKERS="${HEADROOM_WORKERS:-1}"' "$REPO_ROOT/configs/.zshrc" | tail -n1)"
-  run env HEADROOM_WORKERS=7 bash -c "export HEADROOM_WORKERS=\"\${HEADROOM_WORKERS:-1}\"; $guard; printf '%s' \"\$HEADROOM_WORKERS\""
-  [ "$status" -eq 0 ]
-  [ "$output" = "1" ]
-}
 
 @test "hermes dry-run does not execute version probe" {
   home="$TMPDIR_TEST/hermes-home"
@@ -997,10 +682,6 @@ SH
   grep -qxF 'configs/.gitconfig-*.backup*' "$REPO_ROOT/.gitignore"
 }
 
-@test "repo ignores generated omx runtime state" {
-  grep -qxF '.omx/' "$REPO_ROOT/.gitignore"
-}
-
 @test "repo ignores generated Claude hook logs" {
   grep -qxF '.claude/hooks/.logs/' "$REPO_ROOT/.gitignore"
 }
@@ -1092,16 +773,23 @@ SH
   [ "$status" -eq 1 ]
 }
 
+_run_codex_config_refresh() {
+  local home="$1" runner="$BATS_TEST_TMPDIR/run-config-refresh-$RANDOM.sh"
+  {
+    echo 'source "'"$BATS_TEST_DIRNAME"'/../scripts/lib/common.sh"'
+    echo 'DRY_RUN=false'
+    echo 'CODEX_CONFIG_DIR="$HOME/.codex"'
+    echo 'CODEX_SHARED_CONFIG="'"$BATS_TEST_DIRNAME"'/../configs/codex/config.toml"'
+    sed -n '/^extract_machine_local_codex_sections() {/,/^}/p' "$BATS_TEST_DIRNAME/../scripts/codex.sh"
+    sed -n '/^install_codex_config() {/,/^}/p' "$BATS_TEST_DIRNAME/../scripts/codex.sh"
+    echo 'install_codex_config'
+  } > "$runner"
+  HOME="$home" bash "$runner"
+}
+
 @test "codex config refresh preserves machine-local plugin state" {
   home="$TMPDIR_TEST/codex-home"
-  bin="$TMPDIR_TEST/bin"
-  mkdir -p "$home/.codex" "$bin"
-  cat > "$bin/codex" <<'SH'
-#!/bin/sh
-if [ "$1" = "--version" ]; then printf 'codex-test\n'; exit 0; fi
-exit 0
-SH
-  chmod +x "$bin/codex"
+  mkdir -p "$home/.codex"
 
   # Live config = OUTDATED managed template (extra stale line) + state that
   # Codex CLI wrote afterwards (plugin add / marketplace / project trust).
@@ -1120,9 +808,11 @@ enabled = true
 
 [hooks.state."~/.codex/hooks.json:pre_tool_use:0:0"]
 trusted_hash = "sha256:deadbeef"
+
+# oh-my-codex legacy banner that must not survive a template refresh
 TOML
 
-  run bash -c "env HOME='$home' DOTFILES_DIR='$REPO_ROOT' DRY_RUN=false NON_INTERACTIVE=true PATH='$bin:/usr/bin:/bin' bash '$REPO_ROOT/scripts/codex.sh' < /dev/null"
+  run _run_codex_config_refresh "$home"
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"Refreshing managed Codex config"* ]]
@@ -1134,6 +824,10 @@ TOML
   grep -q '\[marketplaces\.local\]' "$home/.codex/config.toml"
   grep -q '\[projects."/tmp/demo"\]' "$home/.codex/config.toml"
   grep -q 'trusted_hash = "sha256:deadbeef"' "$home/.codex/config.toml"
+  # Preserve machine-local values, but not stale comments injected by retired
+  # setup tools.
+  run grep -Ei 'omx|oh-my-codex' "$home/.codex/config.toml"
+  [ "$status" -ne 0 ]
   # And none of it leaked into the tracked template.
   run grep -q 'ui-clone-skills@local' "$REPO_ROOT/configs/codex/config.toml"
   [ "$status" -eq 1 ]
@@ -1171,7 +865,8 @@ TOML
 }
 
 @test "Codex config declares first-class defaults and MCP" {
-  python3 - <<PY
+  [ -n "$PYTHON_TOMLLIB" ] || skip "no python3 with tomllib available"
+  "$PYTHON_TOMLLIB" - <<PY
 try:
     import tomllib
 except ModuleNotFoundError:
@@ -1179,15 +874,14 @@ except ModuleNotFoundError:
 from pathlib import Path
 
 cfg = tomllib.loads((Path('$REPO_ROOT') / 'configs/codex/config.toml').read_text())
-assert cfg['model'] == 'gpt-5.5'
+assert cfg['model'] == 'gpt-5.6-sol'
 assert 'model_provider' not in cfg
 assert cfg['approval_policy'] == 'on-request'
 assert cfg['sandbox_mode'] == 'workspace-write'
 assert cfg['suppress_unstable_features_warning'] is True
-assert cfg['notify'][0:6] == ['env', '-u', 'LC_ALL', '-u', 'LC_CTYPE', 'bash']
-assert cfg['notify'][6] == '-lc'
-assert 'npm root -g' in cfg['notify'][7]
-assert cfg['notify'][8] == 'omx-notify'
+# oh-my-codex is gone: no notify hook and no OMX-only env injection table.
+assert 'notify' not in cfg
+assert 'shell_environment_policy' not in cfg
 assert cfg['features']['goals'] is True
 assert cfg['features']['memories'] is True
 assert cfg['memories']['generate_memories'] is True
@@ -1461,7 +1155,7 @@ PY
 }
 
 @test "README documents Codex as first-class setup" {
-  grep -q 'Codex (with OMX)' "$REPO_ROOT/README.md"
+  grep -q 'Codex execution with goals, memories, and native subagents' "$REPO_ROOT/README.md"
   grep -q 'scripts/codex.sh' "$REPO_ROOT/README.md"
   grep -q '~/.codex/config.toml' "$REPO_ROOT/README.md"
   grep -q '\[features\] goals = true' "$REPO_ROOT/README.md"
@@ -1911,12 +1605,12 @@ JSON
   grep -Fq 'imports ~/.agent/AGENTS.md' "$REPO_ROOT/README.md"
 }
 
-@test "codex.sh installs oh-my-codex (omx) alongside the Codex CLI" {
-  grep -q 'npm install -g @openai/codex oh-my-codex' "$REPO_ROOT/scripts/codex.sh"
-  grep -q 'omx setup' "$REPO_ROOT/scripts/codex.sh"
-  grep -q 'omx doctor' "$REPO_ROOT/scripts/codex.sh"
-  # No stale cherry-pick: our local Codex pre-tool-use hook reference was
-  # removed when we switched to using omx for orchestration.
+@test "codex.sh installs the Codex CLI alone, without oh-my-codex" {
+  grep -q 'npm install -g @openai/codex' "$REPO_ROOT/scripts/codex.sh"
+  run grep -Ei 'omx|oh-my-codex' "$REPO_ROOT/scripts/codex.sh"
+  [ "$status" -ne 0 ]
+  # No stale cherry-pick: our local Codex pre-tool-use hook reference stays out
+  # of the repo.
   [ ! -e "$REPO_ROOT/configs/codex/hooks" ]
   run grep -F 'CODEX_SMOKE_TEST' "$REPO_ROOT/scripts/codex.sh"
   [ "$status" -ne 0 ]
@@ -1978,30 +1672,30 @@ JSON
   run env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$gitcfg" \
     python3 "$helper" init --cwd "$work" --run-id handover-test \
       --handshake verified \
-      --target omx --target claude \
+      --target codex --target claude \
       --task "continue the smoke task" \
       --success "both receivers are ready" \
       --completed "created test repo" \
       --remaining "continue from package" \
       --decision "use durable artifacts" \
-      --artifact ".omx/artifacts/handover-test/handoff.json" \
+      --artifact ".handover/artifacts/handover-test/handoff.json" \
       --risk "none"
   [ "$status" -eq 0 ]
 
-  run_dir="$work/.omx/artifacts/handover-test"
+  run_dir="$work/.handover/artifacts/handover-test"
   run python3 "$helper" validate --run-dir "$run_dir" --no-fail
   [ "$status" -eq 0 ]
   [[ "$output" == *'"complete": false'* ]]
 
   run run_from_dir "$work" env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$gitcfg" \
-    python3 "$helper" ack --run-dir "$run_dir" --target omx --summary understood --next-action continue
+    python3 "$helper" ack --run-dir "$run_dir" --target codex --summary understood --next-action continue
   [ "$status" -eq 0 ]
   run run_from_dir "$work" env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$gitcfg" \
     python3 "$helper" ack --run-dir "$run_dir" --target claude --summary understood --next-action continue
   [ "$status" -eq 0 ]
   run python3 "$helper" confirm --run-dir "$run_dir"
   [ "$status" -eq 0 ]
-  run run_from_dir "$work" python3 "$helper" ready --run-dir "$run_dir" --target omx
+  run run_from_dir "$work" python3 "$helper" ready --run-dir "$run_dir" --target codex
   [ "$status" -eq 0 ]
   run run_from_dir "$work" python3 "$helper" ready --run-dir "$run_dir" --target claude
   [ "$status" -eq 0 ]
@@ -2024,13 +1718,13 @@ JSON
   helper="$REPO_ROOT/plugins/local-skills/skills/handover/scripts/handover.py"
   run env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$gitcfg" \
     python3 "$helper" init --cwd "$work" --run-id handover-fast \
-      --target omx \
+      --target codex \
       --task "continue the fast smoke task"
   [ "$status" -eq 0 ]
 
-  run_dir="$work/.omx/artifacts/handover-fast"
+  run_dir="$work/.handover/artifacts/handover-fast"
   run run_from_dir "$work" env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$gitcfg" \
-    python3 "$helper" ready --run-dir "$run_dir" --target omx \
+    python3 "$helper" ready --run-dir "$run_dir" --target codex \
       --summary "read package" --next-action "continue now"
   [ "$status" -eq 0 ]
   run python3 "$helper" validate --run-dir "$run_dir"
@@ -2060,16 +1754,16 @@ SH
   helper="$REPO_ROOT/plugins/local-skills/skills/handover/scripts/handover.py"
   run env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$gitcfg" \
     python3 "$helper" init --cwd "$work" --run-id close-fail \
-      --target omx \
+      --target codex \
       --task "close fail-open smoke" \
       --close-current \
       --source-workspace stale-workspace \
       --source-surface stale-surface
   [ "$status" -eq 0 ]
 
-  run_dir="$work/.omx/artifacts/close-fail"
+  run_dir="$work/.handover/artifacts/close-fail"
   run run_from_dir "$work" env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$gitcfg" \
-    python3 "$helper" ready --run-dir "$run_dir" --target omx \
+    python3 "$helper" ready --run-dir "$run_dir" --target codex \
       --summary "read package" --next-action "continue now"
   [ "$status" -eq 0 ]
 
@@ -2085,21 +1779,42 @@ SH
   helper="$REPO_ROOT/plugins/local-skills/skills/handover/scripts/handover.py"
 
   run python3 "$helper" init --cwd "$work" --run-id handover-targets \
-    --target-from "handover:claude,omx and maybe codex later" \
+    --target-from "handover:claude 나중에 코덱스도 열어볼까" \
     --task "target inference smoke"
   [ "$status" -eq 0 ]
 
-  python3 - "$work/.omx/artifacts/handover-targets/handoff.json" <<'PY'
+  python3 - "$work/.handover/artifacts/handover-targets/handoff.json" <<'PY'
 import json
 import sys
 
 data = json.load(open(sys.argv[1]))
-assert [target["name"] for target in data["targets"]] == ["claude", "omx"]
+assert [target["name"] for target in data["targets"]] == ["claude"]
 assert data["target_source"] == "explicit-tag"
 assert data["handshake"] == "fast"
-assert data["launch_commands"]["omx"]["command"] == "omx --direct --xhigh --madmax"
 assert data["launch_commands"]["claude"]["command"] == "claude"
-assert data["launch_commands"]["omx"]["title"] == "handover-omx-targets"
+assert data["launch_commands"]["claude"]["title"] == "handover-claude-targets"
+PY
+}
+
+@test "handover helper defaults to codex launched with bypassed approvals" {
+  work="$TMPDIR_TEST/handover-targets-default"
+  mkdir -p "$work"
+  helper="$REPO_ROOT/plugins/local-skills/skills/handover/scripts/handover.py"
+
+  run python3 "$helper" init --cwd "$work" --run-id handover-targets \
+    --task "default target smoke"
+  [ "$status" -eq 0 ]
+
+  python3 - "$work/.handover/artifacts/handover-targets/handoff.json" <<'PY'
+import json
+import sys
+
+data = json.load(open(sys.argv[1]))
+assert [target["name"] for target in data["targets"]] == ["codex"]
+assert data["target_source"] == "default"
+# A handover target starts unattended, so codex must bypass approval prompts.
+assert data["launch_commands"]["codex"]["command"] == "codex --yolo"
+assert data["launch_commands"]["codex"]["title"] == "handover-codex-targets"
 PY
 }
 
@@ -2109,16 +1824,16 @@ PY
   helper="$REPO_ROOT/plugins/local-skills/skills/handover/scripts/handover.py"
 
   run python3 "$helper" init --cwd "$work" --run-id handover-targets \
-    --target-from "omx랑 클로드 새 탭으로 넘겨줘" \
+    --target-from "코덱스랑 클로드 새 탭으로 넘겨줘" \
     --task "natural target inference smoke"
   [ "$status" -eq 0 ]
 
-  python3 - "$work/.omx/artifacts/handover-targets/handoff.json" <<'PY'
+  python3 - "$work/.handover/artifacts/handover-targets/handoff.json" <<'PY'
 import json
 import sys
 
 data = json.load(open(sys.argv[1]))
-assert [target["name"] for target in data["targets"]] == ["omx", "claude"]
+assert [target["name"] for target in data["targets"]] == ["claude", "codex"]
 assert data["target_source"] == "text-inferred"
 PY
 }
@@ -2128,21 +1843,36 @@ PY
   mkdir -p "$work"
   helper="$REPO_ROOT/plugins/local-skills/skills/handover/scripts/handover.py"
 
-  run env HANDOVER_OMX_COMMAND='omx --direct --high --madmax' \
+  run env HANDOVER_CODEX_COMMAND='codex --dangerously-bypass-approvals-and-sandbox' \
     HANDOVER_CLAUDE_ARGS='--model opus' \
     python3 "$helper" init --cwd "$work" --run-id handover-targets \
-      --target omx --target claude \
+      --target codex --target claude \
       --task "launch override smoke"
   [ "$status" -eq 0 ]
 
-  python3 - "$work/.omx/artifacts/handover-targets/launch-commands.json" <<'PY'
+  python3 - "$work/.handover/artifacts/handover-targets/launch-commands.json" <<'PY'
 import json
 import sys
 
 data = json.load(open(sys.argv[1]))
-assert data["omx"]["command"] == "omx --direct --high --madmax"
+assert data["codex"]["command"] == "codex --dangerously-bypass-approvals-and-sandbox"
 assert data["claude"]["command"] == "claude --model opus"
-assert data["omx"]["cmux_command"].startswith("zsh -ic ")
+assert data["codex"]["cmux_command"].startswith("zsh -ic ")
+PY
+
+  run env HANDOVER_CODEX_ARGS='--profile yolo' \
+    python3 "$helper" init --cwd "$work" --run-id handover-targets-args \
+      --target codex \
+      --task "launch args append smoke"
+  [ "$status" -eq 0 ]
+
+  python3 - "$work/.handover/artifacts/handover-targets-args/launch-commands.json" <<'PY'
+import json
+import sys
+
+data = json.load(open(sys.argv[1]))
+# Extra args append to the default codex launch shape instead of replacing it.
+assert data["codex"]["command"] == "codex --yolo --profile yolo"
 PY
 }
 
@@ -2151,10 +1881,10 @@ PY
   mkdir -p "$work"
   helper="$REPO_ROOT/plugins/local-skills/skills/handover/scripts/handover.py"
 
-  run python3 "$helper" init --cwd "$work" --target omx --task "first auto id"
+  run python3 "$helper" init --cwd "$work" --target codex --task "first auto id"
   [ "$status" -eq 0 ]
   first="$output"
-  run python3 "$helper" init --cwd "$work" --target omx --task "second auto id"
+  run python3 "$helper" init --cwd "$work" --target codex --task "second auto id"
   [ "$status" -eq 0 ]
   second="$output"
 
@@ -2306,72 +2036,9 @@ SH
   [[ "$output" != *"EXA_SECRET_SHOULD_NOT_PRINT"* ]]
 }
 
-@test "Claude PreToolUse guard blocks wrapped shared pkill variants" {
-  commands=(
-    '/usr/bin/pkill -f "headroom wrap claude --port 8787"'
-    'env FOO=bar pkill -f "headroom wrap claude --port 8787"'
-    'command killall headroom --port 8787'
-  )
-
-  index=0
-  for command in "${commands[@]}"; do
-    input="$TMPDIR_TEST/pretool-shared-kill-$index.json"
-    output_file="$TMPDIR_TEST/pretool-shared-kill-$index-output.json"
-    python3 - "$input" "$command" <<'PY'
-import json
-import sys
-from pathlib import Path
-Path(sys.argv[1]).write_text(json.dumps({
-    'hook_event_name': 'PreToolUse',
-    'tool_name': 'Bash',
-    'tool_input': {'command': sys.argv[2]},
-}))
-PY
-
-    run bash -c "'$REPO_ROOT/configs/hooks/pretool-guard.sh' < '$input' > '$output_file'"
-
-    [ "$status" -eq 0 ]
-    python3 - "$output_file" <<'PY'
-import json
-import sys
-from pathlib import Path
-payload = json.loads(Path(sys.argv[1]).read_text())
-assert payload['hookSpecificOutput']['permissionDecision'] == 'deny'
-PY
-    index=$((index + 1))
-  done
-}
-
-@test "Claude PreToolUse guard allows parent-scoped shared pkill" {
-  input="$TMPDIR_TEST/pretool-parent-pkill.json"
-  output_file="$TMPDIR_TEST/pretool-parent-pkill-output.json"
-  python3 - "$input" <<'PY'
-import json
-import sys
-from pathlib import Path
-Path(sys.argv[1]).write_text(json.dumps({
-    'hook_event_name': 'PreToolUse',
-    'tool_name': 'Bash',
-    'tool_input': {'command': 'pkill -P 123 -f "headroom wrap claude --port 8787"'},
-}))
-PY
-
-  run bash -c "'$REPO_ROOT/configs/hooks/pretool-guard.sh' < '$input' > '$output_file'"
-
-  [ "$status" -eq 0 ]
-  if [ -s "$output_file" ]; then
-    python3 - "$output_file" <<'PY'
-import json
-import sys
-from pathlib import Path
-payload = json.loads(Path(sys.argv[1]).read_text())
-assert payload.get('hookSpecificOutput', {}).get('permissionDecision') != 'deny'
-PY
-  fi
-}
-
 @test "Codex config declares hosted MCPs with safe defaults" {
-  python3 - <<PY
+  [ -n "$PYTHON_TOMLLIB" ] || skip "no python3 with tomllib available"
+  "$PYTHON_TOMLLIB" - <<PY
 from pathlib import Path
 import tomllib
 cfg = tomllib.loads((Path('$REPO_ROOT') / 'configs/codex/config.toml').read_text())
@@ -2382,7 +2049,7 @@ assert servers['figma']['tool_timeout_sec'] == 120
 assert servers['figma-desktop']['url'] == 'http://127.0.0.1:3845/mcp'
 assert servers['figma-desktop']['enabled'] is False
 text = (Path('$REPO_ROOT') / 'configs/codex/config.toml').read_text()
-assert 'Figma hosted — personal/default Codex/OMX design-context path' in text
+assert 'Figma hosted — personal/default Codex design-context path' in text
 assert 'Company overlay disables this hosted server by default' in text
 assert 'Figma Desktop — local-only fallback' in text
 assert 'company/local fallback' not in text
@@ -2686,7 +2353,7 @@ JSONL
     --close-current
   [ "$status" -eq 0 ]
 
-  run_dir="$work/.omx/artifacts/close-no-cmux"
+  run_dir="$work/.handover/artifacts/close-no-cmux"
   run run_from_dir "$work" env -u CMUX_WORKSPACE_ID -u CMUX_SURFACE_ID python3 "$helper" ready \
     --run-dir "$run_dir" \
     --target codex \
@@ -2852,7 +2519,7 @@ SH
 }
 
 # codex.sh 의 훅 병합 함수만 떼어 임시 스크립트로 실행한다. 전체 스크립트는
-# npm/omx 를 건드리므로 테스트에서 돌릴 수 없다.
+# npm 을 건드리므로 테스트에서 돌릴 수 없다.
 _run_hook_merge() {
   local home="$1" runner="$BATS_TEST_TMPDIR/run-merge-$RANDOM.sh"
   {
@@ -2960,7 +2627,8 @@ print(sum(len(g['hooks']) for a in d['hooks'].values() for g in a))"
   mkdir -p "$home"
   printf 'vault = "%s"\n' "$vault" > "$home/config.toml"
 
-  run env LLMWIKI_HOME="$home" python3 -m scripts.llmwiki init
+  [ -n "$PYTHON_TOMLLIB" ] || skip "no python3 with tomllib available"
+  run env LLMWIKI_HOME="$home" "$PYTHON_TOMLLIB" -m scripts.llmwiki init
   [ "$status" -eq 0 ]
   [ -f "$vault/index.md" ]
 }
@@ -3102,7 +2770,8 @@ print('NEW' if any('NEW' in x for x in c) else 'no-new',
   local fake="$BATS_TEST_TMPDIR/fake-python3"
   printf '#!/bin/sh\nexit 1\n' > "$fake"
   chmod +x "$fake"
-  local real; real="$(command -v python3)"
+  [ -n "$PYTHON_TOMLLIB" ] || skip "no python3 with tomllib available"
+  local real="$PYTHON_TOMLLIB"
   local home="$BATS_TEST_TMPDIR/wk"
   mkdir -p "$home"
 

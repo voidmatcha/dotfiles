@@ -2,14 +2,14 @@
 
 For backend selection and shared adapter invariants, read `display-adapter-contract.md` first. This file is only the cmux-specific backend reference.
 
-Read this reference only when `handover` needs to launch, display, monitor, or recover Claude/Codex/OMX sessions in cmux surfaces. Keep `cmux` as the topology/display tool; `handover` owns the task packet, ACK/READY markers, and loop decisions.
+Read this reference only when `handover` needs to launch, display, monitor, or recover Claude/Codex sessions in cmux surfaces. Keep `cmux` as the topology/display tool; `handover` owns the task packet, ACK/READY markers, and loop decisions.
 
 Use a shell coordinator for long-running loops. Do not rely on a single agent prompt to manage many future iterations.
 
 ## Core contract
 
 1. **Coordinator owns sequencing.** A shell script or terminal driver launches one bounded agent task at a time, polls it, and decides the next step.
-2. **Agents own one unit.** Claude/Codex/OMX should receive only one clone loop, one improvement pass, or one verification pass per launch.
+2. **Agents own one unit.** Claude/Codex should receive only one clone loop, one improvement pass, or one verification pass per launch.
 3. **Next step needs evidence.** Continue only after both:
    - a status/marker artifact exists and passes required-field validation, and
    - the relevant process/tool activity has ended or returned to an idle prompt.
@@ -35,10 +35,10 @@ Reject or recreate surfaces with `runtime=0`, `ghostty=nil`, or `tty=nil`. They 
 
 ## Smoke test before handoff
 
-Before starting Claude/Codex/OMX, prove command delivery with a file marker:
+Before starting Claude/Codex, prove command delivery with a file marker:
 
 ```bash
-MARKER=".omx/artifacts/cmux-smoke-$(date -u +%Y%m%d-%H%M%S).txt"
+MARKER=".handover/artifacts/cmux-smoke-$(date -u +%Y%m%d-%H%M%S).txt"
 cmux send --workspace workspace:<W> --surface surface:<S> \
   "cd '$PWD' && date -u > '$MARKER' && echo READY >> '$MARKER'\n"
 sleep 3
@@ -49,7 +49,7 @@ If the marker is missing, do not launch the agent there. Use an existing healthy
 
 ## Status artifact schema
 
-Use repo-local ignored artifacts, commonly `.omx/artifacts/<run>/`:
+Use repo-local ignored artifacts, commonly `.handover/artifacts/<run>/`:
 
 - `coordinator-status.md`: current step, active surface, PID, last poll time, next action
 - `<engine>-loop-<NN>-status.md`: commands run, gate reached, hook/gate blocker, concrete fidelity gaps, one recommended improvement, lessons used
@@ -72,7 +72,7 @@ Do not treat a non-empty marker as sufficient. Validate that it includes the req
 - Write a heartbeat timestamp on every poll so a later session can distinguish slow work from a dead coordinator.
 - Validate loop/improvement marker content before advancing. A loop marker must identify commands, current gate, hook/gate blocker, concrete fidelity gap, recommended improvement, and whether carried-forward lessons were used. An improvement marker must identify changed files or no-change decision, rationale, test evidence, install result, commit/push recommendation, and deferred risks.
 - When commit/push is required, record `git status --short`, `git diff --stat`, commit SHA, upstream ahead/behind count, and push result.
-- Run Claude/Codex/OMX agent CLIs in the foreground of a real TTY. Do not background the agent process itself; if heartbeat is needed, run a separate background heartbeat watcher while the agent stays foreground.
+- Run Claude/Codex agent CLIs in the foreground of a real TTY. Do not background the agent process itself; if heartbeat is needed, run a separate background heartbeat watcher while the agent stays foreground.
 
 ## Minimal coordinator guardrails
 
@@ -80,7 +80,7 @@ Use these invariants in any shell coordinator:
 
 ```bash
 RUN_ID="${RUN_ID:-$(date -u +%Y%m%d-%H%M%S)}"
-ART="${ART:-.omx/artifacts/cmux-handoff-$RUN_ID}"
+ART="${ART:-.handover/artifacts/cmux-handoff-$RUN_ID}"
 LOCK="$ART/coordinator.lock"
 mkdir -p "$ART"
 

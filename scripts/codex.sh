@@ -8,7 +8,7 @@ usage() {
   cat <<'USAGE'
 Usage: scripts/codex.sh [--dry-run] [--non-interactive]
 
-Installs/normalizes Codex CLI + oh-my-codex config and Codex skills.
+Installs/normalizes Codex CLI config and Codex skills.
 USAGE
 }
 
@@ -33,7 +33,7 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 
-info "Setting up Codex CLI + oh-my-codex (omx)..."
+info "Setting up Codex CLI..."
 
 CODEX_CONFIG_DIR="${CODEX_HOME:-$HOME/.codex}"
 CODEX_SHARED_CONFIG="$DOTFILES_DIR/configs/codex/config.toml"
@@ -47,17 +47,10 @@ sanitize_codex_shared_config() {
   local tmp_file
   tmp_file=$(mktemp)
   awk '
-    BEGIN {
-      dynamic_notify = "notify = [\"env\", \"-u\", \"LC_ALL\", \"-u\", \"LC_CTYPE\", \"bash\", \"-lc\", \"exec node \\\"$(npm root -g)/oh-my-codex/dist/scripts/notify-hook.js\\\" \\\"$@\\\"\", \"omx-notify\"]"
-    }
-    /^notify = .*oh-my-codex.*notify-(hook|dispatcher)\.js/ {
-      print dynamic_notify
-      next
-    }
     # Machine-local state sections — must never live in the shared template.
     # Keep in sync with extract_machine_local_codex_sections below.
     /^\[/ {
-      drop = ($0 ~ /^\[projects\."/ || $0 ~ /^\[marketplaces\./ || $0 ~ /^\[plugins\./ || $0 ~ /^\[hooks\.state/)
+      drop = ($0 ~ /^\[projects\."/ || $0 ~ /^\[marketplaces\./ || $0 ~ /^\[plugins\./ || $0 ~ /^\[hooks\.state/ || $0 ~ /^\[tui\./)
     }
     !drop { print }
   ' "$config_file" > "$tmp_file"
@@ -86,9 +79,11 @@ extract_machine_local_codex_sections() {
   awk '
     # Keep in sync with the drop patterns in sanitize_codex_shared_config.
     /^\[/ {
-      keep = ($0 ~ /^\[projects\."/ || $0 ~ /^\[marketplaces\./ || $0 ~ /^\[plugins\./ || $0 ~ /^\[hooks\.state/)
+      keep = ($0 ~ /^\[projects\."/ || $0 ~ /^\[marketplaces\./ || $0 ~ /^\[plugins\./ || $0 ~ /^\[hooks\.state/ || $0 ~ /^\[tui\./)
     }
-    keep { print }
+    # Machine-local values survive refreshes; comments from retired setup tools
+    # do not belong to the mutable-state contract.
+    keep && $0 !~ /^[[:space:]]*#/ { print }
   ' "$config_file"
 }
 
@@ -136,58 +131,6 @@ install_codex_config() {
   fi
 }
 
-
-# WORKAROUND(oh-my-codex@0.18.11, 소스 검증 2026-06-12):
-# 업스트림 결함 — hooks/extensibility/dispatcher.js가 process.env를 통째 상속해
-# 네이티브 훅이 OMX_TMUX_HUD_OWNER/OMX_TMUX_HUD_LEADER_PANE을 물려받아 HUD pane을
-# 재생성할 수 있음 (team/tmux-session.js scrubTeamWorkerHudOwnershipEnv와 비대칭=누락).
-# 이 함수는 등록된 훅 명령에 `env -u ...` 접두를 박아 누수를 차단한다.
-# 한계: 스크립트 실행 시점의 훅만 수정 — OMX가 훅을 재등록하면 재실행 필요
-#       (그 빈틈은 .zshrc의 __dotfiles_cleanup_orphan_hud_panes가 보험).
-# 롤백 조건: 업스트림이 훅 dispatch 시 HUD env scrub을 넣으면 이 함수와 호출부,
-#            .zshrc의 precmd 정리(같은 날짜 WORKAROUND 주석)를 함께 제거할 것.
-# 업스트림 이슈: https://github.com/Yeachan-Heo/oh-my-codex/issues (TBD)
-sanitize_codex_hooks_single_hud() {
-  local hooks_file="$CODEX_CONFIG_DIR/hooks.json"
-
-  [ -f "$hooks_file" ] || return 0
-
-  if $DRY_RUN; then
-    info "[dry-run] sanitize OMX native hook HUD owner env in $hooks_file"
-    return 0
-  fi
-
-  python3 - "$hooks_file" <<'PY'
-import json
-import re
-import sys
-from pathlib import Path
-
-path = Path(sys.argv[1])
-data = json.loads(path.read_text())
-prefix = "env -u OMX_TMUX_HUD_OWNER -u OMX_TMUX_HUD_LEADER_PANE "
-leading_owner_env = re.compile(
-    r"^(?:env\s+(?:(?:-u\s+OMX_TMUX_HUD_OWNER|-u\s+OMX_TMUX_HUD_LEADER_PANE)\s+)+)+"
-)
-changed = 0
-
-for entries in data.get("hooks", {}).values():
-    for entry in entries:
-        for hook in entry.get("hooks", []):
-            command = hook.get("command")
-            if not isinstance(command, str) or "codex-native-hook.js" not in command:
-                continue
-            normalized = leading_owner_env.sub("", command)
-            next_command = prefix + normalized
-            if next_command != command:
-                hook["command"] = next_command
-                changed += 1
-
-if changed:
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
-print(changed)
-PY
-}
 
 # claude-mem 은 Claude Code 플러그인으로 설치되지만 Codex 훅은 스스로 등록하지
 # 않는다. 그 결과 Codex 세션은 두 달 가까이 하나도 기록되지 않았고, 아무 도구도
@@ -261,7 +204,7 @@ except ValueError:
     raise SystemExit(0)
 live.setdefault("hooks", {})
 
-# 이 파일에는 OMX, orca, ui-clone 훅이 같은 이벤트에 공존한다. 그래서
+# 이 파일에는 llmwiki, ui-clone 훅이 같은 이벤트에 공존한다. 그래서
 # claude-mem 이 소유한 항목만 골라내야 하는데, 명령 문자열은 버전마다
 # 바뀐다 - 실측으로 13.2.0 은 7개, 13.13.1 은 5개이고 겹치는 문자열이
 # 하나도 없다. 추가만 하면 업그레이드할 때마다 옛 명령이 남아 같은
@@ -317,7 +260,8 @@ PY
 }
 
 # llmwiki 훅. Claude 쪽은 settings.json 이 저장소 심링크라 등록이 곧 커밋이지만
-# ~/.codex/hooks.json 은 실파일이고 OMX 가 재작성한다. 그래서 여기서 매번 확인한다.
+# ~/.codex/hooks.json 은 실파일이고 claude-mem/ui-clone 등 다른 도구도 같이
+# 쓴다. 저장소로 추적되지 않으니 여기서 매번 확인한다.
 ensure_llmwiki_codex_hooks() {
   local hooks_file="$CODEX_CONFIG_DIR/hooks.json"
   local dir="$DOTFILES_DIR/configs/llmwiki"
@@ -407,36 +351,6 @@ install_codex_cmux_skill() {
   info "Installed Codex cmux skill -> $dest"
 }
 
-sanitize_omx_native_agent_providers() {
-  local agents_dir="$CODEX_CONFIG_DIR/agents"
-  local explore_toml="$agents_dir/explore.toml"
-
-  if [ ! -f "$explore_toml" ]; then
-    return 0
-  fi
-
-  if $DRY_RUN; then
-    info "[dry-run] sanitize stale Headroom provider from $explore_toml"
-    return 0
-  fi
-
-  if grep -q '^model_provider = "headroom"$' "$explore_toml"; then
-    python3 - "$explore_toml" <<'PY'
-from __future__ import annotations
-
-import sys
-from pathlib import Path
-
-path = Path(sys.argv[1])
-lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
-out = [line for line in lines if line.strip() != 'model_provider = "headroom"']
-if out != lines:
-    path.write_text("".join(out), encoding="utf-8")
-PY
-    info "Removed stale Headroom provider from $explore_toml"
-  fi
-}
-
 if ! $DRY_RUN; then
   sanitize_codex_shared_config
 fi
@@ -447,47 +361,27 @@ if $DRY_RUN; then
     info "[dry-run] codex --version"
     if $UPGRADE; then
       info "[dry-run] would: npm install -g @openai/codex@latest"
-      if command -v omx &>/dev/null; then
-        info "[dry-run] would: omx update --stable (upgrade OMX + refresh generated user assets)"
-      else
-        info "[dry-run] would: npm install -g oh-my-codex@latest"
-        info "[dry-run] would: omx update --stable (refresh generated user assets)"
-      fi
     fi
   else
-    info "[dry-run] npm install -g @openai/codex oh-my-codex"
-    $UPGRADE && info "[dry-run] would: omx update --stable after install (refresh generated user assets)"
-  fi
-  if command -v omx &>/dev/null; then
-    info "[dry-run] omx --version"
-  else
-    info "[dry-run] omx not installed — would install with oh-my-codex"
+    info "[dry-run] npm install -g @openai/codex"
   fi
   install_codex_cmux_skill
   ensure_claude_mem_codex_hooks >/dev/null
   ensure_llmwiki_codex_hooks >/dev/null
-  sanitize_omx_native_agent_providers
   if [ -x "$DOTFILES_DIR/scripts/skills.sh" ]; then
     bash "$DOTFILES_DIR/scripts/skills.sh" codex
   fi
   info "[dry-run] codex login status"
-  info "[dry-run] omx setup / omx doctor are manual first-install checks"
-  info "Codex CLI + oh-my-codex setup done"
+  info "Codex CLI setup done"
   exit 0
 fi
 
-# ── Install Codex CLI + omx ──
-# `omx` is Yeachan-Heo/oh-my-codex — a multi-agent orchestration runtime on
-# top of the official Codex CLI. README install path:
-#   npm install -g @openai/codex oh-my-codex
-# `omx doctor` then verifies install shape; `omx setup` provisions native
-# agents and prompts (run interactively on first use).
+# ── Install Codex CLI ──
+#   npm install -g @openai/codex
 codex_upgrade_failed=0
 if command -v codex &>/dev/null; then
   CODEX_VERSION=$(codex --version 2>/dev/null || echo "unknown")
   info "Found codex ${CODEX_VERSION}"
-  # Upgrade Codex itself with npm. OMX must use its supported update command
-  # below because that also refreshes generated prompts/skills/native agents.
   if $UPGRADE; then
     if command -v npm &>/dev/null; then
       info "Upgrading Codex CLI (--upgrade)..."
@@ -500,14 +394,8 @@ if command -v codex &>/dev/null; then
       codex_upgrade_failed=1
     fi
   fi
-  if command -v omx &>/dev/null; then
-    OMX_VERSION=$(omx --version 2>/dev/null || echo "unknown")
-    info "Found omx ${OMX_VERSION}"
-  else
-    warn "omx not installed — run 'npm install -g oh-my-codex' to add the orchestration layer"
-  fi
 elif $DRY_RUN; then
-  info "[dry-run] npm install -g @openai/codex oh-my-codex"
+  info "[dry-run] npm install -g @openai/codex"
 else
   if ! command -v npm &>/dev/null; then
     warn "npm not found in PATH"
@@ -515,40 +403,11 @@ else
     exit 1
   fi
 
-  if npm install -g @openai/codex oh-my-codex; then
-    info "Codex CLI + omx installed"
+  if npm install -g @openai/codex; then
+    info "Codex CLI installed"
   else
-    warn "npm install -g @openai/codex oh-my-codex failed"
+    warn "npm install -g @openai/codex failed"
     exit 1
-  fi
-fi
-
-if $UPGRADE; then
-  if ! command -v omx &>/dev/null; then
-    if command -v npm &>/dev/null; then
-      info "Installing oh-my-codex before generated-asset refresh..."
-      if ! npm install -g oh-my-codex@latest; then
-        warn "oh-my-codex install failed"
-        codex_upgrade_failed=1
-      fi
-      hash -r 2>/dev/null || true
-    else
-      warn "npm not found; cannot install oh-my-codex"
-      codex_upgrade_failed=1
-    fi
-  fi
-
-  if command -v omx &>/dev/null; then
-    info "Refreshing OMX stable channel and generated user assets..."
-    if with_timeout 600 omx update --stable </dev/null; then
-      info "OMX stable update + generated asset refresh completed"
-    else
-      warn "omx update --stable failed; generated user assets may be stale"
-      codex_upgrade_failed=1
-    fi
-  else
-    warn "omx is unavailable after install; generated user assets were not refreshed"
-    codex_upgrade_failed=1
   fi
 fi
 
@@ -566,7 +425,6 @@ case "${merged:-0}" in
     warn "  existing hooks were left untouched; check the plugin install" ;;
   *) info "merged $merged claude-mem hook(s) into Codex — Codex sessions are recorded again" ;;
 esac
-sanitize_omx_native_agent_providers
 if [ -x "$DOTFILES_DIR/scripts/skills.sh" ]; then
   bash "$DOTFILES_DIR/scripts/skills.sh" codex
 fi
@@ -605,36 +463,9 @@ fi
 
 sanitize_codex_shared_config
 
-# ── omx setup / doctor (manual — interactive on first run) ──
-# `omx setup` provisions native agents/prompts/hooks; `omx doctor` reports
-# install shape. Both are interactive in the upstream, so we surface them
-# as REQUIRED MANUAL STEPS rather than running blind.
-if command -v omx &>/dev/null && ! $DRY_RUN; then
-  echo ""
-  warn "═════════════════════════════════════════════════════════════════"
-  warn "  omx (oh-my-codex) — REQUIRED MANUAL STEPS after first install"
-  warn "═════════════════════════════════════════════════════════════════"
-  warn "  1) Provision native agents/prompts/hooks:"
-  warn "       omx setup"
-  warn "       bash $DOTFILES_DIR/scripts/codex.sh  # normalize machine-local paths afterwards"
-  warn "     (--upgrade runs \`omx update --stable\` automatically on later updates)"
-  warn ""
-  warn "  2) Verify install shape + runtime prerequisites:"
-  warn "       omx doctor"
-  warn ""
-  warn "  3) Roundtrip smoke test (auth + profile + base-URL):"
-  warn "       omx exec --skip-git-repo-check -C . \"Reply with exactly OMX-EXEC-OK\""
-  warn ""
-  warn "  4) Recommended launch:"
-  warn "       omx --madmax --high          # default: direct, no OMX tmux/HUD pane"
-  warn "       omx --tmux --madmax --high   # opt-in managed tmux/HUD surface"
-  warn "  Set OMX_LAUNCH_POLICY=tmux|detached-tmux|auto to override the dotfiles direct default."
-  echo ""
-fi
-
 if [ "$codex_upgrade_failed" -ne 0 ]; then
-  warn "Codex/OMX upgrade completed with errors"
+  warn "Codex upgrade completed with errors"
   exit 1
 fi
 
-info "Codex CLI + oh-my-codex setup done"
+info "Codex CLI setup done"

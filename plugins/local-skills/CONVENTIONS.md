@@ -71,4 +71,4 @@ not the name. This index is for the judgment-call ones that are easy to forget:
 | Korean technical docs — humanize, translation post-edit, term consistency, delta audit | `korean-tech-humanizer` (external repo `~/Documents/korean-tech-humanizer`) |
 | Verify this dotfiles repo before install | `dotfiles-verify` |
 | Decide continue / compact / clear / hand off | `context-check` |
-| Hand work to a fresh Claude/Codex/OMX session | `handover` |
+| Hand work to a fresh Claude/Codex session | `handover` |

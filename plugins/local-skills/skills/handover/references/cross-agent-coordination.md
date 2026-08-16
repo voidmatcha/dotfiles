@@ -1,6 +1,6 @@
 # Cross-agent coordination
 
-Read this when Claude, Codex, OMX, or another LLM must work across separate sessions, observe different surfaces, or cross-check each other. This is a `handover` profile, not a separate top-level skill: `handover` owns the package, target prompts, ACK/READY validation, and source-close rule.
+Read this when Claude, Codex, or another LLM must work across separate sessions, observe different surfaces, or cross-check each other. This is a `handover` profile, not a separate top-level skill: `handover` owns the package, target prompts, ACK/READY validation, and source-close rule.
 
 ## External grounding
 
@@ -32,16 +32,16 @@ Use those sources as support for the shape of this profile, not as proof that ev
 | OpenAI agents-as-tools keep a manager in control; handoffs transfer conversation. | Prefer reviewer/verifier/executor targets as artifact producers unless the user explicitly wants the target to take over. |
 | Anthropic lead/subagent research needs division of labor and effort budgets. | Default to one executor plus one reviewer; add more targets only when subtasks are genuinely parallel. |
 | Anthropic reports duplicate work and runaway subagents without guardrails. | Each target prompt includes write scope, output schema, stop condition, and escalation path. |
-| AutoGen requires explicit save/load for continuity. | Treat `.omx/artifacts/<run>/` as the durable state boundary; do not rely on a live tab label or raw chat memory. |
+| AutoGen requires explicit save/load for continuity. | Treat `.handover/artifacts/<run>/` as the durable state boundary; do not rely on a live tab label or raw chat memory. |
 
 ## Default role split
 
 | Role | Good default owner | Output artifact |
 | --- | --- | --- |
-| Coordinator | OMX/Codex source session | `coordinator-status.md`, `state.jsonl`, final merge decision |
-| Executor | Codex/OMX target | patch summary, commands run, test evidence, remaining risks |
+| Coordinator | Claude/Codex source session | `coordinator-status.md`, `state.jsonl`, final merge decision |
+| Executor | Codex target | patch summary, commands run, test evidence, remaining risks |
 | Reviewer/critic | Claude target | read-only review with ranked findings and concrete file references |
-| Verifier | Codex/OMX or separate Claude target | validation result, pass/fail evidence, reproducible commands |
+| Verifier | Codex or a separate Claude target | validation result, pass/fail evidence, reproducible commands |
 | Researcher | `agent-reach` or external research target | public-source notes with URLs and assumptions |
 
 Use fewer roles when the task is small. Two targets are often enough: one executor and one reviewer. Use more only when the coordinator can give each target a non-overlapping scope and a concrete artifact to produce.
@@ -66,10 +66,10 @@ Treat `watch` as polling a known run directory and known target handles, not as 
 
 A watcher may inspect:
 
-- `.omx/artifacts/<run>/handoff.json`
-- `.omx/artifacts/<run>/targets/<target>/ready.json`
-- `.omx/artifacts/<run>/coordinator-status.md`
-- `.omx/artifacts/<run>/state.jsonl`
+- `.handover/artifacts/<run>/handoff.json`
+- `.handover/artifacts/<run>/targets/<target>/ready.json`
+- `.handover/artifacts/<run>/coordinator-status.md`
+- `.handover/artifacts/<run>/state.jsonl`
 - selected backend status/result for the recorded cmux surface or purplemux tab
 
 A watcher must not infer success from:
@@ -117,7 +117,7 @@ Treat these as cross-agent coordination requests inside `handover`:
 - "서로 다른 LLM끼리 교차 검증"
 - "각각 다른 세션을 보고 조율"
 - "Claude는 리뷰, Codex는 구현"
-- "OMX가 coordinator 하고 Claude/Codex 새 탭 열어"
+- "Codex가 coordinator 하고 Claude 새 탭 열어"
 
 ## Anti-patterns
 

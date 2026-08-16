@@ -36,7 +36,7 @@ Cache is the main reason. A same-session prompt cache can make continued work mu
 
 Usually cheaper:
 
-- switching tools or tabs anyway (`omx` -> `claude`, current cmux surface must close);
+- switching tools or tabs anyway (`claude` -> `codex`, current cmux surface must close);
 - prior transcript is noisy/poisoned and only a small structured brief matters;
 - original evidence is already durable as files/logs/diffs, so the receiver can inspect only what it needs;
 - multiple receivers need the same package without duplicating a long transcript.

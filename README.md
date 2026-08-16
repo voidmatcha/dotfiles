@@ -1,11 +1,11 @@
 # dotfiles
 
-macOS setup for AI coding assistants: [Claude Code], [Codex], and [OMX].
+macOS setup for AI coding assistants: [Claude Code] and [Codex].
 
 One local operating layer for:
 
 - shared assistant policy
-- reversible wrappers and safety hooks
+- shared safety hooks and permission policy
 - token-pressure measurement with explicit limits
 - repeatable setup verification
 
@@ -23,10 +23,9 @@ These are separate counters, not one additive savings total.
 | Surface | Current evidence | Safe interpretation |
 | --- | --- | --- |
 | [RTK] ingress reduction | 23,903 global commands. 26.2M estimated tokens removed (57.3%). In this repo: 1.26M removed (63.5%). | Substantial command/tool-output reduction before transcript ingress. Not a bill-savings percentage. |
-| [Headroom] proxy health | 22,337 routed requests. 18,469 cached (82.7%). 54 failed (0.24%). 0 rate-limited. 1 cache-bust. | Active proxy telemetry and bounded failure/cache-bust counters. Not proof of counterfactual output-token savings. |
 | Public usage ledger | [Tokscale]: 93.711B tokens and 95.8% cache-read through 2026-07-05. | Public token-mix snapshot. Not causality proof for one repo change. |
 
-Headroom output-token savings are not claimed here until `headroom output-savings` has baseline or holdout data. Cross-machine totals are omitted until each machine is refreshed with the same capture window.
+Cross-machine totals are omitted until each machine is refreshed with the same capture window.
 
 ## Install
 
@@ -74,7 +73,7 @@ Health/status snapshot:
 | CLI packages | [Homebrew] tools, [Bats], [gitleaks], [uv], [gettext], [git-filter-repo], [Docker CLI]. | [`Brewfile`](Brewfile) |
 | Language runtimes | [nvm], [Node.js] LTS, [Corepack], [pyenv], latest [Python] 3, [SDKMAN!], [OpenJDK] LTS, [Maven]. | [`scripts/dev.sh`](scripts/dev.sh) |
 | Shell and Git | [Zsh] plugins, [direnv], personal/work Git identities, SSH signing via [OpenSSH]. | [`scripts/shell.sh`](scripts/shell.sh), [`scripts/git.sh`](scripts/git.sh) |
-| Agent CLIs | [Claude Code], [Codex], [Hermes Agent], [OMX]. | [`scripts/claude.sh`](scripts/claude.sh), [`scripts/codex.sh`](scripts/codex.sh), [`scripts/hermes.sh`](scripts/hermes.sh), [`scripts/dev.sh`](scripts/dev.sh) |
+| Agent CLIs | [Claude Code], [Codex], [Hermes Agent]. | [`scripts/claude.sh`](scripts/claude.sh), [`scripts/codex.sh`](scripts/codex.sh), [`scripts/hermes.sh`](scripts/hermes.sh), [`scripts/dev.sh`](scripts/dev.sh) |
 | Private remote access | [Tailscale], [Tailscale SSH], [OpenSSH], [code-server], [purplemux]. [Tailscale Serve] remains opt-in. | [`scripts/tailscale.sh`](scripts/tailscale.sh), [`scripts/services.sh`](scripts/services.sh) |
 
 Run a focused installer when full setup is not needed:
@@ -105,8 +104,7 @@ Codex setup writes `~/.codex/config.toml` from [`configs/codex/config.toml`](con
 | Surface | Role | Source |
 | --- | --- | --- |
 | [Claude Code] | Claude execution with shared AGENTS.md rules, hooks, MCP, and [RTK] policy. | [`scripts/claude.sh`](scripts/claude.sh), [`configs/CLAUDE.md`](configs/CLAUDE.md), [`configs/claude-settings.json`](configs/claude-settings.json) |
-| [Codex (with OMX)][Codex] | Codex execution with OMX workflows, goals, memories, and native subagents. | [`scripts/codex.sh`](scripts/codex.sh), [`configs/codex/config.toml`](configs/codex/config.toml) |
-| [Headroom] | Optional `claudeh`, `codexh`, and `omxh` wrappers for reversible compression and cache-aware routing. | [`scripts/headroom-agent.sh`](scripts/headroom-agent.sh), [`scripts/headroom.sh`](scripts/headroom.sh) |
+| [Codex] | Codex execution with goals, memories, and native subagents. | [`scripts/codex.sh`](scripts/codex.sh), [`configs/codex/config.toml`](configs/codex/config.toml) |
 | [RTK] | Command-output compression before noisy shell output enters context. | [`configs/RTK.md`](configs/RTK.md), [`configs/rtk-config.toml`](configs/rtk-config.toml) |
 | Local skills | Repo-owned procedures for context pressure, handoff, verification, previews, cleanup, and provenance. | [`plugins/local-skills/skills`](plugins/local-skills/skills) |
 
@@ -145,10 +143,10 @@ Local skills turn recurring session decisions into named, checkable procedures. 
 | Use case | Item | What it does |
 | --- | --- | --- |
 | Need public internet evidence beyond the repo. | [`agent-reach`](plugins/local-skills/skills/agent-reach/SKILL.md) | Routes public web, GitHub, social, video, and RSS research while keeping internal URLs out of hosted readers. |
-| Clean stuck or runaway agent processes. | [`agent-reap`](plugins/local-skills/skills/agent-reap/SKILL.md) | Finds orphaned Claude, Codex, or OMX related processes. Killing remains explicit. |
+| Clean stuck or runaway agent processes. | [`agent-reap`](plugins/local-skills/skills/agent-reap/SKILL.md) | Finds orphaned Claude or Codex related processes. Killing remains explicit. |
 | Decide what agent surfaces to prune. | [`agent-usage-audit`](plugins/local-skills/skills/agent-usage-audit/SKILL.md) | Audits installed agents, skills, commands, MCPs, and recent usage. |
 | Diagnose stale code intelligence. | [`code-intel-doctor`](plugins/local-skills/skills/code-intel-doctor/SKILL.md) | Checks codegraph and serena setup, Codex config, per-repo indexes, and live CodeGraph status; `--strict` fails closed on unknown status fields. |
-| Decide continue, compact, clear, or hand off. | [`context-check`](plugins/local-skills/skills/context-check/SKILL.md) | Reads context, cache, Headroom, and handoff pressure before changing session state. |
+| Decide continue, compact, clear, or hand off. | [`context-check`](plugins/local-skills/skills/context-check/SKILL.md) | Reads context, cache, and handoff pressure before changing session state. |
 | Apply dotfiles changes to this machine. | [`dotfiles-sync`](plugins/local-skills/skills/dotfiles-sync/SKILL.md) | Judges the LLM tooling layer — plugin delivery, hook registration, skill pins, and which side wins when repo and machine diverge — then delegates every mutation to `update.sh`. |
 | Verify dotfiles before install or publish. | [`dotfiles-verify`](plugins/local-skills/skills/dotfiles-verify/SKILL.md) | Runs install, config, and plugin smoke checks for this repo. |
 | Transfer work to another session. | [`handover`](plugins/local-skills/skills/handover/SKILL.md) | Creates durable handoff artifacts and fail-closed ACK or READY checks. |
@@ -274,7 +272,6 @@ bash scripts/secret-scan.sh --required
 bash scripts/doctor.sh
 python3 scripts/code_intel_doctor.py --json --strict .
 python3 scripts/source_provenance_audit.py --strict --format json
-omx doctor
 ```
 
 When local skill content changes, keep the marketplace, Claude plugin, and
@@ -335,7 +332,6 @@ See [`company/README.md`](company/README.md) for overlay maintenance.
 [git-filter-repo]: https://github.com/newren/git-filter-repo
 [gitleaks]: https://github.com/gitleaks/gitleaks
 [graphify]: https://github.com/safishamsi/graphify
-[Headroom]: https://pypi.org/project/headroom-ai/
 [Hermes Agent]: https://github.com/NousResearch/hermes-agent
 [Homebrew]: https://brew.sh/
 [Jina Reader]: https://jina.ai/reader/
@@ -343,7 +339,6 @@ See [`company/README.md`](company/README.md) for overlay maintenance.
 [Maven]: https://maven.apache.org/
 [nvm]: https://github.com/nvm-sh/nvm
 [Node.js]: https://nodejs.org/
-[OMX]: https://yeachan-heo.github.io/oh-my-codex
 [OpenAI Docs MCP]: https://developers.openai.com/mcp
 [OpenJDK]: https://openjdk.org/
 [OpenSSH]: https://www.openssh.com/

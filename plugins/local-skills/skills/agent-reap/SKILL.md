@@ -1,6 +1,6 @@
 ---
 name: agent-reap
-description: "Clean up runaway/orphaned agent processes: stuck zip/tail/python/node, high CPU, dead Claude/Codex/OMX sessions."
+description: "Clean up runaway/orphaned agent processes: stuck zip/tail/python/node, high CPU, dead Claude/Codex sessions."
 ---
 
 # Agent Reap
@@ -46,6 +46,6 @@ test -f "$DOTFILES_DIR/scripts/agent_reap.py"
 ## Safety properties (already enforced by the script)
 
 - `--kill` refuses any pid not in the current candidate set.
-- Agent main processes (claude/codex/omx/omc) are never candidates.
+- Agent main processes (claude/codex/omc) are never candidates.
 - The script's own session subtree is never a candidate, but sibling agent
   sessions under the same multiplexer (cmux) are still scanned.

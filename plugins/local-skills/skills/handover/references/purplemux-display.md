@@ -54,14 +54,14 @@ If `PMUX_PORT` or `PMUX_TOKEN` is missing, do not try to guess them from logs or
    purplemux tab create -w "$WS" -n "handover-<target>-<suffix>" -t terminal
    ```
 
-4. Record the workspace id, tab id, tab name, and tab type in `.omx/artifacts/<run>/coordinator-status.md` or `state.jsonl`.
+4. Record the workspace id, tab id, tab name, and tab type in `.handover/artifacts/<run>/coordinator-status.md` or `state.jsonl`.
 
 ## Send smoke check
 
 Before sending an agent prompt, prove that the tab executes input in the target repo:
 
 ```bash
-MARKER=".omx/artifacts/purplemux-smoke-$(date -u +%Y%m%d-%H%M%S).txt"
+MARKER=".handover/artifacts/purplemux-smoke-$(date -u +%Y%m%d-%H%M%S).txt"
 purplemux tab send -w "$WS" "$TAB_ID" "cd '$PWD' && date -u > '$MARKER' && echo READY >> '$MARKER'
 "
 sleep 3
@@ -71,7 +71,7 @@ purplemux tab result -w "$WS" "$TAB_ID"
 
 If the marker is missing or `tab result` shows the input did not reach a usable prompt, do not send the handover prompt. Create a new tab or fall back to artifact-only.
 
-## Launching Claude/Codex/OMX
+## Launching Claude/Codex
 
 Use `launch-commands.json` from `handover.py init` as the command source. Send the target's `send_text` plus a newline, then send the generated `target-prompts/<target>.txt` as the first instruction only after the CLI is visible and ready.
 
@@ -82,7 +82,7 @@ purplemux tab status -w "$WS" "$TAB_ID"
 purplemux tab result -w "$WS" "$TAB_ID"
 ```
 
-Do not background TTY-bound agent CLIs. Keep Claude/Codex/OMX running in the visible tab and use a separate coordinator artifact for polling state.
+Do not background TTY-bound agent CLIs. Keep Claude/Codex running in the visible tab and use a separate coordinator artifact for polling state.
 
 ## Status, recovery, and close
 

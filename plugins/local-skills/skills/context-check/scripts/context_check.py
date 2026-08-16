@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Advisory context/cache policy for Claude, Codex, and OMX sessions.
+"""Advisory context/cache policy for Claude and Codex sessions.
 
 The hook path is intentionally cheap and fail-open: it only reads the current
 hook payload and a small local state file, then optionally emits Claude
@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -19,7 +18,6 @@ import time
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any
-from urllib.request import urlopen
 
 STATE_PATH = Path(os.environ.get("CONTEXT_CHECK_STATE", "~/.cache/context-check/state.json")).expanduser()
 HOOK_WARNING_INTERVAL_SECONDS = 15 * 60
@@ -205,42 +203,6 @@ def _run_command(cmd: list[str], timeout: int = 8) -> tuple[int | None, str, str
         return None, "", str(exc)
 
 
-def _headroom_port_from_env() -> str:
-    port = os.environ.get("HEADROOM_PORT")
-    if port:
-        return port
-    for name in ("OPENAI_BASE_URL", "ANTHROPIC_BASE_URL"):
-        value = os.environ.get(name, "")
-        match = re.search(r"127\.0\.0\.1:([0-9]+)|localhost:([0-9]+)", value)
-        if match:
-            return match.group(1) or match.group(2)
-    return "8787"
-
-
-def _headroom_proxy_ready(port: str) -> bool:
-    try:
-        with urlopen(f"http://127.0.0.1:{port}/livez", timeout=0.6) as response:
-            return 200 <= int(response.status) < 300
-    except Exception:
-        return False
-
-
-def _collect_headroom_signal() -> Signal:
-    active = os.environ.get("HEADROOM_AGENT_ACTIVE", "")
-    mode = os.environ.get("HEADROOM_MODE", "cache")
-    port = _headroom_port_from_env()
-    ready = _headroom_proxy_ready(port)
-    if active:
-        status = "observed" if ready else "error"
-        severity = "info" if ready else "warn"
-        return Signal("headroom", status, f"active for {active}; mode={mode}; port={port}; proxy_ready={ready}", severity)
-    if ready:
-        return Signal("headroom", "observed", f"proxy ready on port {port}; mode={mode}", "info")
-    if shutil.which("headroom"):
-        return Signal("headroom", "available", "headroom installed but no active proxy detected", "info")
-    return Signal("headroom", "unavailable", "headroom not installed or not on PATH", "info")
-
-
 def _find_numeric_keys(obj: Any, interesting: tuple[str, ...], found: list[tuple[str, float]]) -> None:
     if isinstance(obj, dict):
         for key, value in obj.items():
@@ -380,7 +342,7 @@ def cmd_hook(args: argparse.Namespace) -> int:
             f"recommendation={reco.action}, confidence={reco.confidence}. "
             f"Signals: {reasons}. "
             "Policy: continue if same-task cache/context is still useful; /compact if preserving this task matters; "
-            "/clear if this is disposable or a new task; $handover only for Claude↔OMX/Codex transfer, poisoned context, or tab/session handoff. "
+            "/clear if this is disposable or a new task; $handover only for Claude↔Codex transfer, poisoned context, or tab/session handoff. "
             "Do not auto-run these actions."
         )
         current["last_warning_at"] = now
@@ -415,7 +377,7 @@ def cmd_diagnose(args: argparse.Namespace) -> int:
 
     signals = list(local_signals)
     if not args.local_only:
-        signals.extend([_collect_headroom_signal(), _collect_agentsview_signal()])
+        signals.append(_collect_agentsview_signal())
         if args.include_ccusage:
             signals.append(_collect_ccusage_signal())
 
@@ -460,7 +422,7 @@ def cmd_diagnose(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Advisory context/cache decision helper for Claude, Codex, and OMX.")
+    parser = argparse.ArgumentParser(description="Advisory context/cache decision helper for Claude and Codex.")
     sub = parser.add_subparsers(dest="command", required=True)
 
     hook = sub.add_parser("hook", help="cheap UserPromptSubmit hook mode; reads JSON payload on stdin")

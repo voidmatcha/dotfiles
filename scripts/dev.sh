@@ -243,13 +243,6 @@ else
   warn "rtk not installed (brew bundle should have it) — skipping"
 fi
 
-# ── headroom (default-capable wrappers for Claude/Codex/OMX compression) ──
-# Installs the Headroom CLI and wrapper entrypoints. configs/.zshrc uses them
-# automatically when available; HEADROOM_DEFAULT=0 falls back to direct tools.
-if [ -x "$DOTFILES_DIR/scripts/headroom.sh" ]; then
-  bash "$DOTFILES_DIR/scripts/headroom.sh"
-fi
-
 # ── agent statusline helpers ──
 # Claude's statusLine is command-based, so a small wrapper can prepend the
 # current cmux/tmux/session label while delegating to the existing HUD.

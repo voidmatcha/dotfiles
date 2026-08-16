@@ -6,14 +6,15 @@ __pycache__/
 .ruff_cache/
 configs/.gitconfig-*.backup*
 .sisyphus/
-.omx/
+# Handover run artifacts (handover.py DEFAULT_OUT_ROOT) — per-run, never commit.
+.handover/
 # Serena MCP runtime state (project.local.yml, memories/, cache/) — machine-local.
 .serena/
 *.secrets.env
 # Per-machine git overrides (signingkey paths etc.) — never commit.
 .gitconfig.local
 .gitconfig.local-work
-# Per-machine shell env (headroom persistent env, local exports) — never commit.
+# Per-machine shell env (local exports, secrets) — never commit.
 .zshrc.local
 .claude/settings.local.json
 # Claude review-loop plugin state/artifacts are per-session and generated.

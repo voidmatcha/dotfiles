@@ -98,16 +98,18 @@ SH
   git init -q --bare "$remote"
   git -C "$repo" init -q
   git -C "$repo" remote add origin "$remote"
-  printf '%s\n' '.omx/' > "$repo/.gitignore"
+  # .sisyphus/ is gitignored *and* allowlisted by .gitleaks-worktree.toml —
+  # exactly the shape that must not silence the commit-history scan.
+  printf '%s\n' '.sisyphus/' > "$repo/.gitignore"
   git -C "$repo" -c user.name=test -c user.email=test@example.com \
     add scripts .gitleaks.toml .gitleaks-worktree.toml .gitignore
   git -C "$repo" -c user.name=test -c user.email=test@example.com \
     -c commit.gpgsign=false commit -qm baseline
   git -C "$repo" push -q -u origin HEAD:main
 
-  mkdir -p "$repo/.omx"
-  printf 'AWS_ACCESS_KEY_ID=%s%s\n' 'AKIA' 'ABCDEFGHIJKLMNOP' > "$repo/.omx/credential.env"
-  git -C "$repo" add -f .omx/credential.env
+  mkdir -p "$repo/.sisyphus"
+  printf 'AWS_ACCESS_KEY_ID=%s%s\n' 'AKIA' 'ABCDEFGHIJKLMNOP' > "$repo/.sisyphus/credential.env"
+  git -C "$repo" add -f .sisyphus/credential.env
   git -C "$repo" -c user.name=test -c user.email=test@example.com \
     -c commit.gpgsign=false commit -qm 'accidentally commit runtime credential'
 

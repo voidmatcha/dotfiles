@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Durable handover handshake helper for cmux/OMX/Claude/Codex sessions."""
+"""Durable handover handshake helper for cmux/Claude/Codex sessions."""
 from __future__ import annotations
 
 import argparse
@@ -20,11 +20,8 @@ from pathlib import Path
 from typing import Any
 
 SCHEMA_VERSION = 1
-DEFAULT_OUT_ROOT = Path(".omx/artifacts")
+DEFAULT_OUT_ROOT = Path(".handover/artifacts")
 TARGET_ALIASES = {
-    "omx": "omx",
-    "oh-my-codex": "omx",
-    "oh my codex": "omx",
     "claude": "claude",
     "claude-code": "claude",
     "claude code": "claude",
@@ -118,7 +115,7 @@ def resolve_targets(cli_targets: list[str], target_from: str) -> tuple[list[str]
     elif inferred:
         targets, source = inferred, "text-inferred"
     else:
-        targets, source = ["omx"], "default"
+        targets, source = ["codex"], "default"
     for target in targets:
         require_safe_slug(target, "target")
     return targets, source
@@ -134,15 +131,15 @@ def target_command_parts(target: str) -> list[str]:
         return [override]
 
     args_override = os.environ.get(f"HANDOVER_{target.upper()}_ARGS", "").strip()
-    if target == "omx":
-        # Matches configs/.zshrc's default omx() wrapper for interactive launches.
-        parts = ["omx", "--direct", "--xhigh", "--madmax"]
-    elif target == "claude":
+    if target == "claude":
         # Let the user's interactive shell wrapper add its usual Serena prompt override.
         parts = ["claude"]
     elif target == "codex":
-        # Codex defaults come from ~/.codex/config.toml unless overridden.
-        parts = ["codex"]
+        # A handover target starts unattended, so it cannot answer approval
+        # prompts. --yolo (alias of --dangerously-bypass-approvals-and-sandbox)
+        # mirrors Claude's auto permission mode. Other defaults come from
+        # ~/.codex/config.toml; override with HANDOVER_CODEX_ARGS.
+        parts = ["codex", "--yolo"]
     else:
         parts = [target]
     if args_override:
@@ -270,7 +267,7 @@ def source_identity(args: argparse.Namespace, cwd: Path) -> dict[str, Any]:
         "host": socket.gethostname(),
         "pid": os.getpid(),
         "cwd": str(cwd),
-        "session": args.current_session or os.environ.get("OMX_SESSION_ID") or os.environ.get("CODEX_SESSION_ID") or "",
+        "session": args.current_session or os.environ.get("CODEX_SESSION_ID") or "",
         "cmux_workspace": args.source_workspace or os.environ.get("CMUX_WORKSPACE_ID") or "",
         "cmux_surface": args.source_surface or os.environ.get("CMUX_SURFACE_ID") or "",
         "cmux_tab": os.environ.get("CMUX_TAB_ID") or "",

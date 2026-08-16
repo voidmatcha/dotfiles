@@ -8,7 +8,7 @@ ROOT="${1:-$PWD}"
 SELF_DIR_NAME="asset-improver"
 # Self-exclusion is anchored at start OR after a slash, so asset-improver is skipped even when the
 # scan root IS the skills dir (path has no leading slash before the skill name).
-EXCLUDE_RE='(^|/)(\.git|node_modules|\.venv|venv|dist|build|vendor|tmp|scratch|\.omx)(/|$)|(^|/)'"$SELF_DIR_NAME"'/'
+EXCLUDE_RE='(^|/)(\.git|node_modules|\.venv|venv|dist|build|vendor|tmp|scratch|\.handover)(/|$)|(^|/)'"$SELF_DIR_NAME"'/'
 
 cd "$ROOT"
 

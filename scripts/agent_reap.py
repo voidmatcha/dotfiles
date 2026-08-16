@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Find (and optionally kill) runaway/orphaned processes left by dead agent sessions.
 
-Agent sessions (claude/codex/omx loops, headless runners) spawn shell jobs via
+Agent sessions (claude/codex loops, headless runners) spawn shell jobs via
 heredocs and snapshots. When a session dies mid-flight (API error, kill, crash)
 those children get reparented to launchd and can spin at 100% CPU forever with
 nobody left to read their output.
@@ -18,7 +18,7 @@ Detection rules (every candidate row is tagged with one):
 Safety:
   - Scan is read-only; killing requires --kill --pids with an explicit list.
   - --kill refuses pids that are not in the current candidate set.
-  - Agent main processes (claude/codex/omx/omc) are never candidates.
+  - Agent main processes (claude/codex/omc) are never candidates.
   - The process tree this script runs inside is never a candidate.
 
 Usage:
@@ -43,7 +43,7 @@ from pathlib import Path
 
 Proc = namedtuple("Proc", "pid ppid pcpu etime user args")
 
-AGENT_NAMES = {"claude", "codex", "omx", "omc"}
+AGENT_NAMES = {"claude", "codex", "omc"}
 INLINE_INTERP_RE = re.compile(r"^(?:python[\d.]*|node|sh|zsh|bash|perl|ruby)$", re.I)
 INLINE_FLAGS = {"-c", "-e", "-"}
 SYSTEM_PREFIXES = ("/System/", "/usr/libexec/", "/sbin/", "/Applications/", "/Library/")
