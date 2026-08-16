@@ -1341,6 +1341,10 @@ assert cfg['enabledMcpjsonServers'] == [
     'codegraph',
     'context7',
     'figma-developer-mcp',
+    # korean-tech-humanizer/.mcp.json 이 선언하는 프로젝트 서버다. 이 목록에
+    # 없으면 그 저장소를 열 때마다 승인 프롬프트가 뜬다. mcp.json 이 등록하는
+    # 전역 서버가 아니므로 allowedMcpServers 대상은 아니다.
+    'translation-mcp',
 ]
 assert cfg['disabledMcpjsonServers'] == []
 assert cfg['allowManagedMcpServersOnly'] is True

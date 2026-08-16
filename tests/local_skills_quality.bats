@@ -57,8 +57,11 @@ hangul = re.compile(r"[\u3131-\u318e\uac00-\ud7a3]")
 # 이 테스트가 허용하는 "Korean-specific surface" 그 자체다.
 # llmwiki-curate 는 한글 볼트를 편집한다. 절 제목("## 실패한 시도 (다시 하지
 # 말 것)")과 CLI 출력이 한글이라 지시문이 그 문자열을 그대로 인용해야 한다.
-allowed_trees = {"handover", "humanize-korean", "korean-technical-terminology",
-                 "llmwiki-curate", "session-feedback-audit"}
+# job-watch 도 같은 볼트를 쓴다. 설계 노트 위키링크([[2026-08-15-채용-아카이빙-
+# 설계]])와 뷰 이름("관찰 중 / 지원 예정 / 지원함")이 한글이라 그대로 인용한다.
+allowed_trees = {"handover", "humanize-korean", "job-watch",
+                 "korean-technical-terminology", "llmwiki-curate",
+                 "session-feedback-audit"}
 
 for path in sorted((root / "skills").rglob("*")):
     if not path.is_file() or path.parts[-2:-1] == ("__pycache__",):
