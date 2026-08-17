@@ -12,8 +12,9 @@ SCRIPT = Path(__file__).parents[1] / "scripts" / "llmwiki" / "config.py"
 SPEC = importlib.util.spec_from_file_location("llmwiki_config", SCRIPT)
 assert SPEC and SPEC.loader
 CFG = importlib.util.module_from_spec(SPEC)
-# dataclasses 가 field(default_factory=...) 를 해석할 때 sys.modules 를 뒤지므로
-# exec_module 전에 등록해야 한다. 등록하지 않으면 AttributeError 가 난다.
+# dataclasses looks the module up in sys.modules while resolving
+# field(default_factory=...), so it must be registered before exec_module.
+# Without the registration this raises AttributeError.
 sys.modules[SPEC.name] = CFG
 SPEC.loader.exec_module(CFG)
 
@@ -26,9 +27,9 @@ def _has_tomllib() -> bool:
     return True
 
 
-# config.toml 을 실제로 파싱하는 테스트는 tomllib(3.11+) 없이는 성립하지 않는다.
-# 코드가 조용히 기본값으로 넘어가지 않고 소리 내어 실패하는 것이 옳으므로,
-# 약화하는 대신 여기서 건너뛴다.
+# Tests that actually parse config.toml cannot hold without tomllib (3.11+).
+# It is correct for the code to fail loudly rather than fall back to defaults
+# silently, so we skip here instead of weakening the assertions.
 requires_tomllib = unittest.skipUnless(_has_tomllib(), "tomllib (python 3.11+) 필요")
 
 
@@ -69,8 +70,8 @@ class ConfigTest(unittest.TestCase):
                 'blocklist = ["junk"]\n[mapping]\nraw = "junk"\n', encoding="utf-8"
             )
             c = CFG.load(Path(d))
-            # 매핑이 먼저다: raw -> junk -> 차단. 차단은 버리는 것이 아니라
-            # unfiled 로 보내는 것이므로 None 이 아니다.
+            # Mapping comes first: raw -> junk -> blocked. Blocking does not
+            # discard, it routes to unfiled, so the result is not None.
             self.assertEqual(c.resolve_project("raw"), CFG.UNFILED)
             self.assertEqual(c.resolve_project("keep"), "keep")
 
@@ -80,12 +81,13 @@ if __name__ == "__main__":
 
 
 class VaultResolutionTest(unittest.TestCase):
-    """볼트 경로는 한 곳에서만 정해져야 한다.
+    """The vault path must be decided in exactly one place.
 
-    env 만으로 바꾸면 CLI 는 새 경로를, launchd 와 훅은 기본 경로를 쓴다.
-    둘 다 셸 rc 를 읽지 않기 때문이다. 실측으로 확인했다 - LLMWIKI_VAULT 를
-    준 compile 이 대체 경로에 볼트를 통째로 만들었고 기본 볼트도 그대로
-    남아 있었다. 갈라진 것을 아무도 알려주지 않는다.
+    Change it with env alone and the CLI uses the new path while launchd
+    and the hooks use the default one, because neither of those reads the
+    shell rc. Confirmed by measurement - a compile run with LLMWIKI_VAULT
+    set built an entire vault at the alternate path while the default
+    vault stayed where it was. Nothing tells you they have diverged.
     """
 
     @requires_tomllib
@@ -121,12 +123,13 @@ class VaultResolutionTest(unittest.TestCase):
 
     @requires_tomllib
     def test_relative_vault_is_anchored_to_home_not_cwd(self) -> None:
-        """상대경로는 cwd 에 따라 다른 볼트가 된다.
+        """A relative path resolves to a different vault depending on cwd.
 
-        compile 은 체크아웃에서, doctor 는 사용자가 있는 곳에서, 훅은 또
-        다른 곳에서 돈다. 같은 설정이 서로 다른 절대경로로 풀리면 볼트가
-        갈라지고 검사는 거짓 교체 경보를 낸다. config 파일이 있는 디렉터리를
-        기준으로 삼는다 - cwd 와 달리 이것은 어디서 실행하든 같다.
+        compile runs from the checkout, doctor from wherever the user
+        happens to be, and the hooks from somewhere else again. If the same
+        setting resolves to different absolute paths, the vault splits and
+        the checks raise false swap alarms. Anchor on the directory holding
+        the config file - unlike cwd, that is the same wherever you run.
         """
         import os
         with tempfile.TemporaryDirectory() as d:

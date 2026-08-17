@@ -32,9 +32,9 @@ def _has_tomllib() -> bool:
     return True
 
 
-# config.toml 을 실제로 파싱하는 테스트는 tomllib(3.11+) 없이는 성립하지 않는다.
-# 코드가 조용히 기본값으로 넘어가지 않고 소리 내어 실패하는 것이 옳으므로,
-# 약화하는 대신 여기서 건너뛴다.
+# Tests that actually parse config.toml cannot hold without tomllib (3.11+).
+# It is correct for the code to fail loudly rather than fall back to defaults
+# silently, so we skip here instead of weakening the assertions.
 requires_tomllib = unittest.skipUnless(_has_tomllib(), "tomllib (python 3.11+) 필요")
 
 
@@ -100,7 +100,8 @@ if __name__ == "__main__":
 
 class ConfigGuardTest(unittest.TestCase):
     def test_compile_refuses_to_run_without_config(self) -> None:
-        """config.toml 이 없으면 차단 목록도 없어 쓰레기 페이지가 생긴다."""
+        """With no config.toml there is no blocklist either, so junk pages
+        get created."""
         import subprocess
         root = Path(__file__).parents[1]
         with tempfile.TemporaryDirectory() as d:

@@ -1,10 +1,11 @@
 #!/bin/sh
-# llmwiki UserPromptSubmit: cwd 가 바뀐 시점만 기록한다 (스펙 5.7).
+# llmwiki UserPromptSubmit: record only the moments where cwd changed (spec 5.7).
 #
-# fail-open: llmwiki 가 없거나 깨져도 세션을 절대 막지 않는다. 다만 조용히
-# 죽지는 않는다 — 실패는 로그에 남고 doctor 의 llmwiki-hook 검사가 읽는다.
-# 오류를 /dev/null 로 버리면 훅이 몇 달을 놀아도 아무도 모른다. 이 저장소는
-# 이미 그 방식으로 Codex 기록을 두 달 잃었다.
+# fail-open: a missing or broken llmwiki must never block the session. But it
+# must not die quietly either — failures land in the log, where doctor's
+# llmwiki-hook check reads them. Dump errors to /dev/null and a hook can sit
+# idle for months with nobody noticing. This repo already lost two months of
+# Codex history that way.
 DOTFILES_DIR="${DOTFILES_DIR:-$(
   for l in "$HOME/.zshrc" "$HOME/.agent/AGENTS.md" "$HOME/.claude/settings.json"; do
     t=$(readlink "$l" 2>/dev/null) || continue
@@ -17,20 +18,22 @@ cd "$DOTFILES_DIR" 2>/dev/null || exit 0
 
 log="${XDG_STATE_HOME:-$HOME/.local/state}/llmwiki"
 mkdir -p "$log" 2>/dev/null
-# 훅은 로그인 셸 환경에서 돈다. 거기서 python3 는 /usr/bin/python3(3.9)이라
-# tomllib 이 없고, 설정을 읽는 모든 호출이 죽는다. 실제로 그렇게 됐다 -
-# fail-open 이라 세션은 멀쩡했지만 cwd 기록이 통째로 멈춰 있었다. plist 는
-# 같은 이유로 이미 이 해결을 갖고 있었는데 훅만 빠져 있었다.
+# The hooks run in a login shell environment. There python3 is
+# /usr/bin/python3 (3.9), which has no tomllib, so every call that reads the
+# config dies. That actually happened - because the hooks fail open the session
+# stayed fine, while cwd recording had stopped entirely. The plists already had
+# this resolution for the same reason; only the hooks were missing it.
 py=
-# 후보 목록은 테스트가 갈아끼울 수 있어야 한다. 절대경로가 섞여 있어서
-# PATH 만 비우는 테스트는 이 분기에 닿지 못하고, 이름과 다른 것을
-# 검증하게 된다.
-# 기본 목록은 따옴표를 지켜야 한다. ${VAR:-...} 안에 두면 확장 후 단어
-# 분리되어, 공백이 든 HOME 에서 pyenv 후보가 두 조각으로 쪼개진다. 뒤
-# 후보가 받아주긴 하지만 그건 우연이지 설계가 아니다. 오버라이드가 있을
-# 때만 분리한다 - 그쪽은 테스트가 넘기는 값이라 공백이 구분자다.
+# The candidate list has to be swappable by tests. Absolute paths are mixed in,
+# so a test that only empties PATH never reaches this branch and ends up
+# verifying something other than what its name says.
+# The default list must keep its quotes. Inside ${VAR:-...} it is word-split
+# after expansion, so on a HOME containing a space the pyenv candidate breaks
+# into two pieces. A later candidate does catch it, but that is luck, not
+# design. Split only when an override is set - that value comes from tests,
+# where a space is the separator.
 if [ -n "${LLMWIKI_PYTHON_CANDIDATES:-}" ]; then
-  # shellcheck disable=SC2086  # 오버라이드는 의도적으로 분리한다
+  # shellcheck disable=SC2086  # the override is split on purpose
   set -- $LLMWIKI_PYTHON_CANDIDATES
 else
   set -- "$HOME/.pyenv/shims/python3" /opt/homebrew/bin/python3 \
@@ -41,7 +44,7 @@ for c in "$@"; do
   "$c" -c "import tomllib" >/dev/null 2>&1 || continue
   py="$c"; break
 done
-# 쓸 수 있는 파이썬이 없어도 세션은 막지 않는다. 그 사실만 남긴다.
+# No usable python still does not block the session. Just record that fact.
 if [ -z "$py" ]; then
   printf '%s\tUserPromptSubmit\tno python3 with tomllib (needs 3.11+)\n' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$log/hook-errors.log" 2>/dev/null

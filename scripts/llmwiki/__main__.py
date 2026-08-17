@@ -15,10 +15,10 @@ TASK_NAME = re.compile(r"^T-\d{4}$")
 
 
 def _load(name: str):
-    """이미 로드된 모듈은 재사용한다.
+    """Reuse an already-loaded module.
 
-    캐시하지 않으면 상호 참조가 무한 재귀가 된다. compiler 가 queries 를,
-    queries 가 compiler 를 부르는 구조에서 실제로 멈췄다.
+    Without the cache, mutual imports turn into infinite recursion. It actually
+    hung on the structure where compiler calls queries and queries calls compiler.
     """
     key = f"llmwiki_{name}"
     if key in sys.modules:
@@ -129,11 +129,11 @@ def _payload() -> dict:
 
 
 def _project_at(cfg, payload: dict) -> str | None:
-    """cwd 를 compile 과 같은 정제를 거쳐 프로젝트 슬러그로 바꾼다.
+    """Turn cwd into a project slug through the same normalization compile uses.
 
-    정제를 여기서 새로 구현하면 compile 이 프론트매터에 쓴 슬러그와 어긋나
-    필터가 아무것도 못 맞춘다. blocklist 와 mapping 은 config 가 소유하므로
-    (스펙 5.4) 그 경로를 그대로 탄다.
+    Reimplementing the normalization here would diverge from the slug compile
+    wrote into the frontmatter, and the filter would match nothing. The blocklist
+    and mapping are owned by config (spec 5.4), so go through that path as is.
     """
     cwd = str(payload.get("cwd") or "")
     if not cwd:
@@ -149,9 +149,9 @@ def _hook_session_start(home: Path, vault: Path, cfg) -> None:
     if session_id and TASK_NAME.match(name) and tasks.path_for(vault, name).exists():
         tasks.bind(home, session_id, name)
     queries = _load("queries")
-    # 스펙 8.3 은 "해당 프로젝트의" 열린 태스크를 주입하라고 한다. 필터가
-    # 없으면 A 프로젝트 세션에 B 프로젝트 태스크가 섞여 5건 상한을 채우고,
-    # 8.2 가 막으려던 혼입이 주입 경로로 되돌아온다.
+    # Spec 8.3 says to inject the open tasks "of that project". Without the
+    # filter, project B tasks leak into a project A session and fill the 5-item
+    # cap, bringing back through the injection path the mixing 8.2 blocked.
     context = queries.brief(
         queries.list_open(vault, project=_project_at(cfg, payload)), max_chars=1000
     )
@@ -177,7 +177,7 @@ def main(argv: list[str] | None = None) -> int:
     vault = config.vault(home)
     cfg = config.load(home)
 
-    # 훅은 무슨 일이 있어도 세션을 막지 않는다.
+    # Hooks must never block the session, no matter what happens.
     if args.command in ("hook-session-start", "hook-user-prompt"):
         try:
             if args.command == "hook-session-start":
@@ -206,9 +206,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command in ("lint", "compile"):
-        # config.toml 없이 첫 compile 을 돌리면 홈 디렉터리 이름 같은 값으로
-        # 쓰레기 페이지가 생기고 index 에 오른다. 스펙 5.4 가 경고한 지점이고
-        # 실제로 한 번 당했다.
+        # Running the first compile without config.toml creates junk pages named
+        # after things like the home directory, and they land in the index. Spec
+        # 5.4 warned about this, and it actually happened once.
         if not (home / "config.toml").exists():
             print(f"error: {home}/config.toml 이 없다. 먼저 'llmwiki init' 을 실행하라",
                   file=sys.stderr)
@@ -225,8 +225,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "lint":
             return 0
         result = _load("compiler").run(home, vault, cfg)
-        # 볼트 교체 경고는 결과 딕셔너리에 묻히면 안 된다. 사람이 쓴 글이
-        # 사라질 수 있다는 뜻이므로 stderr 로 따로 낸다.
+        # The vault-swap warning must not get buried in the result dict. It means
+        # human-written text could disappear, so emit it separately on stderr.
         if result.get("vault_warning"):
             print(f"warn: {result['vault_warning']}", file=sys.stderr)
         print(result)

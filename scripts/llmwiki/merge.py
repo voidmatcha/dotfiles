@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 LAST_WINS = ("next_steps", "learned", "completed", "investigated", "notes", "harness",
-             # unfiled 로 모인 항목이 원래 어느 디렉터리에서 왔는지. 이걸
-             # 잃으면 mapping 으로 꺼낼 근거가 사라진다.
+             # Which directory an item collected under unfiled originally came
+             # from. Lose this and there is no basis to pull it out via mapping.
              "origin")
 
 
 def by_session_project(events: list[dict]) -> list[dict]:
-    """(세션, 프로젝트) 쌍으로 접는다. 세션 하나가 여러 프로젝트를 오갈 수 있다."""
+    """Fold by (session, project) pair. One session can move across projects."""
     buckets: dict[tuple[str, str], list[dict]] = {}
     for event in events:
         buckets.setdefault((event["session_id"], event["project"]), []).append(event)

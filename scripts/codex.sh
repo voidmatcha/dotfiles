@@ -135,14 +135,16 @@ install_codex_config() {
 }
 
 
-# ~/.codex/AGENTS.md 는 두 조각의 합성물이다. 공용 규약(configs/AGENTS.md)은
-# Claude 와 공유하고, Codex 전용 계약만 configs/codex/AGENTS.md 가 소유한다.
-# 통째로 추적해서 심링크하면 공용 규약이 두 파일에 복제되고, 한쪽만 고쳐도
-# 아무것도 그것을 잡아내지 못한다 - llmwiki 스펙 8.4 가 피하려던 상태다.
+# ~/.codex/AGENTS.md is a composite of two pieces. The shared contract
+# (configs/AGENTS.md) is shared with Claude, and only the Codex-only contract is
+# owned by configs/codex/AGENTS.md. Tracking and symlinking the whole file would
+# duplicate the shared contract into two files, and an edit to only one of them
+# would be caught by nothing - the state llmwiki spec 8.4 set out to avoid.
 #
-# config.toml 과 달리 이 파일은 Codex 런타임이 쓰지 않으므로 생성물로 둬도
-# 안전하다. 대신 사람이 손으로 고치면 다음 install 에서 조용히 덮이므로
-# 헤더에 표식을 박고, 표식이 없는 파일은 지우지 않고 백업한다.
+# Unlike config.toml, the Codex runtime never writes this file, so leaving it as
+# a generated artifact is safe. But a hand edit would be silently overwritten by
+# the next install, so a marker is stamped into the header and a file without
+# that marker is backed up rather than deleted.
 install_codex_agents_md() {
   local dst="$CODEX_CONFIG_DIR/AGENTS.md"
   local backup_dst tmp_file
@@ -192,18 +194,19 @@ install_codex_agents_md() {
 }
 
 
-# claude-mem 은 Claude Code 플러그인으로 설치되지만 Codex 훅은 스스로 등록하지
-# 않는다. 그 결과 Codex 세션은 두 달 가까이 하나도 기록되지 않았고, 아무 도구도
-# 실패를 알리지 않았다 — 손으로 병합해서 복구했는데, 손으로 한 복구는 다음
-# 머신에서 그대로 사라진다. 그래서 여기서 소유한다.
+# claude-mem installs as a Claude Code plugin but does not register its Codex
+# hooks itself. As a result not one Codex session was recorded for nearly two
+# months and no tool reported the failure — it was recovered by a manual merge,
+# and a manual recovery disappears on the next machine. So it is owned here.
 #
-# 훅 명령은 플러그인이 배포하는 hooks/codex-hooks.json 을 그대로 쓴다. 명령을
-# 이 저장소에 복사하면 claude-mem 이 경로 해석 방식을 바꿀 때마다 조용히 낡는다.
+# The hook commands are taken as-is from the hooks/codex-hooks.json the plugin
+# ships. Copying the commands into this repo would let them go quietly stale
+# every time claude-mem changes how it resolves paths.
 ensure_claude_mem_codex_hooks() {
   local hooks_file="$CODEX_CONFIG_DIR/hooks.json"
   local cache_root="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/thedotmack/claude-mem"
 
-  # stdout 은 호출부가 카운트로 읽는다. 로그는 전부 stderr 로 보낸다.
+  # The caller reads stdout as a count. Send every log line to stderr.
   [ -d "$cache_root" ] || { info "claude-mem plugin not installed — skipping Codex hook merge" >&2; return 0; }
 
   if $DRY_RUN; then
@@ -239,39 +242,41 @@ if not template.is_file():
 try:
     wanted = json.loads(template.read_text()).get("hooks", {})
 except ValueError:
-    # 읽을 수 없는 템플릿은 원하는 집합을 모른다는 뜻이다. 이 상태로
-    # 진행하면 아래 정리 단계가 claude-mem 훅을 전부 지운다.
+    # An unreadable template means the wanted set is unknown. Proceeding from
+    # here would make the cleanup step below delete every claude-mem hook.
     print("bad-template")
     raise SystemExit(0)
 
 if not any(g.get("hooks") for entries in wanted.values() for g in entries):
-    # 빈 템플릿도 마찬가지다. "원하는 것이 없다" 가 아니라 "무엇을 원하는지
-    # 모른다" 이므로 아무것도 지우지 않는다. 이것을 원하는 집합으로 취급하면
-    # Codex 기록이 조용히 멈춘다 - 이 저장소가 두 달을 잃은 방식이다.
+    # Same for an empty template. It means "we do not know what is wanted", not
+    # "nothing is wanted", so nothing is deleted. Treating it as the wanted set
+    # would quietly stop Codex recording - the way this repo lost two months.
     print("empty-template")
     raise SystemExit(0)
 
 try:
-    # 0바이트는 손상이 아니라 아직 아무것도 없는 상태다. 잘린 쓰기로 흔히
-    # 생기고 안전하게 대체할 수 있는데, 거부하면 병합이 영원히 막힌다.
+    # 0 bytes is not corruption but a state where nothing exists yet. It comes
+    # commonly from a truncated write and can be safely replaced; refusing it
+    # would block the merge forever.
     raw_live = hooks_path.read_text().strip() if hooks_path.is_file() else ""
     live = json.loads(raw_live) if raw_live else {}
 except ValueError:
-    # 읽을 수 없는 hooks.json 을 덮어쓰면 다른 도구의 훅까지 날아간다.
-    # 가만히 두고 소리를 낸다 - 지금까지는 traceback 이 stderr 로만 가고
-    # stdout 이 비어 호출부가 "할 일 없음" 으로 읽었다.
+    # Overwriting an unreadable hooks.json would take other tools' hooks with
+    # it. Leave it alone and make noise - until now the traceback went only to
+    # stderr and stdout stayed empty, so the caller read it as "nothing to do".
     print("bad-hooks-file")
     raise SystemExit(0)
 live.setdefault("hooks", {})
 
-# 이 파일에는 llmwiki, ui-clone 훅이 같은 이벤트에 공존한다. 그래서
-# claude-mem 이 소유한 항목만 골라내야 하는데, 명령 문자열은 버전마다
-# 바뀐다 - 실측으로 13.2.0 은 7개, 13.13.1 은 5개이고 겹치는 문자열이
-# 하나도 없다. 추가만 하면 업그레이드할 때마다 옛 명령이 남아 같은
-# 이벤트에서 두 번 발동하고, 아무것도 그것을 지우지 않는다.
+# In this file the llmwiki and ui-clone hooks coexist on the same events, so
+# only the entries claude-mem owns must be picked out - but the command strings
+# change from version to version. Measured: 13.2.0 has 7 and 13.13.1 has 5, with
+# not a single string in common. Adding only would leave the old commands behind
+# on every upgrade, firing twice on the same event, and nothing would remove
+# them.
 #
-# 소유 표식은 플러그인 캐시 경로다. 두 버전 템플릿 모두 전 명령이 이것을
-# 담고 있고, 이 파일의 다른 도구 훅 중에는 하나도 없다.
+# The ownership marker is the plugin cache path. Every command in both version
+# templates carries it, and no other tool's hook in this file does.
 MARKER = "thedotmack/claude-mem"
 
 wanted_commands = {str(h.get("command", ""))
@@ -319,9 +324,10 @@ print(added)
 PY
 }
 
-# llmwiki 훅. Claude 쪽은 settings.json 이 저장소 심링크라 등록이 곧 커밋이지만
-# ~/.codex/hooks.json 은 실파일이고 claude-mem/ui-clone 등 다른 도구도 같이
-# 쓴다. 저장소로 추적되지 않으니 여기서 매번 확인한다.
+# llmwiki hooks. On the Claude side settings.json is a symlink into the repo, so
+# registering is the same as committing, but ~/.codex/hooks.json is a real file
+# shared with other tools such as claude-mem and ui-clone. It is not tracked by
+# the repo, so it is verified here on every run.
 ensure_llmwiki_codex_hooks() {
   local hooks_file="$CODEX_CONFIG_DIR/hooks.json"
   local dir="$DOTFILES_DIR/configs/llmwiki"
@@ -480,8 +486,8 @@ llmwiki_added=$(ensure_llmwiki_codex_hooks || true)
 case "${merged:-0}" in
   0|"") : ;;
   no-plugin-version|no-template|empty-template|bad-template|bad-hooks-file)
-    # 어느 쪽이든 원하는 훅 집합을 모른다. 그 상태에서 조용히 넘어가면
-    # Codex 기록이 멈춘 것을 아무도 모른다.
+    # Either way the wanted hook set is unknown. Passing over that silently
+    # means nobody learns that Codex recording has stopped.
     warn "claude-mem Codex hook template unusable ($merged) — Codex sessions will not be recorded"
     warn "  existing hooks were left untouched; check the plugin install" ;;
   *) info "merged $merged claude-mem hook(s) into Codex — Codex sessions are recorded again" ;;

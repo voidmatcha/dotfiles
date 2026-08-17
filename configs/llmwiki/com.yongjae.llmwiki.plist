@@ -4,15 +4,16 @@
 <dict>
   <key>Label</key><string>com.yongjae.llmwiki</string>
   <!--
-    두 가지를 launchd 안에서 직접 해결해야 한다.
+    Two things have to be resolved inside launchd itself.
 
-    경로: 체크아웃 위치는 머신마다 다르므로 설치 심링크에서 역산한다.
+    Path: the checkout location differs per machine, so derive it backwards
+    from the install symlinks.
 
-    파이썬: launchd 의 `sh -lc` 는 ~/.zshrc 를 읽지 않아 pyenv 초기화가 없고
-    /usr/bin/python3(3.9)를 잡는다. llmwiki 는 tomllib(3.11+)을 쓰므로 그대로
-    돌면 ModuleNotFoundError 로 죽는다 - 첫 강제 실행에서 실제로 그랬다.
-    후보를 훑어 tomllib 이 있는 첫 인터프리터를 쓰고, 없으면 조용히 넘어가지
-    않고 실패시킨다.
+    Python: launchd's `sh -lc` does not read ~/.zshrc, so there is no pyenv
+    init and it picks up /usr/bin/python3 (3.9). llmwiki uses tomllib (3.11+),
+    so running as-is dies with ModuleNotFoundError - which is exactly what the
+    first forced run did. Scan the candidates, use the first interpreter that
+    has tomllib, and if there is none, fail instead of passing quietly.
   -->
   <key>ProgramArguments</key>
   <array>

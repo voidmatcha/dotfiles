@@ -77,7 +77,7 @@ fi
 # The company overlay can start a GP Codex HUD pane. Normal exits clean up after
 # themselves; a forced kill (cmux tab closed, so no `finally`) leaves the pane
 # behind. Sweep those only while the HUD is disabled.
-# 비용: 매 프롬프트(precmd) 전체 pane 스캔 + pane당 ps 1회.
+# Cost: one full pane scan per prompt (precmd), plus one `ps` per pane.
 __dotfiles_cleanup_orphan_hud_panes() {
   [[ -n "${TMUX:-}" ]] || return 0
   command -v tmux >/dev/null 2>&1 || return 0

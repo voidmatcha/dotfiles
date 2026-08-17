@@ -39,9 +39,10 @@ check_symlink() {
   fi
 }
 
-# ~/.codex/AGENTS.md 는 심링크가 아니라 codex.sh 가 만드는 합성물이라
-# check_symlink 로는 잡히지 않는다. 표식이 없으면 손으로 덮였거나 설치가 돌지
-# 않은 것이고, 그러면 Codex 만 공용 규약 없이 돈다 - 조용히 일어나는 실패다.
+# ~/.codex/AGENTS.md is not a symlink but a composite that codex.sh builds, so
+# check_symlink cannot catch it. A missing marker means it was overwritten by
+# hand or the install never ran, and then Codex alone runs without the shared
+# contract - a failure that happens silently.
 check_codex_agents_md() {
   local dst="${CODEX_HOME:-$HOME/.codex}/AGENTS.md"
   if [ ! -e "$dst" ]; then
@@ -169,7 +170,8 @@ check_codex_agents_md
 check_purplemux
 check_local_bin_links
 
-# LLM 도구 계층: 설치 성공과 반영 완료는 다르다. 버전이 아니라 결과를 본다.
+# LLM tooling layer: install success and the change taking effect are different.
+# Look at outcomes, not versions.
 printf '\n-- llm tooling --\n'
 while IFS=$'\t' read -r check state detail; do
   [ -z "$check" ] && continue

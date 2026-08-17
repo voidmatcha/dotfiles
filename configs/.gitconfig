@@ -46,14 +46,16 @@
     last = log -1 HEAD
     amend = commit --amend --no-edit
 
-# 기본값: 개인 계정
+# Default: personal account
 [include]
     path = ~/.gitconfig-personal
 
-# Remote URL 기반 분기 — repo 위치와 무관하게 사내 호스트면 회사 계정 덮어쓰기.
-# (git 2.36+ 필요.) 새 repo는 remote가 붙기 전까지 personal로 잡히지만
-# remote 추가 즉시 분기 적용된다.
-# 패턴은 fnmatch 기반: ** 가 path separator 포함 매칭. 다양한 URL 형식 커버.
+# Branch on the remote URL — regardless of where the repo lives, an internal
+# host overrides with the work account. (Requires git 2.36+.) A new repo counts
+# as personal until a remote is attached; the branch applies as soon as one is
+# added.
+# Patterns are fnmatch-based: ** matches across path separators, covering the
+# various URL forms.
 [includeIf "hasconfig:remote.*.url:https://**oss.navercorp.com/**"]
     path = ~/.gitconfig-work
 [includeIf "hasconfig:remote.*.url:git@**oss.navercorp.com:**"]

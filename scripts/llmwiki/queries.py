@@ -9,10 +9,10 @@ _HERE = Path(__file__).parent
 
 
 def _load(name: str):
-    """이미 로드된 모듈은 재사용한다.
+    """Reuse an already-loaded module.
 
-    캐시하지 않으면 상호 참조가 무한 재귀가 된다. compiler 가 queries 를,
-    queries 가 compiler 를 부르는 구조에서 실제로 멈췄다.
+    Without the cache, mutual imports turn into infinite recursion. It actually
+    hung on the structure where compiler calls queries and queries calls compiler.
     """
     key = f"llmwiki_{name}"
     if key in sys.modules:
@@ -47,8 +47,8 @@ def _bindings(home: Path) -> dict[str, dict]:
 
 
 def _merged(home: Path, cfg=None) -> list[dict]:
-    """compiler 와 같은 정제를 거친다. 차단/매핑을 안 거치면 대시보드에
-    차단된 프로젝트가 다시 나타난다."""
+    """Go through the same normalization as compiler. Skipping the blocklist and
+    mapping makes blocked projects reappear on the dashboard."""
     events, _ = store.read_json(home / "events.ndjson")
     if cfg is None:
         return merge.by_session_project(events)
@@ -128,11 +128,11 @@ def brief(rows: list[dict], max_chars: int = 1000) -> str:
 
 
 def live_activity(home: Path) -> dict[str, dict]:
-    """태스크별 최신 활동을 이벤트에서 직접 계산한다.
+    """Compute the latest activity per task straight from the events.
 
-    프론트매터의 last_active 는 compile 이 써주는데 compile 은 야간에만 돈다.
-    ingest 는 vault 를 건드리지 않아 자주 돌려도 안전하므로, 이벤트만으로
-    계산하면 compile 없이도 상태가 신선해진다.
+    The frontmatter's last_active is written by compile, and compile only runs at
+    night. ingest does not touch the vault, so it is safe to run often; computing
+    from the events alone keeps status fresh without a compile.
     """
     binds = _bindings(home)
     out: dict[str, dict] = {}
@@ -161,8 +161,8 @@ def status(home: Path, vault: Path, cfg, live: bool = True) -> dict:
         if task.get("status") == "queued":
             queued.append(task)
         elif task.get("status") == "doing":
-            # 활동 기록이 없으면 생성일로 판단한다. 그러지 않으면 방금 만든
-            # 태스크가 곧바로 정체 경고로 떨어진다.
+            # With no activity record, judge by the creation date. Otherwise a
+            # freshly created task drops straight into the stale warning.
             seen = str(task.get("last_active") or task.get("created") or "")
             (stale if seen < stale_before else doing).append(task)
     return {"doing": doing, "stale": stale, "queued": queued}

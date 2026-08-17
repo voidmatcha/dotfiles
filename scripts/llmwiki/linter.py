@@ -8,10 +8,10 @@ _HERE = Path(__file__).parent
 
 
 def _load(name: str):
-    """이미 로드된 모듈은 재사용한다.
+    """Reuse an already-loaded module.
 
-    캐시하지 않으면 상호 참조가 무한 재귀가 된다. compiler 가 queries 를,
-    queries 가 compiler 를 부르는 구조에서 실제로 멈췄다.
+    Without the cache, mutual imports turn into infinite recursion. It actually
+    hung on the structure where compiler calls queries and queries calls compiler.
     """
     key = f"llmwiki_{name}"
     if key in sys.modules:
@@ -32,10 +32,10 @@ INDEX_EXEMPT = ("done", "archived")
 
 
 def _strict_ok(text: str) -> bool:
-    """PyYAML이 있으면 엄격 파서로 한 번 더 통과시킨다. 없으면 검사를 건너뛴다.
+    """Run it through a strict parser too if PyYAML is present; skip if it is not.
 
-    관대한 파서는 'description: foo: bar' 를 통과시키지만 Obsidian 은 깨진다.
-    하드 의존을 만들지 않으려 import 실패는 조용히 통과시킨다.
+    The lenient parser accepts 'description: foo: bar', but Obsidian breaks on it.
+    To avoid a hard dependency, an import failure passes silently.
     """
     try:
         import yaml  # noqa: PLC0415

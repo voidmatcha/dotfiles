@@ -69,8 +69,9 @@ class HooksTest(unittest.TestCase):
             home, vault = Path(d) / "h", Path(d) / "v"
             for _ in range(20):
                 TK.create(home, vault, "p", title="제" * 100)
-            # cwd 의 basename 이 곧 프로젝트 슬러그다. 태스크와 다른 값을 주면
-            # 필터가 전부 걸러 이 테스트가 빈 문자열을 재는 공허한 검사가 된다.
+            # The basename of cwd is the project slug. Passing something other
+            # than the task's project makes the filter drop everything, turning
+            # this test into a vacuous check on an empty string.
             proc = run_cli(["hook-session-start"], {"session_id": "s1", "cwd": str(Path(d) / "p")},
                            home, vault)
             self.assertEqual(proc.returncode, 0)

@@ -10,7 +10,7 @@ _DEFAULT_STATE = {"watermark": {}, "task_counter": 0, "version": 1}
 
 
 def append_json(path: Path, obj: dict) -> None:
-    """한 줄을 O_APPEND 단일 write로 붙인다. 동시 append가 서로를 덮지 않는다."""
+    """Append one line with a single O_APPEND write; concurrent appends never clash."""
     path.parent.mkdir(parents=True, exist_ok=True)
     line = (json.dumps(obj, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
@@ -21,7 +21,7 @@ def append_json(path: Path, obj: dict) -> None:
 
 
 def read_json(path: Path) -> tuple[list[dict], int]:
-    """깨진 줄은 건너뛰고 개수만 센다. 부분 쓰기로 끝난 마지막 줄이 흔하다."""
+    """Skip broken lines, counting them. A last line left half-written is common."""
     if not path.exists():
         return [], 0
     rows: list[dict] = []
@@ -49,7 +49,7 @@ def load_state(path: Path) -> dict:
 
 
 def update_state(path: Path, fn: Callable[[dict], None]) -> dict:
-    """배타 잠금 하에 읽고 고치고 atomic replace 한다."""
+    """Read, modify, and atomically replace under an exclusive lock."""
     path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = path.with_suffix(path.suffix + ".lock")
     with lock_path.open("w") as lock:

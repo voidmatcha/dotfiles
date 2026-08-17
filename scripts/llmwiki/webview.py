@@ -1,12 +1,12 @@
-"""읽기 전용 웹 뷰.
+"""Read-only web view.
 
-vault 를 브라우저로 보게 한다. 동기화가 필요 없으므로 다른 머신에 vault 사본이
-생기지 않는다. 회사 장비에서 개인 기록을 볼 때 그 디스크에 아무것도 남지 않는
-것이 이 방식의 요점이다.
+Lets the vault be viewed in a browser. No syncing is needed, so no copy of the
+vault ends up on another machine. The point of this approach is that when you
+read personal records on a company device, nothing is left on that disk.
 
-쓰기 경로가 없다. GET 만 처리하고 POST/PUT/DELETE 는 405 로 거절한다.
-기본 바인드는 127.0.0.1 이고, 외부 노출은 Tailscale Serve 에 위임한다
-(local-preview-server 스킬의 보안 자세와 같다).
+There is no write path. Only GET is served; POST/PUT/DELETE are refused with 405.
+The default bind is 127.0.0.1, and external exposure is delegated to Tailscale
+Serve (the same security posture as the local-preview-server skill).
 """
 
 from __future__ import annotations
@@ -75,31 +75,33 @@ th { background:var(--line); }
 .card b { font-weight:600; }
 """
 
-# 페이지 이름으로 허용하는 문자. 경로 구분자, .., 선행 점을 전부 배제한다.
-# 공백을 허용한다. "아스테로이드 시티" 같은 제목이 실제로 있고, 막으면 그
-# 노트만 조용히 404 가 된다. 경로 구분자는 여전히 빠져 있고, 최종 방어선은
-# resolve_page 의 is_relative_to 검사다.
+# Characters allowed in a page name. Path separators, .., and a leading dot are
+# all excluded. Spaces are allowed: titles like "아스테로이드 시티" actually
+# exist, and blocking them makes just that note quietly 404. Path separators are
+# still left out, and the last line of defense is resolve_page's is_relative_to
+# check.
 _SAFE_NAME = re.compile(r"[A-Za-z0-9가-힣][A-Za-z0-9가-힣._ ,()-]*")
 
-# 웹뷰가 넘겨줄 폴더. tasks 는 접두사 glob 을 따로 쓴다.
+# Folders the web view serves. tasks uses its own prefix glob.
 _PAGE_DIRS = ("projects", "library", "rest", "concepts", "records", "jobs", "companies")
 
 _INLINE = (
     (re.compile(r"`([^`]+)`"), r"<code>\1</code>"),
-    # *** 를 ** 보다 먼저 본다. ** 패턴은 [^*]+ 라 ***x*** 를 아예 못 잡고
-    # 별표가 글자로 남아 있던 것을 사용자가 발견했다.
+    # *** is matched before **. The ** pattern is [^*]+, so it cannot match
+    # ***x*** at all; the user found the asterisks left showing as literal text.
     (re.compile(r"\*\*\*([^*]+)\*\*\*"), r"<b><i>\1</i></b>"),
     (re.compile(r"\*\*([^*]+)\*\*"), r"<b>\1</b>"),
 )
 
-# defuddle 이 추출한 본문은 마크다운 특수문자를 백슬래시로 이스케이프한다.
-# 풀지 않으면 \[NASDAQ: BKNG\] 나 \*\*\* 가 화면에 그대로 나온다.
+# Body text extracted by defuddle backslash-escapes markdown special characters.
+# Without unescaping, \[NASDAQ: BKNG\] or \*\*\* shows up on screen verbatim.
 _ESCAPED = re.compile(r"\\([\\`*_{}\[\]()#+\-.!|~])")
 
-# 외부 링크. 스킴을 정규식에서 http/https 로 못박는다. 화이트리스트를 뒤에서
-# 검사하는 대신 아예 매치가 안 되게 하면 javascript: 같은 것은 링크가 되지
-# 않고 그냥 글자로 남는다. 이 함수는 html.escape 를 먼저 돌리므로 URL 안의
-# 따옴표는 이미 &quot; 이고 속성 밖으로 새지 않는다.
+# External links. The scheme is pinned to http/https in the regex itself. Rather
+# than checking a whitelist afterwards, not matching at all means something like
+# javascript: never becomes a link and just stays as text. This function runs
+# html.escape first, so quotes inside a URL are already &quot; and cannot leak
+# out of the attribute.
 _LINK = re.compile(r"\[([^\[\]]+)\]\((https?://[^\s)]+)\)")
 
 
@@ -108,17 +110,19 @@ def _inline(text: str, link: bool = True) -> str:
     for pattern, repl in _INLINE:
         out = pattern.sub(repl, out)
     if link:
-        # 임베드(![[x]])를 먼저 걷어낸다. 옵시디언 전용 문법이라 여기서는 못
-        # 그린다. 그냥 두면 '!' 만 남고 깨진 링크가 되어 있던 것을 사용자가
-        # 발견했다. .base 는 마크다운도 아니라 링크로 만들면 404 다.
+        # Strip embeds (![[x]]) first. They are Obsidian-only syntax and cannot be
+        # rendered here. Left alone, only the '!' remained and it became a broken
+        # link, which the user found. A .base is not even markdown, so turning it
+        # into a link would 404.
         out = re.sub(
             r"!\[\[([^\]|]+)\]\]",
             lambda m: f'<p class="empty">[{m.group(1)}] — 옵시디언에서 표로 보인다</p>',
             out,
         )
-        # 위키링크를 먼저 처리한다. 그래야 [[x]] 가 외부 링크 패턴에 걸리지 않는다.
-        # 별칭형([[경로|표시]])을 먼저 잡는다. 아래 패턴은 | 를 제외하므로
-        # 별칭 링크가 매칭되지 않고 원문 그대로 남아 있던 것을 사용자가 발견했다.
+        # Wikilinks are handled first so [[x]] does not hit the external link
+        # pattern. The aliased form ([[path|label]]) is matched first: the pattern
+        # below excludes |, so aliased links went unmatched and stayed as raw
+        # text, which the user found.
         out = re.sub(
             r"\[\[([^\]|]+)\|([^\]]+)\]\]",
             lambda m: f'<a href="/page/{quote(m.group(1))}">{m.group(2)}</a>',
@@ -138,7 +142,7 @@ def _inline(text: str, link: bool = True) -> str:
 
 
 def markdown(text: str) -> str:
-    """vault 가 만들어내는 부분집합만 처리한다. 범용 마크다운 파서가 아니다."""
+    """Handle only the subset the vault produces. Not a general markdown parser."""
     out: list[str] = []
     in_list = in_table = False
     fence: list[str] | None = None
@@ -154,9 +158,9 @@ def markdown(text: str) -> str:
 
     for raw in text.split("\n"):
         line = raw.rstrip()
-        # 코드 펜스. 안쪽은 마크다운으로 해석하지 않고 그대로 보존한다.
-        # 계산식·다이어그램이 여기 들어가는데, 문단으로 흘리면 줄바꿈과
-        # 공백 정렬이 전부 무너진다.
+        # Code fences. The inside is preserved as is, not parsed as markdown.
+        # Formulas and diagrams go in here, and flowing them into paragraphs
+        # destroys every line break and space alignment.
         if line.lstrip().startswith("```"):
             if fence is None:
                 close()
@@ -200,7 +204,7 @@ def markdown(text: str) -> str:
             continue
         close()
         out.append(f"<p>{_inline(line)}</p>")
-    # 닫히지 않은 펜스도 버리지 않는다. 내용이 사라지는 것이 최악이다.
+    # An unclosed fence is not thrown away either. Losing content is the worst case.
     if fence:
         out.append("<pre><code>" + html.escape("\n".join(fence)) + "</code></pre>")
     close()
@@ -266,14 +270,16 @@ _STATUS_LABEL = {"todo": "할 것", "doing": "하는 중",
                  "done": "한 것", "dropped": "접음",
                  "wip": "정리 중"}
 
-# 웹뷰가 목록 페이지를 내주는 폴더. 상태 화면에는 올리지 않는다 - 메인은
-# 작업 상태를 보는 곳이고, 여기에 볼거리를 섞으면 성격이 흐려진다.
+# Folders the web view gives a listing page. They are not put on the status
+# screen - the main page is for looking at work state, and mixing reading
+# material in there blurs what it is for.
 _FOLDER_PAGES = {"concepts": "개념 정리", "library": "가져온 자료",
                  "records": "기록", "rest": "쉴 때 할 것",
                  "jobs": "채용 공고", "companies": "회사"}
 
-# 미확정 항목. 노트마다 흩어져 있으면 결국 아무도 안 본다. 마크다운 체크박스를
-# 그대로 쓰므로 옵시디언에서도 클릭으로 닫힌다. 열린 것만 모은다.
+# Undecided items. Scattered across notes, nobody ends up looking at them. It
+# uses the plain markdown checkbox, so a click closes it in Obsidian too. Only
+# open ones are gathered.
 _TODO = re.compile(r"^\s*[-*]\s*\[ \]\s*(.+?)\s*$", re.MULTILINE)
 
 
@@ -306,10 +312,11 @@ def todo_html(vault: Path) -> str:
 
 
 def _folder_html(vault: Path, folder: str) -> str:
-    """폴더 하나를 표로 세운다.
+    """Lay one folder out as a table.
 
-    베이스(.base) 는 옵시디언에서만 렌더된다. 웹뷰에 목록이 없으면 URL 을
-    손으로 치는 수밖에 없고, 실제로 그래서 안 보였다.
+    A base (.base) renders only in Obsidian. Without a listing in the web view
+    there is no way in but typing the URL by hand, and that is exactly why these
+    were not visible.
     """
     title = _FOLDER_PAGES.get(folder, folder)
     root = vault / folder
@@ -336,13 +343,14 @@ def _folder_html(vault: Path, folder: str) -> str:
 
 
 def resolve_page(vault: Path, name: str) -> Path | None:
-    """vault 안의 마크다운만 돌려준다. 경로 탈출을 막는다."""
-    # 이름을 먼저 좁힌다. 경로 구분자나 .. 가 들어오면 glob 패턴으로도, 경로
-    # 조립으로도 위험하다. glob 은 절대 경로 패턴에서 예외까지 던진다.
+    """Return only markdown inside the vault. Blocks path escapes."""
+    # Narrow the name first. A path separator or .. is dangerous both as a glob
+    # pattern and in path assembly; glob even throws on absolute path patterns.
     #
-    # 중첩 경로(library/jobs/<공고>/<날짜>)를 허용하되 구분자만 풀지 않는다.
-    # 세그먼트마다 같은 검사를 통과시키고 첫 세그먼트를 알려진 폴더로 제한한다.
-    # 검사를 통째로 느슨하게 하면 탈출 경로가 다시 열린다.
+    # Nested paths (library/jobs/<posting>/<date>) are allowed, but the separator
+    # alone is not loosened. Every segment must pass the same check and the first
+    # segment is restricted to a known folder. Loosening the check wholesale would
+    # reopen the escape route.
     segments = (name or "").split("/")
     if not all(_SAFE_NAME.fullmatch(seg) for seg in segments):
         return None
@@ -375,7 +383,7 @@ class Handler(BaseHTTPRequestHandler):
         self._home, self._vault, self._cfg = home, vault, cfg
         super().__init__(*args, **kwargs)
 
-    def log_message(self, *args) -> None:  # 접근 로그를 stderr 로 흘리지 않는다
+    def log_message(self, *args) -> None:  # do not spill access logs to stderr
         pass
 
     def _send(self, payload: bytes, code: int = 200) -> None:
@@ -416,8 +424,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             _, body = vaultio.read_page(target)
             out = f"<h1>{html.escape(target.stem)}</h1>{markdown(body)}"
-            # 영문 원문 아래에 한국어 번역을 이어 붙인다. 번역을 원문 파일에
-            # 섞으면 job-watch 의 변경 감지가 매번 '변경됨'을 낸다.
+            # Append the Korean translation below the English original. Mixing
+            # the translation into the original file makes job-watch's change
+            # detection report 'changed' every time.
             ko = target.parent / "ko" / target.name
             if ko.is_file():
                 _, ko_body = vaultio.read_page(ko)
@@ -434,11 +443,11 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def _refresher(home: Path, seconds: int) -> None:
-    """주기적으로 claude-mem 을 증분 임포트한다.
+    """Incrementally import from claude-mem on a schedule.
 
-    ingest 는 events.ndjson 에 append 만 하고 vault 는 절대 건드리지 않는다.
-    그래서 Obsidian 이 열려 있어도 안전하고 자주 돌려도 된다. vault 를 쓰는
-    것은 compile 뿐이고 그것은 야간에만 돈다.
+    ingest only appends to events.ndjson and never touches the vault. That makes
+    it safe even with Obsidian open, and fine to run often. The only thing that
+    writes the vault is compile, and that runs only at night.
     """
     ingest = _load("ingest")
     db = Path.home() / ".claude-mem" / "claude-mem.db"
@@ -447,7 +456,7 @@ def _refresher(home: Path, seconds: int) -> None:
         try:
             if db.exists():
                 ingest.run(home, db)
-        except Exception as exc:  # 갱신 실패가 서버를 죽이면 안 된다
+        except Exception as exc:  # a refresh failure must not kill the server
             print(f"refresh 실패: {exc}", file=sys.stderr, flush=True)
 
 

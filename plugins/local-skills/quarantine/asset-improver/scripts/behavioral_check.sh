@@ -15,7 +15,7 @@
 set -uo pipefail
 
 MODE="${1:?skill|hook|script}"; shift
-RUN_EVAL=/Users/yongjae/.claude/skills/skill-creator/scripts/run_eval.py
+RUN_EVAL="${RUN_EVAL:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/skill-creator/scripts/run_eval.py}"
 verdict() { printf '{"verdict":"%s","detail":%s}\n' "$1" "${2:-null}"; }
 
 case "$MODE" in

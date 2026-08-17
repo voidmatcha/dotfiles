@@ -1,13 +1,14 @@
-"""실패한 시도 후보를 뽑고, 승인된 교훈을 프로젝트 노트에 적는다.
+"""Pick 실패한 시도 candidates and write accepted lessons into the project note.
 
-두 단계로 나뉜다. 여기(기계)는 재현율을 목표로 후보를 넓게 건지고, 정밀도는
-사람 또는 세션의 LLM 이 맡는다. 키워드만으로 '실패한 시도'와 '남의 버그를
-고친 작업'을 가를 수 없다. 실제 요약문에서 "테스트 실패를 고쳤다"와 "내가
-깨뜨려서 되돌렸다"는 같은 단어를 쓴다.
+This splits into two stages. Here (the machine) casts a wide net for recall, and
+precision is left to a human or the session's LLM. Keywords alone cannot separate
+a 실패한 시도 from work that fixed somebody else's bug. In real summaries, "fixed
+the failing test" and "I broke it and reverted" use the same words.
 
-쓰는 위치가 GEN 마커 바깥이라 compile 이 덮어쓰지 않는다. 그래서 승인은
-한 번만 일어나야 하고, 중복 제안을 막는 근거는 lessons.ndjson 에 남긴다.
-노트에서 사람이 지운 교훈이 다시 후보로 올라오면 안 된다.
+What gets written sits outside the GEN markers, so compile does not overwrite it.
+That means acceptance must happen exactly once, and the record that blocks a
+duplicate proposal is kept in lessons.ndjson. A lesson a human deleted from the
+note must never come back up as a candidate.
 """
 
 from __future__ import annotations
@@ -38,8 +39,9 @@ store, queries, vaultio = _load("store"), _load("queries"), _load("vaultio")
 HEADING = "## 실패한 시도 (다시 하지 말 것)"
 LEDGER = "lessons.ndjson"
 
-# 가중치 2는 "내가 뭔가를 망가뜨렸다"에 가까운 말, 1은 정황 증거다. 한국어와
-# 영어를 같이 본다. claude-mem 요약은 두 언어가 섞여 나온다.
+# Weight 2 is wording close to "I broke something", 1 is circumstantial evidence.
+# Korean and English are matched together. claude-mem summaries come out with the
+# two languages mixed.
 _SIGNALS: tuple[tuple[str, int], ...] = (
     ("되돌", 2), ("롤백", 2), ("rollback", 2), ("revert", 2),
     ("깨뜨", 2), ("깨먹", 2), ("깨졌", 2), ("깨진", 2),
@@ -62,7 +64,7 @@ def _now() -> str:
 
 
 def ref_of(session_id: str) -> str:
-    """볼트 타임라인이 이미 쓰는 8자 접두사를 그대로 쓴다."""
+    """Reuse the same 8-character prefix the vault timeline already uses."""
     return session_id[:8]
 
 
@@ -77,7 +79,7 @@ def score(row: dict) -> tuple[int, list[str]]:
 
 
 def ledger(home: Path) -> dict[tuple[str, str], dict]:
-    """(session_id, project) -> 마지막 판정. 승인도 기각도 재제안을 막는다."""
+    """(session_id, project) -> last verdict. Accept and dismiss both block reuse."""
     rows, _ = store.read_json(home / LEDGER)
     rows.sort(key=lambda r: r.get("at", ""))
     view: dict[tuple[str, str], dict] = {}
@@ -89,12 +91,13 @@ def ledger(home: Path) -> dict[tuple[str, str], dict]:
 def candidates(home: Path, cfg, vault: Path | None = None,
                project: str | None = None, days: int | None = None,
                min_score: int = 2, limit: int = 20) -> list[dict]:
-    """점수는 순위용 눈금일 뿐 정밀도가 아니다.
+    """The score is only a ranking scale, not precision.
 
-    긴 요약일수록 더 많은 신호에 걸리므로 점수에는 길이 편향이 있다. 그래서
-    동점 처리는 최신순으로 하고, 진짜 판별은 호출자(사람 또는 세션의 LLM)가
-    본문을 읽고 한다. 노트가 없는 프로젝트는 accept 가 실패하므로 걸러내되,
-    몇 건을 걸렀는지는 note_exists 로 드러내고 조용히 감추지 않는다.
+    Longer summaries hit more signals, so the score carries a length bias. Ties
+    are therefore broken by recency, and the real judgment is made by the caller
+    (a human or the session's LLM) reading the body. Projects with no note fail on
+    accept, so they are filtered out, but how many were filtered is exposed
+    through note_exists rather than quietly hidden.
     """
     decided = ledger(home)
     cutoff = queries._cutoff(days) if days else None
@@ -125,14 +128,14 @@ def candidates(home: Path, cfg, vault: Path | None = None,
             "investigated": row.get("investigated", ""),
             "completed": row.get("completed", ""),
         })
-    # 안정 정렬 두 번으로 (점수 내림, 날짜 내림)을 만든다.
+    # Two stable sorts produce (score descending, date descending).
     out.sort(key=lambda r: r["at"], reverse=True)
     out.sort(key=lambda r: -r["score"])
     return out[:limit]
 
 
 def resolve(home: Path, cfg, ref: str) -> dict:
-    """접두사 하나로 후보를 특정한다. 애매하면 세우지 말고 멈춘다."""
+    """Pin down one candidate by prefix. If ambiguous, stop instead of guessing."""
     hits = [c for c in candidates(home, cfg, min_score=0, limit=10_000)
             if c["session_id"].startswith(ref)]
     if not hits:
@@ -144,7 +147,7 @@ def resolve(home: Path, cfg, ref: str) -> dict:
 
 
 def _insert(body: str, line: str) -> str:
-    """실패한 시도 절 끝에 붙인다. 다음 절이나 GEN 마커 직전이 경계다."""
+    """Append at end of the 실패한 시도 section. Bound by next section or GEN marker."""
     start = body.find(HEADING)
     if start < 0:
         raise ValueError(f"{HEADING} 절이 없다")

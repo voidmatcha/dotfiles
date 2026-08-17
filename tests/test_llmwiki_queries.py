@@ -74,12 +74,14 @@ class QueriesTest(unittest.TestCase):
             self.assertEqual([r["session_id"] for r in rows], ["a"])
 
     def test_blocked_projects_show_as_unfiled_not_hidden(self) -> None:
-        """차단된 이름으로 지금 작업 중이면 대시보드에 보여야 한다.
+        """Work happening right now under a blocked name must still show on
+        the dashboard.
 
-        이 테스트는 원래 반대를 주장했다 - 차단된 것은 활동 목록에서 빠져야
-        한다고. 그 결과 얕은 디렉터리에서 시작한 세션은 진행 중인데도 상태
-        페이지에 나타나지 않았다. 기록이 안 남는 게 불편해서 만든 도구가
-        진행 중인 일을 숨기고 있었다.
+        This test originally asserted the opposite - that blocked names
+        should drop out of the activity list. The result was that a session
+        started from a shallow directory never appeared on the status page
+        even while it was in progress. A tool built because losing the
+        record was annoying was hiding work in progress.
         """
         with tempfile.TemporaryDirectory() as d:
             home = Path(d)
@@ -126,13 +128,13 @@ if __name__ == "__main__":
 
 class LiveStatusTest(unittest.TestCase):
     def test_status_is_fresh_without_a_compile(self) -> None:
-        """compile 은 야간에만 돈다. 그 사이에도 상태가 신선해야 한다."""
+        """compile only runs overnight. Status must stay fresh in between."""
         with tempfile.TemporaryDirectory() as d:
             home, vault = Path(d) / "h", Path(d) / "v"
             tid = TK.create(home, vault, "p", title="t", bind_session="s1")
             event(home, "e1", "s1", "p", recent(0), edited=["a.py"])
             meta, _ = VIO.read_page(TK.path_for(vault, tid))
-            self.assertEqual(meta["last_active"], "")  # compile 이 아직 안 씀
+            self.assertEqual(meta["last_active"], "")  # compile has not written yet
 
             doing = QR.status(home, vault, CFG.Config())["doing"]
             self.assertEqual(len(doing), 1)
@@ -149,7 +151,7 @@ class LiveStatusTest(unittest.TestCase):
             self.assertEqual(result["stale"], [])
 
     def test_brand_new_task_is_not_flagged_stale(self) -> None:
-        """활동 기록이 없다고 방금 만든 태스크를 정체로 표시하면 안 된다."""
+        """Having no activity record must not mark a just-created task stale."""
         with tempfile.TemporaryDirectory() as d:
             home, vault = Path(d) / "h", Path(d) / "v"
             TK.create(home, vault, "p", title="t", bind_session="s1")

@@ -46,7 +46,8 @@ class FrontmatterTest(unittest.TestCase):
         self.assertEqual(meta2["priority"], 2)
 
     def test_render_parse_is_stable_across_two_roundtrips(self) -> None:
-        """닫는 --- 뒤 개행이 없으면 2회차에서 본문이 구분자에 붙어 깨진다."""
+        """Without a newline after the closing ---, the second pass glues the
+        body onto the delimiter and breaks it."""
         meta, body = {"type": "task", "priority": 2}, "## 목표\n\n내용\n"
         once = FM.render(meta, body)
         m1, b1 = FM.parse(once)

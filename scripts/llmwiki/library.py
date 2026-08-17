@@ -1,11 +1,13 @@
-"""가져온 자료(Library). 내가 한 작업(projects/)과 섞이지 않게 따로 둔다.
+"""Imported material (Library). Kept apart from my own work (projects/).
 
-raw/ 는 던지는 곳이고 library/ 는 위키화된 노트다. 원본은 지우지 않는다.
-노트가 원본을 대체하면 요약이 틀렸을 때 되짚을 근거가 사라진다.
+raw/ is where things get dumped and library/ holds the wiki-ified notes. The
+original is never deleted. If the note replaced the original, there would be
+nothing to trace back to when the summary turns out to be wrong.
 
-여기도 기계 몫만 한다. 파일을 찾고, 중복을 걸러내고, 빈 노트를 세운다.
-요약과 연결은 세션의 LLM 이 채운다. 야간 작업에 LLM 을 들이지 않기 위한
-경계이자, 검증되지 않은 요약이 자동으로 쌓이지 않게 하는 장치다.
+This too does only the machine's share: find the files, filter duplicates, stand
+up empty notes. The summary and the links are filled in by the session's LLM.
+That is the boundary that keeps an LLM out of the nightly job, and the device
+that stops unverified summaries from piling up automatically.
 """
 
 from __future__ import annotations
@@ -43,7 +45,7 @@ SKELETON = (
     "## 연결\n\n"
 )
 
-# 옵시디언이 노트로 오해하지 않을 것들, 그리고 macOS 가 흘리는 부산물.
+# Things Obsidian would not mistake for notes, plus the litter macOS leaves.
 _IGNORE = {".DS_Store", "Icon\r"}
 
 
@@ -75,11 +77,12 @@ def raw_files(vault: Path) -> list[Path]:
 
 
 def existing(vault: Path) -> tuple[dict[str, Path], dict[str, Path]]:
-    """(sha -> 노트, source 경로 -> 노트).
+    """(sha -> note, source path -> note).
 
-    두 색인이 필요하다. sha 는 같은 내용을 다시 던진 경우를, source 는 같은
-    원본을 고친 경우를 잡는다. 후자를 안 보면 오타 하나 고쳤을 때 노트가
-    하나 더 생기고, 먼저 쓴 요약은 옛 내용을 설명하는 채로 남는다.
+    Both indexes are needed. sha catches the same content dumped again, source
+    catches the same original being edited. Without the latter, fixing a single
+    typo creates one more note, and the summary written first stays behind
+    describing the old content.
     """
     root = vault / LIB_DIR
     if not root.is_dir():
@@ -106,7 +109,7 @@ def _unique_page(root: Path, slug: str) -> Path:
 
 
 def ingest(vault: Path) -> dict:
-    """raw/ 의 새 파일마다 빈 library 노트를 세운다."""
+    """Stand up an empty library note for each new file in raw/."""
     (vault / RAW_DIR).mkdir(parents=True, exist_ok=True)
     (vault / LIB_DIR).mkdir(parents=True, exist_ok=True)
     by_sha, by_source = existing(vault)
@@ -119,8 +122,9 @@ def ingest(vault: Path) -> dict:
         rel = src.relative_to(vault)
         stale = by_source.get(str(rel))
         if stale is not None:
-            # 원본이 바뀌었다. 요약이 낡았을 수 있지만 사람이 쓴 글을 자동으로
-            # 버리지 않는다. 알리기만 하고 resync 판단은 호출자에게 넘긴다.
+            # The original changed. The summary may be stale, but human-written
+            # prose is never discarded automatically. Just report it and leave the
+            # resync decision to the caller.
             changed.append(stale.stem)
             continue
         slug = compiler.safe_slug(src.stem)
@@ -177,10 +181,11 @@ def mark_done(vault: Path, slug: str) -> Path:
 
 
 def resync(vault: Path, slug: str) -> dict:
-    """원본이 바뀐 노트를 다시 검토 대상으로 되돌린다.
+    """Put a note whose original changed back up for review.
 
-    sha 만 갱신하고 status 를 pending 으로 내린다. 사람이 쓴 요약은 지우지
-    않는다. 지우면 바뀐 부분만 고치면 되는 일이 처음부터 다시 쓰는 일이 된다.
+    Only sha is refreshed and status drops to pending. The human-written summary
+    is not deleted. Deleting it turns a job of patching just the changed part into
+    a job of writing the whole thing from scratch.
     """
     page = vault / LIB_DIR / f"{slug}.md"
     if not page.exists():
@@ -201,10 +206,11 @@ def resync(vault: Path, slug: str) -> dict:
 
 
 def set_origin(vault: Path, slug: str, origin: str) -> Path:
-    """원문 주소를 기록한다. 원문이 사라져도 어디서 왔는지는 남는다.
+    """Record the source address. Where it came from outlives the source itself.
 
-    자동으로 찾아 넣지 않는다. 붙여넣은 글의 출처 추정은 틀릴 수 있고,
-    틀린 출처는 없는 출처보다 나쁘다. 확인한 사람이 넣는다.
+    It is never filled in automatically. Guessing the origin of pasted text can be
+    wrong, and a wrong origin is worse than no origin. The person who verified it
+    puts it in.
     """
     page = vault / LIB_DIR / f"{slug}.md"
     if not page.exists():
@@ -217,8 +223,8 @@ def set_origin(vault: Path, slug: str, origin: str) -> Path:
 
 
 def _filled(body: str) -> bool:
-    """요약 절에 실제 글이 있는지 본다. 제목만 있는 노트를 done 으로 넘기면
-    pending 목록이 거짓으로 비고, 위키가 빈 껍데기로 늘어난다."""
+    """Check the summary section holds real prose. Passing a heading-only note to
+    done empties the pending list falsely and grows the wiki with empty shells."""
     start = body.find("## 요약")
     if start < 0:
         return False

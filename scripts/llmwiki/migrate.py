@@ -27,10 +27,11 @@ SOURCE = "claude-mem"
 
 
 def namespace_events(home: Path, host: str | None = None) -> dict:
-    """`claude-mem:{n}` 을 `claude-mem:{host}:{n}` 으로 올린다.
+    """Lift `claude-mem:{n}` to `claude-mem:{host}:{n}`.
 
-    이 마이그레이션이 없으면 다음 ingest 가 워터마크 키를 못 찾아 0부터 다시
-    읽고, 새 형식 event_id 라 중복 제거도 안 걸려 전량이 다시 들어온다.
+    Without this migration the next ingest cannot find the watermark key, reads
+    from 0 again, and since the event_id is in the new format deduplication does
+    not catch it either, so everything gets imported a second time.
     """
     host = host or config.host()
     events_path = home / "events.ndjson"

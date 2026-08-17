@@ -1,21 +1,25 @@
 #!/usr/bin/env python3
-"""LLM 도구 계층의 결과 검사.
+"""Outcome checks for the LLM tooling layer.
 
-claude.sh / codex.sh / skills.sh 는 성공을 반환해도 반영되지 않을 수 있다.
-하루에 같은 병을 넷 봤다.
+claude.sh / codex.sh / skills.sh can return success without the change taking
+effect. Four cases of the same illness turned up in a single day.
 
-  claude-mem       설치돼 있는데 Codex 훅이 매 호출마다 거부됨. 두 달간 유실
-  local-skills     "최신"이라는데 캐시가 27일 묵고 스킬 두 개가 빠져 있었음
-  ui-clone-skills  설치돼 있는데 캐시에 스킬 0개
-  이 검사 자체      0파일끼리 비교해서 "일치"라고 보고
+  claude-mem       installed, but the Codex hook was rejected on every call.
+                   Two months lost
+  local-skills     reported "up to date" while the cache was 27 days old and
+                   two skills were missing
+  ui-clone-skills  installed, but the cache held 0 skills
+  this check itself compared 0 files against 0 and reported "match"
 
-공통점은 성공을 보고하는데 효과가 없다는 것이다. 버전 비교는 대리 지표이므로,
-여기서는 "그 도구가 원래 할 일을 하고 있나"를 본다.
+What they share is reporting success with no effect. A version comparison is a
+proxy metric, so what is checked here is "is that tool doing the job it exists
+to do".
 
-사실만 낸다. 해석과 결정은 호출자(사람 또는 dotfiles-sync 스킬)의 몫이다.
-출력은 `이름<TAB>상태<TAB>설명` 한 줄씩이며, doctor.sh 가 그대로 소비한다.
+Facts only. Interpretation and decisions belong to the caller (a human or the
+dotfiles-sync skill). Output is one `name<TAB>state<TAB>detail` line per row,
+consumed as-is by doctor.sh.
 
-상태: ok / same(=ok) / info / stale / missing / local / error / unknown / skip
+States: ok / same(=ok) / info / stale / missing / local / error / unknown / skip
 """
 
 from __future__ import annotations
@@ -51,7 +55,7 @@ MARKETPLACE_STALE_DAYS = 7
 
 
 def repo_root() -> Path:
-    """설치 심링크에서 저장소 위치를 역산한다. 경로를 추측하지 않는다."""
+    """Derive the repo location back from the install symlinks. Never guess."""
     env = os.environ.get("DOTFILES_DIR")
     if env:
         return Path(env)
@@ -67,12 +71,12 @@ def repo_root() -> Path:
 
 
 def tree_digest(root: Path) -> tuple[str, int]:
-    """디렉터리 내용 해시와 파일 수.
+    """Hash of the directory contents, plus the file count.
 
-    os.walk(followlinks=True) 를 쓴다. Path.rglob 은 심링크 디렉터리로 내려가지
-    않아, 심링크 팜으로 구성된 저장소에서 파일이 0개로 집계된다. 실측에서 소스가
-    210파일인데 rglob 은 0을 돌려줬고, 0끼리 비교한 결과 비어 있는 캐시를
-    "일치"로 보고했다.
+    Uses os.walk(followlinks=True). Path.rglob does not descend into symlinked
+    directories, so a repo built as a symlink farm counts as 0 files. Measured:
+    the source had 210 files and rglob returned 0, and comparing 0 against 0
+    reported an empty cache as a "match".
     """
     if not root.is_dir():
         return "", 0
@@ -104,11 +108,11 @@ def _load_json(path: Path) -> dict | None:
         return None
 
 
-# --- 검사 ---------------------------------------------------------------
+# --- Checks -------------------------------------------------------------
 
 
 def check_session_capture(_root: Path) -> list[tuple[str, str, str]]:
-    """두 하네스의 세션이 실제로 기록되고 있나. 이것이 결과 지표다."""
+    """Are both harnesses' sessions actually recorded? This is the outcome."""
     if not CLAUDE_MEM_DB.is_file():
         return [("session-capture", "skip", "claude-mem db 없음")]
     try:
@@ -132,7 +136,7 @@ def check_session_capture(_root: Path) -> list[tuple[str, str, str]]:
 
 
 def check_codex_hooks(_root: Path) -> list[tuple[str, str, str]]:
-    """claude-mem 이 Codex 훅에 등록돼 있나. 없으면 Codex 기록이 통째로 빈다."""
+    """Is claude-mem registered in the Codex hooks? Without it Codex records nothing."""
     data = _load_json(CODEX_HOOKS)
     if data is None:
         return [("codex-hooks", "skip", "hooks.json 없음 또는 파싱 불가")]
@@ -146,7 +150,7 @@ def check_codex_hooks(_root: Path) -> list[tuple[str, str, str]]:
 
 
 def check_marketplace_age(_root: Path) -> list[tuple[str, str, str]]:
-    """마켓플레이스 캐시가 묵으면 update 가 최신을 못 본다."""
+    """A stale marketplace cache means update cannot see what is newest."""
     if not KNOWN_MARKETPLACES.is_file():
         return [("marketplace-age", "skip", "known_marketplaces.json 없음")]
     age = (datetime.now().timestamp() - KNOWN_MARKETPLACES.stat().st_mtime) / 86400
@@ -155,8 +159,8 @@ def check_marketplace_age(_root: Path) -> list[tuple[str, str, str]]:
 
 
 LAUNCH_AGENTS = Path.home() / "Library/LaunchAgents"
-# 리포가 소유하는 작업. plist 는 심링크가 아니라 복사본으로 설치되므로
-# (로그인 시점 launchd 가 심링크를 읽는다는 보장이 없다) 사본이 낡을 수 있다.
+# Jobs owned by the repo. plists are installed as copies rather than symlinks
+# (nothing guarantees launchd reads a symlink at login), so a copy can go stale.
 REPO_LAUNCH_JOBS = {
     "com.yongjae.llmwiki": "configs/llmwiki",
     "com.yongjae.llmwiki-web": "configs/llmwiki",
@@ -165,10 +169,11 @@ REPO_LAUNCH_JOBS = {
 
 
 def check_launchd_jobs(root: Path) -> list[tuple[str, str, str]]:
-    """예약 작업이 설치돼 있고, 로드돼 있고, 리포와 같은가.
+    """Is the scheduled job installed, loaded, and identical to the repo?
 
-    세 가지가 각각 다른 사실이다. 파일만 있고 로드가 안 됐거나, 로드는 됐는데
-    내용이 낡았거나 - 어느 쪽이든 "설치했다"는 기억만으로는 알 수 없다.
+    Those are three separate facts. The file can be there without being loaded,
+    or be loaded while its contents are stale - either way, remembering that you
+    "installed it" tells you nothing.
     """
     if not LAUNCH_AGENTS.is_dir():
         return [("launchd", "skip", "LaunchAgents 디렉터리 없음")]
@@ -209,20 +214,22 @@ CLAUDE_MEM_DB = Path.home() / ".claude-mem/claude-mem.db"
 
 
 def _llmwiki_host() -> str:
-    """llmwiki 가 워터마크 키에 쓰는 것과 같은 호스트 이름.
+    """The same hostname llmwiki uses in its watermark key.
 
-    config.host() 를 그대로 옮겼다. doctor 는 llmwiki 를 import 하지 않으므로
-    복제가 불가피한데, 어긋나면 이 검사가 항상 '적재 정지' 를 외치게 된다.
+    Copied verbatim from config.host(). doctor does not import llmwiki, so the
+    duplication is unavoidable, but if the two diverge this check ends up
+    shouting 'ingest stopped' every single time.
     """
     raw = os.environ.get("LLMWIKI_HOST") or socket.gethostname().split(".")[0]
     return re.sub(r"[^A-Za-z0-9_-]+", "-", raw).strip("-").lower() or "unknown"
 
 
 def _llmwiki_vault(state: Path) -> Path | None:
-    """config.toml 의 vault 키. 없으면 기본값. doctor 는 llmwiki 를 import
-    하지 않으므로 최소한으로 다시 읽는다."""
-    # 상대경로는 config 가 있는 디렉터리를 기준으로 푼다. cwd 기준으로 두면
-    # doctor 와 compile 이 서로 다른 절대경로를 얻어 거짓 교체 경보가 난다.
+    """The vault key from config.toml, or the default. doctor does not import
+    llmwiki, so this re-reads the bare minimum."""
+    # Relative paths resolve against the directory holding the config. Anchoring
+    # them to cwd would give doctor and compile different absolute paths and
+    # raise a false replacement alarm.
     def anchored(raw: str) -> Path:
         p = Path(raw).expanduser()
         return p if p.is_absolute() else state / p
@@ -254,12 +261,12 @@ def _binding_task_ids(path: Path) -> set[str]:
 
 
 def check_llmwiki_capture(_root: Path) -> list[tuple[str, str, str]]:
-    """llmwiki 가 실제로 기록하고 있나. 등록 여부가 아니라 결과를 본다.
+    """Is llmwiki actually recording? This looks at outcome, not registration.
 
-    훅은 fail-open 이라 깨져도 세션을 막지 않는다. 그 조용함이 위험해서
-    실패를 로그로 남기고 여기서 읽는다. 야간 작업도 마찬가지로 "로드됨"이
-    아니라 "최근에 돌았나"를 묻는다 - claude-mem 은 버전이 최신인 채로 두 달
-    아무것도 기록하지 않았다.
+    The hook is fail-open, so a broken one never blocks a session. That silence
+    is the danger, so failures are logged and read back here. The nightly job is
+    asked the same way - not "is it loaded" but "did it run recently" - because
+    claude-mem sat at the newest version and recorded nothing for two months.
     """
     out: list[tuple[str, str, str]] = []
     state = LLMWIKI_STATE
@@ -268,15 +275,17 @@ def check_llmwiki_capture(_root: Path) -> list[tuple[str, str, str]]:
 
     errlog = LLMWIKI_ERRLOG
     if errlog.is_file():
-        # 로그는 append 전용이고 아무것도 정리하지 않는다. 창이 없으면 한 번의
-        # 일시적 실패가 영원히 stale 로 남아 매주 알림을 울리고, 사람은 그
-        # 알림을 무시하게 된다. 무시하는 습관이 두 달짜리 사고를 만들었다.
+        # The log is append-only and nothing prunes it. Without a window a single
+        # transient failure stays stale forever, fires a weekly alert, and the
+        # human learns to ignore it. That habit is what caused the two-month
+        # incident.
         cutoff = (datetime.now(timezone.utc)
                   - timedelta(days=CAPTURE_WINDOW_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        # 앞 필드가 타임스탬프인 줄만 센다. 부분 기록으로 앞이 잘린 줄은
-        # ASCII 에서 글자가 숫자보다 뒤라 어떤 cutoff 보다도 크게 비교되어
-        # 영원히 '최근 실패' 로 남는다. 매주 울리는 경보를 무시하게 되면
-        # 거짓 정상과 결과가 같다.
+        # Only count lines whose first field is a timestamp. A line whose head
+        # was truncated by a partial write compares greater than any cutoff,
+        # because letters sort after digits in ASCII, and so stays a 'recent
+        # failure' forever. Learning to ignore a weekly alarm ends in the same
+        # place as a false green.
         recent = []
         for ln in errlog.read_text(errors="replace").splitlines():
             head = ln.split("\t", 1)[0]
@@ -287,10 +296,11 @@ def check_llmwiki_capture(_root: Path) -> list[tuple[str, str, str]]:
                         f"훅 실패 {len(recent)}건 (최근 {CAPTURE_WINDOW_DAYS}일) "
                         f"— 마지막: {recent[-1][:110]}"))
 
-    # 워터마크가 claude-mem 을 따라잡고 있나. 벌어지면 적재가 멈춘 것이다.
-    # 이 머신의 키만 본다. max() 를 쓰면 동기화된 다른 머신의 값이나
-    # hostname 변경으로 남은 옛 키가 우리 정지를 가린다 - 남의 최신 값 때문에
-    # 한 건도 적재하지 않은 채 "적재 최신" 이 나온다.
+    # Is the watermark keeping up with claude-mem? A gap means ingest stopped.
+    # Only this machine's key is read. max() would let a synced value from
+    # another machine, or an old key left behind by a hostname change, hide our
+    # stall - someone else's newest value reports "ingest current" while we
+    # ingested nothing at all.
     key = f"claude-mem:{_llmwiki_host()}"
     try:
         marks = json.loads((state / "state.json").read_text())["watermark"]
@@ -310,20 +320,21 @@ def check_llmwiki_capture(_root: Path) -> list[tuple[str, str, str]]:
         else:
             behind = newest - watermark
             if behind < 0:
-                # 워터마크가 db 를 앞선다. claude-mem 재설치나 db 복원으로
-                # id 가 1부터 다시 시작하면 이렇게 되고, ingest 의
-                # WHERE s.id > watermark 는 그 뒤로 영원히 아무것도 못 맞춘다.
-                # 음수를 그냥 두면 임계값을 못 넘어 '적재 최신' 이 되고,
-                # session-capture 는 새 db 가 잘 기록되니 초록이다.
+                # The watermark is ahead of the db. A claude-mem reinstall or a
+                # db restore restarts ids at 1, and ingest's
+                # WHERE s.id > watermark then matches nothing ever after.
+                # Left negative it cannot cross the threshold, so it reads as
+                # 'ingest current', and session-capture is green because the new
+                # db records fine.
                 out.append(("llmwiki-capture", "stale",
                             f"워터마크({watermark})가 db 최신 id({newest})보다 앞선다 — "
                             f"db 가 교체됐다. 적재가 영구히 멈춘 상태이므로 "
                             f"state.json 의 워터마크를 리셋해야 한다"))
                 behind = None
-            # 고정 임계값만 쓰면 새 머신에서 정지가 가려진다. db 가 200건
-            # 미만일 때는 한 건도 적재하지 않아도 임계값을 못 넘어 정상으로
-            # 읽히고, db 가 커질 때까지 계속 조용하다. 절대값과 비율 중
-            # 엄격한 쪽을 쓴다.
+            # A fixed threshold alone hides a stall on a new machine. Under 200
+            # rows in the db, ingesting nothing still fails to cross it and
+            # reads as healthy, and it stays quiet until the db grows. Take
+            # whichever of the absolute value and the ratio is stricter.
             limit = min(200, max(10, newest // 4))
             if behind is None:
                 pass
@@ -334,25 +345,28 @@ def check_llmwiki_capture(_root: Path) -> list[tuple[str, str, str]]:
                 out.append(("llmwiki-capture", "ok",
                             f"적재 최신 (뒤처짐 {behind}세션)"))
 
-    # 설정이 가리키는 볼트와 실제로 쓰이는 볼트가 같나. env 로만 바꾸던
-    # 시절에는 CLI 가 한쪽, 훅과 launchd 가 다른 쪽에 쓰면서 볼트가 조용히
-    # 둘로 갈라졌다. 이제 config.toml 이 정답이지만, 셸에 남은 옛 환경변수가
-    # 여전히 CLI 만 다른 곳으로 보낼 수 있다.
+    # Does the vault the config points at match the vault actually in use? Back
+    # when this was switched by env var only, the CLI wrote to one side while
+    # the hooks and launchd wrote to the other, and the vault silently split in
+    # two. config.toml is the answer now, but an old env var left in the shell
+    # can still send the CLI alone somewhere else.
     env_vault = os.environ.get("LLMWIKI_VAULT")
     if env_vault:
         out.append(("llmwiki-capture", "stale",
                     f"LLMWIKI_VAULT 가 셸에 설정돼 있다 ({env_vault}) — 훅과 launchd 는 "
                     "이 값을 보지 못한다. config.toml 의 vault 키를 쓰고 환경변수를 지워라"))
 
-    # 볼트에만 존재하는 것들. events 에서 되살아나지 않으므로, 볼트를
-    # 잃으면 여기 있는 것도 함께 사라진다. 실측으로 확인했다 - 경로를
-    # 바꾸고 compile 하니 GEN 밖의 글과 태스크 페이지가 조용히 없어졌다.
+    # Things that live only in the vault. They are not rebuilt from events, so
+    # losing the vault loses these too. Confirmed by measurement - after
+    # changing the path and running compile, notes outside GEN and the task
+    # pages quietly disappeared.
     vault = _llmwiki_vault(state)
 
-    # 교체 경고는 compile 이 stderr 로 한 번 내고 끝이다. 야간 작업이 처음
-    # 알아챘다면 그 한 줄은 /tmp/llmwiki.err 에 들어가고 이후 실행은 조용하다.
-    # state 가 기억하는 마지막 컴파일 볼트와 설정이 가리키는 볼트를 여기서
-    # 대보면 주간 검사가 계속 보여준다.
+    # compile emits the replacement warning to stderr once and that is it. If
+    # the nightly job noticed first, that one line went into /tmp/llmwiki.err
+    # and every later run is silent. Comparing the last compiled vault that
+    # state remembers against the vault the config points at keeps the weekly
+    # check showing it.
     try:
         last = str(json.loads((state / "state.json").read_text()).get("vault", "") or "")
     except Exception:
@@ -362,8 +376,9 @@ def check_llmwiki_capture(_root: Path) -> list[tuple[str, str, str]]:
                     f"마지막으로 컴파일한 볼트는 {last} 인데 설정은 {vault} 를 가리킨다 — "
                     f"직접 쓴 글과 tasks/ 는 옛 볼트에만 있다"))
 
-    # 교체된 옛 볼트에 내용이 남아 있나. 승인 절차 대신 이걸 묻는다 -
-    # 지우거나 합치면 저절로 조용해지고, 남아 있는 동안만 알린다.
+    # Is there content left in the replaced old vault? This is asked instead of
+    # an approval step - delete or merge it and this goes quiet by itself, and
+    # it only reports while something is still there.
     try:
         stranded = json.loads((state / "state.json").read_text()).get("vaults_previous", []) or []
     except Exception:
@@ -371,13 +386,14 @@ def check_llmwiki_capture(_root: Path) -> list[tuple[str, str, str]]:
     current = str(vault.resolve()) if vault else ""
     for previous in [v for v in stranded if v and v != current]:
         old_vault = Path(previous)
-        # .md 만 보면 bases/*.base 나 사람이 넣은 첨부만 남은 볼트를
-        # "비었다" 고 읽는다. 표식 파일과 디렉터리를 뺀 나머지가 하나라도
-        # 있으면 잃을 것이 있다고 본다.
-        # 현재 볼트가 옛 볼트 안에 있을 수 있다 (예: ~/x/vault → ~/x/vault/wiki).
-        # 그러면 옛 경로를 훑을 때 살아있는 볼트의 파일이 잡히고, "옮기거나
-        # 지워라" 가 살아있는 볼트를 지우라는 말이 된다 - 해소할 수 없는
-        # 경보다. 현재 볼트 아래는 세지 않는다.
+        # Looking at .md only would read a vault holding just bases/*.base or
+        # hand-added attachments as "empty". If anything at all remains after
+        # excluding the stamp file and directories, there is something to lose.
+        # The current vault may sit inside the old one (e.g. ~/x/vault →
+        # ~/x/vault/wiki). Walking the old path would then pick up files of the
+        # live vault, and "move or delete it" would mean deleting the live vault
+        # - an alarm that can never be cleared. Nothing under the current vault
+        # is counted.
         here = Path(current) if current else None
         leftovers = [
             f for f in old_vault.rglob("*")
@@ -392,9 +408,10 @@ def check_llmwiki_capture(_root: Path) -> list[tuple[str, str, str]]:
 
     if vault and vault.is_dir():
         binds = _binding_task_ids(state / "bindings.ndjson")
-        # 태스크 페이지는 제목이 있으면 T-0001-제목.md, 없으면 T-0001.md 다
-        # (tasks.py:59). '-' 로 잘라 앞 두 조각을 붙이면 후자가 'T-0001.md' 가
-        # 되어 바인딩과 영원히 어긋나고, 멀쩡한 상태를 고아로 신고한다.
+        # A task page is T-0001-title.md when it has a title and T-0001.md when
+        # it does not (tasks.py:59). Splitting on '-' and joining the first two
+        # pieces turns the latter into 'T-0001.md', which never again matches a
+        # binding and reports a healthy state as an orphan.
         have = {m.group(1) for m in
                 (re.match(r"(T-\d+)", p.name) for p in (vault / "tasks").glob("T-*.md"))
                 if m} if (vault / "tasks").is_dir() else set()
@@ -411,8 +428,9 @@ def check_llmwiki_capture(_root: Path) -> list[tuple[str, str, str]]:
             out.append(("llmwiki-capture", "stale",
                         f"볼트가 다른 경로에서 옮겨졌다 — 직접 쓴 글과 tasks/ 를 확인하라"))
 
-    # 뷰어가 실제로 응답하나. 프로세스가 살아 있어도 포트가 죽어 있을 수 있고,
-    # tmux 안에서 돌던 시절에는 창이 닫히면 조용히 사라졌다.
+    # Does the viewer actually respond? The process can be alive while the port
+    # is dead, and back when it ran inside tmux it quietly vanished whenever the
+    # window was closed.
     web_plist = LLMWIKI_PLIST.with_name("com.yongjae.llmwiki-web.plist")
     if web_plist.exists():
         try:
@@ -424,7 +442,7 @@ def check_llmwiki_capture(_root: Path) -> list[tuple[str, str, str]]:
         else:
             out.append(("llmwiki-capture", "ok", f"뷰어 응답 {code} (:{LLMWIKI_PORT})"))
 
-    # 야간 작업이 최근에 돌았나.
+    # Did the nightly job run recently?
     plist = LLMWIKI_PLIST
     snaps = sorted((state / "snapshots").glob("*")) if (state / "snapshots").is_dir() else []
     if not plist.exists():
@@ -441,21 +459,23 @@ def check_llmwiki_capture(_root: Path) -> list[tuple[str, str, str]]:
 
 
 def check_orphaned_cache(_root: Path) -> list[tuple[str, str, str]]:
-    """Claude Code 는 .orphaned_at 을 찍지만 지우지 않는다.
+    """Claude Code stamps .orphaned_at but never deletes anything.
 
-    `claude plugin prune` 은 의존성 플러그인만 보고 버전 캐시는 건드리지 않는다.
-    편집마다 버전이 오르는 로컬 플러그인에서 계속 쌓인다. 보고만 한다 - 삭제는
-    되돌릴 수 없고 실행 중인 세션이 그 경로를 읽고 있을 수 있다.
+    `claude plugin prune` only looks at dependency plugins and leaves the
+    version cache alone. It keeps piling up for a local plugin whose version is
+    bumped on every edit. This only reports - deletion is irreversible and a
+    running session may be reading that path.
     """
     if not CACHE_ROOT.is_dir():
         return [("orphaned-cache", "skip", "캐시 루트 없음")]
 
     out: list[tuple[str, str, str]] = []
 
-    # 중단된 설치가 남긴 임시 트리. directory 소스를 설치하면 Claude Code 가
-    # 저장소 전체를 temp_local_* 로 복사하는데, 그 사이에 프로세스가 죽으면
-    # 그대로 남는다. 실측에서 개발 저장소 하나가 49GB 를 남겼고 디스크 여유가
-    # 3.3GB 까지 떨어졌다. 아무도 참조하지 않으므로 지워도 안전하다.
+    # Temp trees left behind by an interrupted install. Installing a directory
+    # source makes Claude Code copy the whole repo into temp_local_*, and if the
+    # process dies mid-copy it just stays. Measured: one dev repo left 49GB
+    # behind and free disk fell to 3.3GB. Nothing references them, so deleting
+    # is safe.
     temps = [d for d in CACHE_ROOT.glob("temp_local_*") if d.is_dir()]
     if temps:
         size = sum(f.stat().st_size for d in temps for f in d.rglob("*") if f.is_file())
@@ -463,8 +483,9 @@ def check_orphaned_cache(_root: Path) -> list[tuple[str, str, str]]:
                     f"중단된 설치 잔해 {len(temps)}개 {size // 1024 // 1024}MB — "
                     f"참조되지 않는다. rm -rf {CACHE_ROOT}/temp_local_*"))
 
-    # 버전 캐시는 marketplace/plugin/version 세 단계다. 그보다 얕거나 깊은
-    # 경로의 .orphaned_at 은 다른 도구의 마커이므로 세지 않는다.
+    # The version cache is three levels: marketplace/plugin/version. An
+    # .orphaned_at at a shallower or deeper path is another tool's marker and is
+    # not counted.
     total = count = 0
     for marker in CACHE_ROOT.glob("*/*/*/.orphaned_at"):
         version_dir = marker.parent
@@ -485,34 +506,37 @@ def _plugin_version(root: Path) -> str | None:
 
 
 def check_duplicate_checkouts(_root: Path) -> list[tuple[str, str, str]]:
-    """같은 저장소가 두 곳에 독립적으로 체크아웃돼 있나.
+    """Is the same repository checked out independently in two places?
 
-    claude.sh 는 ui-clone-skills 를 ~/.local/share 에 클론하지만 개발은
-    ~/Documents 에서 하기 쉽다. 이 머신은 전자가 후자를 가리키는 심링크라
-    하나지만, 새 머신에서는 각각 독립된 클론이 될 수 있다. 그러면 한쪽에서
-    고친 것이 다른 쪽에 가지 않고, 도구는 조용히 옛 쪽을 읽는다.
+    claude.sh clones ui-clone-skills into ~/.local/share, but development tends
+    to happen in ~/Documents. On this machine the former is a symlink to the
+    latter so there is only one, but on a new machine each can end up an
+    independent clone. Then a fix on one side never reaches the other, and the
+    tool quietly reads the old one.
 
-    심링크로 이어져 있으면 같은 실체이므로 보고하지 않는다.
+    Joined by a symlink means one and the same thing, so that is not reported.
     """
-    # 개발 체크아웃 경로는 이름이 바뀐다 - ui-skills 는 실제로 ui-clone-skills
-    # 로 바뀌었다. 한 이름만 박아두면 그 뒤로는 아무것도 비교하지 않으면서
-    # 조용히 통과한다. 후보를 훑어 실재하는 것을 쓴다.
+    # The dev checkout path gets renamed - ui-skills did in fact become
+    # ui-clone-skills. Hardcoding a single name means comparing nothing from
+    # then on while quietly passing. Scan the candidates and use the one that
+    # exists.
     checkouts = [Path.home() / "Documents/ui-clone-skills",
                  Path.home() / "Documents/ui-skills"]
     dev = next((p for p in checkouts if p.is_dir()), None)
     if dev is None:
-        # 아무 줄도 내지 않으면 "검사했고 문제없음" 과 구분되지 않는다.
-        # 검사하지 않았다는 사실 자체를 말한다.
+        # Emitting no line at all is indistinguishable from "checked, no
+        # problem". State the fact that nothing was checked.
         return [("duplicate-checkout", "skip",
                  "개발 체크아웃을 찾지 못했다: "
                  + ", ".join(str(p) for p in checkouts))]
     out = []
 
-    # 플러그인을 실제로 먹이는 경로를 본다. 이름을 박아두면 마켓플레이스가
-    # 제3의 경로를 가리킬 때 서로 일치하는 엉뚱한 쌍만 보며 ok 를 낸다.
-    # 실측: 소스는 ~/.local/share/ui-clone-skills-claude-src 라는 분리된
-    # 복사본(git 도 심링크도 아님)이고 plugin.json 이 0.7.25 인데 개발
-    # 체크아웃은 0.7.26 이었다. 이후 커밋은 플러그인에 닿지 않는다.
+    # Look at the path that actually feeds the plugin. Hardcoding the name means
+    # that when the marketplace points at a third path, only an irrelevant pair
+    # that happens to agree gets compared and ok is emitted. Measured: the
+    # source was a detached copy at ~/.local/share/ui-clone-skills-claude-src
+    # (neither git nor a symlink) with plugin.json at 0.7.25, while the dev
+    # checkout was 0.7.26. Later commits never reach the plugin.
     known = _load_json(KNOWN_MARKETPLACES) or {}
     for market, entry in sorted(known.items()):
         src = (entry.get("source") or {})
@@ -551,7 +575,7 @@ def check_duplicate_checkouts(_root: Path) -> list[tuple[str, str, str]]:
 
 
 def check_plugin_versions(_root: Path) -> list[tuple[str, str, str]]:
-    """캐시에 여러 버전이 남아 있으면 구버전이 아직 참조될 수 있다."""
+    """Several versions left in the cache mean an old one may still be used."""
     installed = _load_json(INSTALLED_PLUGINS)
     if installed is None:
         return [("plugin-drift", "skip", "installed_plugins.json 없음")]
@@ -613,18 +637,20 @@ def _tree_kib(path: Path) -> int:
 
 
 def check_local_plugin_cache(_root: Path) -> list[tuple[str, str, str]]:
-    """directory 소스 플러그인이 실제로 배달됐고, 캐시가 소스와 같나.
+    """Was the directory-source plugin delivered, and does the cache match it?
 
-    `claude plugin install` 은 선언된 소스 경로를 캐시로 복사하고 런타임은
-    그 사본만 읽는다. 실측으로 확인한 두 가지:
+    `claude plugin install` copies the declared source path into the cache and
+    the runtime reads only that copy. Two things confirmed by measurement:
 
-    - 최상위 심링크는 따라가지 않는다. 심링크 프로젝션을 소스로 등록하면
-      설치는 성공을 보고하면서 캐시에 아무것도 만들지 않는다.
-    - `.gitignore` 는 적용되지 않는다. 소스에 있는 것은 전부 복사된다.
+    - Top-level symlinks are not followed. Register a symlink projection as the
+      source and the install reports success while creating nothing in the
+      cache.
+    - `.gitignore` is not applied. Everything in the source is copied.
 
-    그래서 "설치됨"과 "배달됨"은 다른 사실이고, 이 검사는 후자를 본다.
-    `claude plugin details` 는 마켓플레이스 매니페스트를 읽으므로 캐시가
-    비어 있어도 스킬 목록을 정상 출력한다 — 판정 근거로 쓸 수 없다.
+    So "installed" and "delivered" are different facts, and this check looks at
+    the latter. `claude plugin details` reads the marketplace manifest, so it
+    prints a normal skill list even when the cache is empty — it cannot be used
+    as evidence.
     """
     known = _load_json(KNOWN_MARKETPLACES)
     if known is None:
@@ -640,11 +666,12 @@ def check_local_plugin_cache(_root: Path) -> list[tuple[str, str, str]]:
             out.append(("local-plugin-cache", "missing", f"{market} 소스 경로 없음: {repo}"))
             continue
 
-        # marketplace.json 의 source 가 판정 방식을 가른다. 하위 경로를 가리키면
-        # Claude Code 가 그 부분을 캐시로 복사하므로 캐시가 묵을 수 있다. './' 로
-        # 저장소 루트를 가리키면 소스를 직접 참조하고 캐시는 비어 있는 것이 정상이다.
-        # 실측: dotfiles-local 은 './plugins/local-skills' 라 캐시에 19개,
-        # voidmatcha 는 './' 라 캐시 0개인데 plugin details 는 스킬 4개를 본다.
+        # The source in marketplace.json decides how this is judged. Pointing at
+        # a subpath makes Claude Code copy that part into the cache, so the cache
+        # can go stale. Pointing at the repo root with './' references the source
+        # directly and an empty cache is normal. Measured: dotfiles-local is
+        # './plugins/local-skills' and has 19 in the cache; voidmatcha is './'
+        # and has 0 in the cache, yet plugin details sees 4 skills.
         mkt = _load_json(repo / ".claude-plugin" / "marketplace.json") or {}
         sources = {e.get("name"): (e.get("source") or "") for e in mkt.get("plugins", [])}
         installed = (_load_json(INSTALLED_PLUGINS) or {}).get("plugins", {})
@@ -658,8 +685,9 @@ def check_local_plugin_cache(_root: Path) -> list[tuple[str, str, str]]:
 
         for plugin_dir in plugin_dirs:
             manifest = _load_json(plugin_dir / ".claude-plugin" / "plugin.json") or {}
-            # 이름은 매니페스트가 선언한다. 디렉터리명과 다를 수 있고,
-            # 실제로 ui-skills/ 안의 플러그인 이름은 ui-clone-skills 다.
+            # The manifest declares the name. It can differ from the directory
+            # name - the plugin inside ui-skills/ is in fact named
+            # ui-clone-skills.
             name = manifest.get("name") or plugin_dir.name
             version = manifest.get("version", "")
             declared = str(sources.get(name, ""))
@@ -708,9 +736,10 @@ def check_local_plugin_cache(_root: Path) -> list[tuple[str, str, str]]:
 
 
 def parse_upstream_skills(skills_sh: Path) -> list[dict]:
-    """설치 대상과 핀된 URL 을 skills.sh 에서 직접 읽는다.
+    """Read the install targets and pinned URLs straight from skills.sh.
 
-    목록을 복제하면 두 곳이 갈라진다. skills.sh 가 유일한 선언이다.
+    Duplicating the list makes the two copies diverge. skills.sh is the one
+    declaration.
     """
     text = skills_sh.read_text(encoding="utf-8")
     refs = dict(re.findall(r'^([A-Z_]+)_REF="\$\{[A-Z_]+:-([0-9a-f]{40})\}"', text, re.M))
@@ -735,10 +764,10 @@ def parse_upstream_skills(skills_sh: Path) -> list[dict]:
 
 
 def check_upstream_skills(root: Path, offline: bool = False) -> list[tuple[str, str, str]]:
-    """핀된 외부 스킬이 로컬에서 수정됐나.
+    """Has a pinned upstream skill been modified locally?
 
-    skills.sh 는 이제 덮어쓰기 전에 백업하지만, 백업이 생긴다는 것 자체가
-    "업스트림에 반영할지 결정하라"는 신호다.
+    skills.sh now backs up before overwriting, but a backup appearing at all is
+    itself the signal to "decide whether to push this upstream".
     """
     skills_sh = root / "scripts" / "skills.sh"
     if not skills_sh.is_file():
@@ -772,7 +801,7 @@ def check_upstream_skills(root: Path, offline: bool = False) -> list[tuple[str, 
 
 
 def check_skill_pins(root: Path) -> list[tuple[str, str, str]]:
-    """핀은 안전하지만 영원히 두면 그것도 드리프트다."""
+    """Pinning is safe, but leaving a pin forever is drift of its own."""
     skills_sh = root / "scripts" / "skills.sh"
     if not skills_sh.is_file():
         return []
@@ -816,7 +845,7 @@ def main() -> int:
                 results.extend(fn(root, offline=args.offline))
             else:
                 results.extend(fn(root))
-        except Exception as exc:  # 검사 하나가 죽어도 나머지는 낸다
+        except Exception as exc:  # one dead check still emits the rest
             results.append((name, "error", f"검사 실패: {exc}"))
 
     if args.format == "json":

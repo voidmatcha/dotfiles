@@ -53,12 +53,14 @@ from pathlib import Path
 
 root = Path(sys.argv[1])
 hangul = re.compile(r"[\u3131-\u318e\uac00-\ud7a3]")
-# humanize-korean 은 AI 가 쓴 한글을 윤문하는 스킬이다. 본문이 한국어인 것이
-# 이 테스트가 허용하는 "Korean-specific surface" 그 자체다.
-# llmwiki-curate 는 한글 볼트를 편집한다. 절 제목("## 실패한 시도 (다시 하지
-# 말 것)")과 CLI 출력이 한글이라 지시문이 그 문자열을 그대로 인용해야 한다.
-# job-watch 도 같은 볼트를 쓴다. 설계 노트 위키링크([[2026-08-15-채용-아카이빙-
-# 설계]])와 뷰 이름("관찰 중 / 지원 예정 / 지원함")이 한글이라 그대로 인용한다.
+# humanize-korean is the skill that polishes AI-written Korean. Its body being
+# Korean is itself the "Korean-specific surface" this test allows.
+# llmwiki-curate edits a Korean vault. Its section headings ("## 실패한 시도
+# (다시 하지 말 것)") and CLI output are Korean, so the instructions have to
+# quote those strings verbatim.
+# job-watch uses the same vault. The design-note wikilink
+# ([[2026-08-15-채용-아카이빙-설계]]) and the view names ("관찰 중 / 지원 예정 /
+# 지원함") are Korean, so they are quoted as-is.
 allowed_trees = {"handover", "humanize-korean", "job-watch",
                  "korean-technical-terminology", "llmwiki-curate",
                  "session-feedback-audit"}
@@ -90,6 +92,22 @@ PY
   run grep -RInE \
     '(/Users/[[:alnum:]_.-]+|/home/[[:alnum:]_.-]+)|git[[:space:]]+(reset[[:space:]]+--hard|clean[[:space:]]+-[^[:space:]]*f)' \
     "$REPO_ROOT/plugins/local-skills/skills"
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+}
+
+@test "no plugin file carries a maintainer home path, quarantine included" {
+  # The check above only covers the published tree. Quarantined means "not
+  # shipped as a skill", not "not published" — this repository is public, so an
+  # absolute path in a quarantined file leaks the maintainer's username just as
+  # readily. One had been sitting there, and nothing caught it because the scan
+  # stopped at skills/.
+  #
+  # Destructive git patterns are deliberately not checked here: a quarantined
+  # tool holding a dangerous command is the reason it is quarantined, not a
+  # defect to fix.
+  run grep -RInE '/Users/[[:alnum:]_.-]+|/home/[[:alnum:]_.-]+' \
+    "$REPO_ROOT/plugins/local-skills"
   [ "$status" -eq 1 ]
   [ -z "$output" ]
 }

@@ -68,11 +68,11 @@ def quote(value) -> str:
 
 
 def render(meta: dict, body: str) -> str:
-    """parse 의 정확한 역함수여야 한다.
+    """Must be the exact inverse of parse.
 
-    닫는 구분자 뒤의 개행이 없으면 두 번째 라운드트립에서 본문 첫 줄이
-    구분자에 붙어 프론트매터 전체가 깨진다. parse 가 lines[end+1:] 를
-    돌려주므로 render 는 반드시 '---\\n' 으로 끝내야 짝이 맞는다.
+    Without the newline after the closing delimiter, the second round trip glues
+    the body's first line onto the delimiter and the whole frontmatter breaks.
+    parse returns lines[end+1:], so render must end with '---\\n' to match.
     """
     lines = [_DELIM]
     lines += [f"{key}: {quote(value)}" for key, value in meta.items()]

@@ -10,10 +10,10 @@ _HERE = Path(__file__).parent
 
 
 def _load(name: str):
-    """이미 로드된 모듈은 재사용한다.
+    """Reuse an already-loaded module.
 
-    캐시하지 않으면 상호 참조가 무한 재귀가 된다. compiler 가 queries 를,
-    queries 가 compiler 를 부르는 구조에서 실제로 멈췄다.
+    Without the cache, mutual imports turn into infinite recursion. It actually
+    hung on the structure where compiler calls queries and queries calls compiler.
     """
     key = f"llmwiki_{name}"
     if key in sys.modules:
@@ -43,7 +43,7 @@ def read_page(path: Path) -> tuple[dict, str]:
 
 
 def write_page(path: Path, meta: dict, body: str) -> bool:
-    """내용이 바뀐 경우에만 쓴다. Obsidian이 무의미한 변경을 감지하지 않게 한다."""
+    """Write only when the content changed, so Obsidian sees no pointless edits."""
     text = frontmatter.render(meta, body)
     if path.exists() and path.read_text(encoding="utf-8") == text:
         return False

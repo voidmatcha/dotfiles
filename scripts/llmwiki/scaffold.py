@@ -8,10 +8,10 @@ _HERE = Path(__file__).parent
 
 
 def _load(name: str):
-    """이미 로드된 모듈은 재사용한다.
+    """Reuse an already-loaded module.
 
-    캐시하지 않으면 상호 참조가 무한 재귀가 된다. compiler 가 queries 를,
-    queries 가 compiler 를 부르는 구조에서 실제로 멈췄다.
+    Without the cache, mutual imports turn into infinite recursion. It actually
+    hung on the structure where compiler calls queries and queries calls compiler.
     """
     key = f"llmwiki_{name}"
     if key in sys.modules:
@@ -60,8 +60,8 @@ views:
         direction: ASC
 """
 
-# 차단 목록은 첫 compile 전에 있어야 한다. 실제 데이터에서 이 넷이 페이지를
-# 만들었다: yongjae(홈 디렉터리), Documents, workspace, tmp.
+# The blocklist has to exist before the first compile. In the real data these
+# four created pages: yongjae (the home directory), Documents, workspace, tmp.
 CONFIG_SEED = """# llmwiki 설정. 스펙 5.4 참조.
 #
 # 백업은 두 곳이다. 볼트가 파생물이라는 말은 절반만 맞다.

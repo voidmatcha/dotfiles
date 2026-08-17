@@ -54,13 +54,14 @@ class CompilerTest(unittest.TestCase):
             self.assertFalse((vault / "projects" / "yongjae.md").exists())
 
     def test_blocked_work_lands_in_unfiled_instead_of_vanishing(self) -> None:
-        """차단은 페이지를 막는 것이지 기록을 지우는 것이 아니다.
+        """Blocking suppresses a page; it does not erase the record.
 
-        블록리스트는 cwd 의 마지막 이름이 프로젝트가 되는 claude-mem 의 방식
-        때문에 생긴 잡동사니 페이지를 막으려고 만들었다. 그런데 그 이름들
-        안에 실제 작업 235건이 들어 있었고 - 개인 블로그, purplemux 수정,
-        멘토 후보 선정 - 전부 어느 페이지에도 나타나지 않았다. 얕은
-        디렉터리에서 세션을 시작했다는 것이 기록을 잃을 이유가 될 수 없다.
+        The blocklist exists to stop the junk pages that come from
+        claude-mem taking the last component of cwd as the project name.
+        But those names held 235 real work sessions - a personal blog,
+        purplemux fixes, picking mentor candidates - and none of them
+        showed up on any page. Starting a session from a shallow
+        directory is not a reason to lose the record.
         """
         with tempfile.TemporaryDirectory() as d:
             home, vault = Path(d) / "h", Path(d) / "v"
@@ -72,7 +73,7 @@ class CompilerTest(unittest.TestCase):
                           "원래 어디서 왔는지 알 수 없으면 되돌릴 수 없다")
 
     def test_mapping_rescues_work_out_of_unfiled(self) -> None:
-        """미분류는 되돌릴 수 있어야 한다. 그게 차단과의 차이다."""
+        """Unfiled must be reversible. That is what separates it from blocking."""
         with tempfile.TemporaryDirectory() as d:
             home, vault = Path(d) / "h", Path(d) / "v"
             seed(home, "Documents", 30)
@@ -228,12 +229,13 @@ class IdempotenceTest(unittest.TestCase):
 
 
 class VaultIdentityTest(unittest.TestCase):
-    """볼트 교체를 조용히 넘기지 않는다.
+    """Never let a vault swap pass silently.
 
-    실측: 볼트 경로를 바꾸고 compile 하면 새 위치에 볼트가 통째로 생기고
-    옛 볼트는 디스크에 그대로 남는다. GEN 영역은 events 에서 되살아나지만
-    마커 밖의 글 - 지금 상태, 실패한 시도, 결정과 근거 - 과 태스크 페이지는
-    볼트에만 있어서 사라진다. 아무 경고도 없었다.
+    Measured: change the vault path, run compile, and a whole new vault
+    appears at the new location while the old one stays on disk. The GEN
+    regions are rebuilt from events, but prose outside the markers - the
+    "지금 상태", "실패한 시도", "결정과 근거" sections - and the task pages
+    live only in the vault, so they disappear. There was no warning at all.
     """
 
     def test_first_compile_stamps_the_vault(self) -> None:
@@ -253,7 +255,7 @@ class VaultIdentityTest(unittest.TestCase):
             self.assertEqual(CP.run(home, vault, CFG.Config()).get("vault_warning"), None)
 
     def test_compiling_into_a_vault_stamped_elsewhere_warns(self) -> None:
-        """다른 곳에서 온 볼트에 쓰면 사람이 쓴 글을 덮어쓸 수 있다."""
+        """Writing into a vault stamped elsewhere can overwrite human-written prose."""
         with tempfile.TemporaryDirectory() as d:
             home, vault = Path(d) / "h", Path(d) / "v"
             seed(home, "proj", 5)
@@ -265,13 +267,15 @@ class VaultIdentityTest(unittest.TestCase):
             self.assertIn(str(vault), result["vault_warning"])
 
     def test_repointing_config_to_a_fresh_vault_warns(self) -> None:
-        """볼트 쪽 표식만으로는 이 경우를 잡을 수 없다.
+        """The vault-side stamp alone cannot catch this case.
 
-        표식은 볼트와 함께 움직이므로 '옮긴 볼트' 는 잡지만 '설정을 빈 새
-        경로로 돌린' 경우는 새 위치에 표식을 찍고 조용히 넘어간다. 그런데
-        후자가 실제로 측정된 사고 - 사람이 쓴 글과 tasks/ 를 남겨둔 채 새
-        볼트가 통째로 생긴다. 교체를 가로질러 변하지 않는 것은 home 이므로
-        마지막으로 컴파일한 볼트 경로를 거기에 적어야 한다.
+        The stamp travels with the vault, so it catches "the vault was
+        moved" but not "the config was repointed at an empty new path" -
+        that just stamps the new location and passes silently. Yet the
+        latter is the accident actually observed: a whole new vault
+        appears while the human-written prose and tasks/ are left behind.
+        home is the one thing that does not change across a swap, so the
+        last compiled vault path has to be recorded there.
         """
         with tempfile.TemporaryDirectory() as d:
             home, a, b = Path(d) / "h", Path(d) / "A", Path(d) / "B"
@@ -282,12 +286,13 @@ class VaultIdentityTest(unittest.TestCase):
             self.assertIn(str(a), result["vault_warning"])
 
     def test_a_failed_compile_does_not_consume_the_swap_warning(self) -> None:
-        """경고가 나오기 전에 state 를 갱신하면 실패한 실행이 그것을 삼킨다.
+        """Updating state before the warning is emitted lets a failed run eat it.
 
-        재현: A 에서 컴파일 → 쓸 수 없는 B 로 재지정 → run() 이 도중에
-        예외로 죽는다. 그런데 state 는 이미 B 라고 적혔고 경고는 출력되지
-        않았다. 권한을 고치고 다시 돌리면 아무 경고 없이 조용히 컴파일된다.
-        재지정 실패는 마운트 안 된 볼륨이나 권한 문제에서 가장 흔하다.
+        Repro: compile into A, repoint at an unwritable B, and run() dies
+        mid-way with an exception. state already says B while the warning
+        was never printed. Fix the permissions, run again, and it compiles
+        quietly with no warning at all. A failed repoint is most common
+        with an unmounted volume or a permissions problem.
         """
         with tempfile.TemporaryDirectory() as d:
             home, a, b = Path(d) / "h", Path(d) / "A", Path(d) / "B"
@@ -315,11 +320,12 @@ class VaultIdentityTest(unittest.TestCase):
             self.assertIsNone(CP.run(home, vault, CFG.Config()).get("vault_warning"))
 
     def test_vanished_stranded_vault_is_forgotten_without_a_swap(self) -> None:
-        """정리는 교체할 때만 일어나면 안 된다.
+        """Cleanup must not happen only on a swap.
 
-        목록을 교체 시점에만 손보면, 옛 볼트를 지운 뒤에도 그 경로가 state 에
-        남는다. 나중에 같은 경로에 무언가 생기면 - 기본 경로는 재사용될 만하다
-        - 이미 끝난 교체에 대한 경고가 되살아난다.
+        If the list is only touched at swap time, deleting the old vault
+        still leaves its path in state. If something later appears at that
+        same path - the default path is likely to be reused - the warning
+        for an already finished swap comes back to life.
         """
         with tempfile.TemporaryDirectory() as d:
             home, a, b = Path(d) / "h", Path(d) / "A", Path(d) / "B"
@@ -335,7 +341,7 @@ class VaultIdentityTest(unittest.TestCase):
             self.assertEqual(state["vaults_previous"], [])
 
     def test_stamp_is_not_rewritten_on_every_run(self) -> None:
-        """멱등성. 스탬프가 매번 바뀌면 compile 이 항상 변경을 만든다."""
+        """Idempotence. If the stamp changes every run, compile always writes."""
         with tempfile.TemporaryDirectory() as d:
             home, vault = Path(d) / "h", Path(d) / "v"
             seed(home, "proj", 5)

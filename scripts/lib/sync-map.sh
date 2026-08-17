@@ -1,12 +1,13 @@
 #!/bin/bash
-# 재시작이 필요한 변경을 판별한다.
+# Decide which changes require a restart.
 #
-# 이 저장소에서 가장 조용히 실패하는 자리다. claude-mem 이 두 달 밀려 있던 것도
-# 결국 "업데이트는 됐는데 적용이 안 됨"이었다. 설치 성공과 반영 완료는 다르고,
-# 그 차이를 아는 스크립트가 없었다.
+# This is the quietest failure point in the repo. claude-mem sitting two months
+# behind also came down to "it updated but never took effect". Install success
+# and the change taking effect are different things, and no script knew the
+# difference.
 #
-# 자동으로 죽이지 않는다. 작업 중인 에이전트 세션이 끊기면 되돌릴 수 없다.
-# 보고만 하고 사람이 결정한다.
+# Nothing is killed automatically. An agent session cut off mid-work cannot be
+# recovered. This only reports; the human decides.
 
 restart_note_for_path() {
   local path="$1"
@@ -26,7 +27,7 @@ restart_note_for_path() {
   esac
 }
 
-# 마지막 커밋 이후 재시작이 필요한 항목을 모은다.
+# Collect the items that need a restart since the last commit.
 restart_notes_since() {
   local baseline="$1" path note
   git -C "$DOTFILES_DIR" diff --name-only "$baseline..HEAD" 2>/dev/null | while read -r path; do

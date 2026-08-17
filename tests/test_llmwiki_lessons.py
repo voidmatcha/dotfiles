@@ -69,8 +69,8 @@ class ScoringTest(Fixture):
         self.assertIn("revert", en)
 
     def test_signals_outside_scanned_fields_are_ignored(self) -> None:
-        # request 는 사용자가 시킨 일이지 결과가 아니다. 여기 '실패'가 있다고
-        # 실패한 시도가 되지는 않는다.
+        # request is what the user asked for, not the outcome. The word
+        # "실패" appearing there does not make it a failed attempt.
         total, _ = LS.score({"request": "실패한 테스트를 되돌려줘", "learned": ""})
         self.assertEqual(total, 0)
 
@@ -172,11 +172,12 @@ class AcceptTest(Fixture):
             LS.accept(self.home, self.vault, cand, "교훈")
 
     def test_lesson_never_lands_inside_a_gen_block(self) -> None:
-        """GEN 안에 들어가면 다음 compile 이 조용히 지운다.
+        """Anything landing inside GEN is silently erased by the next compile.
 
-        절 바로 뒤가 GEN 마커인 배치여야 이 분기를 실제로 지난다. 스켈레톤
-        순서(실패한 시도 다음 결정과 근거)로는 '^## ' 가 먼저 걸려서 GEN
-        경계 코드를 지우고도 테스트가 통과한다. 뮤테이션으로 확인했다.
+        Only a layout where a GEN marker directly follows the section
+        actually exercises this branch. With the skeleton order (실패한 시도
+        followed by 결정과 근거), '^## ' matches first, so the test still
+        passes even with the GEN-boundary code deleted. Verified by mutation.
         """
         self.page("proj", body=(
             "## 지금 상태\n\n"
@@ -190,8 +191,9 @@ class AcceptTest(Fixture):
         self.assertNotIn("교훈", body[body.index("<!-- GEN:timeline -->"):])
 
     def test_lesson_survives_recompile(self) -> None:
-        # 노트는 활성 임계치를 넘어야 생긴다. 여기서는 compile 이 만든 진짜
-        # 노트여야 의미가 있어서 세션을 임계치만큼 채운다.
+        # A note is only created once the active threshold is crossed. This
+        # test is only meaningful against a real compile-produced note, so
+        # fill in as many sessions as the threshold requires.
         for i in range(self.cfg.active_threshold):
             seed(self.home, "proj", f"filler{i:03d}", "평범한 작업")
         seed(self.home, "proj", "abcdef1234", "깨뜨려서 되돌렸다")

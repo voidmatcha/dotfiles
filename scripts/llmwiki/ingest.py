@@ -12,10 +12,10 @@ _HERE = Path(__file__).parent
 
 
 def _load(name: str):
-    """이미 로드된 모듈은 재사용한다.
+    """Reuse an already-loaded module.
 
-    캐시하지 않으면 상호 참조가 무한 재귀가 된다. compiler 가 queries 를,
-    queries 가 compiler 를 부르는 구조에서 실제로 멈췄다.
+    Without the cache, mutual imports turn into infinite recursion. It actually
+    hung on the structure where compiler calls queries and queries calls compiler.
     """
     key = f"llmwiki_{name}"
     if key in sys.modules:
@@ -36,12 +36,12 @@ SOURCE = "claude-mem"
 
 
 def snapshot_db(src: Path, dst: Path) -> None:
-    """라이브 WAL을 건드리지 않고 일관된 사본을 만든다.
+    """Make a consistent copy without touching the live WAL.
 
-    원본은 반드시 mode=ro 로만 연다. 사본은 journal_mode 를 delete 로 되돌린다.
-    backup API 가 원본의 WAL 모드를 그대로 복사하는데, WAL 데이터베이스를
-    mode=ro 로 열면 -shm/-wal 을 만들 수 없어 'unable to open database file' 로
-    죽는다. 실제 268MB DB 에서 확인했다.
+    The original is opened only with mode=ro. The copy is put back to
+    journal_mode delete. The backup API copies the original's WAL mode as is, and
+    opening a WAL database with mode=ro cannot create -shm/-wal, so it dies with
+    'unable to open database file'. Confirmed on the real 268MB DB.
     """
     dst.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -59,10 +59,11 @@ def snapshot_db(src: Path, dst: Path) -> None:
         finally:
             out.close()
     except sqlite3.OperationalError:
-        # WAL 데이터베이스인데 -shm 이 없으면 mode=ro 로는 열 수 없다. 활성
-        # 연결이 하나도 없을 때 이 상태가 된다. 원본을 읽기-쓰기로 여는 것은
-        # 닫을 때 체크포인트가 돌아 본 파일을 건드리므로 금지다. 대신 파일을
-        # 그대로 복사하고 사본에서 복구시킨다.
+        # A WAL database with no -shm cannot be opened with mode=ro. It gets into
+        # that state when there is no active connection at all. Opening the
+        # original read-write is forbidden, because closing runs a checkpoint that
+        # touches the real file. Copy the files as they are and recover from the
+        # copy instead.
         _copy_files(src, dst)
     finally:
         con.close()
@@ -82,7 +83,8 @@ def _copy_files(src: Path, dst: Path) -> None:
 
 
 def rows_since(db: Path, watermark: int) -> list[dict]:
-    # 사본이므로 읽기 전용 강제가 필요 없다. 읽기 전용 보장은 snapshot_db 가 한다.
+    # This is a copy, so no read-only enforcement is needed. snapshot_db is what
+    # guarantees read-only access to the original.
     con = sqlite3.connect(db)
     con.row_factory = sqlite3.Row
     try:
@@ -156,8 +158,9 @@ def run(home: Path, db: Path, host: str | None = None) -> dict:
     imported = skipped = 0
     highest = watermark
     cwd_index = cwdmap.build(home)
-    # 이벤트를 먼저 쓰고 워터마크를 나중에 올린다. 중간에 죽어도 event_id 중복
-    # 제거가 재실행을 흡수한다. 반대 순서면 이벤트가 조용히 유실된다.
+    # Write the events first, raise the watermark after. If it dies in between,
+    # event_id deduplication absorbs the rerun. In the opposite order, events are
+    # silently lost.
     for row in rows:
         event = to_event(row, host)
         event["project"] = cwdmap.project_at(

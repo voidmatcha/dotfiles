@@ -9,10 +9,10 @@ _HERE = Path(__file__).parent
 
 
 def _load(name: str):
-    """이미 로드된 모듈은 재사용한다.
+    """Reuse an already-loaded module.
 
-    캐시하지 않으면 상호 참조가 무한 재귀가 된다. compiler 가 queries 를,
-    queries 가 compiler 를 부르는 구조에서 실제로 멈췄다.
+    Without the cache, mutual imports turn into infinite recursion. It actually
+    hung on the structure where compiler calls queries and queries calls compiler.
     """
     key = f"llmwiki_{name}"
     if key in sys.modules:
@@ -29,7 +29,7 @@ store = _load("store")
 
 
 def record(home: Path, session_id: str, cwd: str, at: str) -> bool:
-    """cwd가 바뀐 시점만 남긴다. 훅이 매 프롬프트마다 불러도 파일이 안 자란다."""
+    """Record only when cwd changed, so the file does not grow per prompt hook."""
     path = home / "cwd.ndjson"
     rows, _ = store.read_json(path)
     for row in reversed(rows):

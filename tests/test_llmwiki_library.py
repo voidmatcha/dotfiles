@@ -59,7 +59,8 @@ class IngestTest(Fixture):
         self.assertEqual(len(list((self.vault / "library").glob("*.md"))), 1)
 
     def test_identical_content_under_a_new_name_is_still_one_note(self) -> None:
-        """같은 글을 다른 이름으로 다시 던져도 위키가 늘면 안 된다."""
+        """Dropping the same text again under a different name must not grow
+        the wiki."""
         self.drop("a.md", "똑같은 본문")
         LB.ingest(self.vault)
         self.drop("b.md", "똑같은 본문")
@@ -74,7 +75,8 @@ class IngestTest(Fixture):
         self.assertEqual(len(LB.ingest(self.vault)["created"]), 1)
 
     def test_editing_a_raw_file_reports_change_instead_of_duplicating(self) -> None:
-        """오타 하나 고쳤다고 노트가 늘면, 먼저 쓴 요약이 유령이 된다."""
+        """If fixing one typo spawns another note, the summary written
+        earlier becomes a ghost."""
         self.drop("a.md", "첫 버전")
         LB.ingest(self.vault)
         self.drop("a.md", "고친 버전")
@@ -127,7 +129,7 @@ class DoneTest(Fixture):
         self.assertEqual(LB.pending(self.vault), [])
 
     def test_heading_only_does_not_count_as_filled(self) -> None:
-        """제목만 있는 노트를 done 으로 넘기면 pending 이 거짓으로 빈다."""
+        """Letting a heading-only note pass as done empties pending falsely."""
         self.drop("글.md")
         LB.ingest(self.vault)
         page = self.vault / "library" / "글.md"

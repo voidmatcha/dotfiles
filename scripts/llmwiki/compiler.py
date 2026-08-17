@@ -10,10 +10,10 @@ _HERE = Path(__file__).parent
 
 
 def _load(name: str):
-    """이미 로드된 모듈은 재사용한다.
+    """Reuse an already-loaded module.
 
-    캐시하지 않으면 상호 참조가 무한 재귀가 된다. compiler 가 queries 를,
-    queries 가 compiler 를 부르는 구조에서 실제로 멈췄다.
+    Without the cache, mutual imports turn into infinite recursion. It actually
+    hung on the structure where compiler calls queries and queries calls compiler.
     """
     key = f"llmwiki_{name}"
     if key in sys.modules:
@@ -36,11 +36,11 @@ SKELETON = "## 지금 상태\n\n## 실패한 시도 (다시 하지 말 것)\n\n#
 
 
 def safe_slug(raw: str) -> str:
-    """파일명으로 쓸 수 있게 만든다.
+    """Make a value usable as a filename.
 
-    claude-mem 의 project 에는 'ui-skills/2026-06-27-adcker4' 같은 워크트리
-    경로가 들어온다. 그대로 쓰면 하위 디렉터리가 생겨 페이지가 흩어지고
-    index 링크가 깨진다. 실제 데이터에서 28개 중 5개가 이 형태였다.
+    claude-mem's project field carries worktree paths such as
+    'ui-skills/2026-06-27-adcker4'. Used as is, it creates subdirectories, so
+    pages scatter and index links break. In the real data 5 of 28 had this shape.
     """
     return _UNSAFE_SLUG.sub("-", raw).strip("-") or "unnamed"
 
@@ -70,10 +70,10 @@ def bindings_view(home: Path) -> dict[str, dict]:
 
 
 def write_if_changed(page: Path, meta: dict, body: str, stamp: str) -> bool:
-    """updated 를 빼고 비교한 뒤, 실제로 바뀐 경우에만 updated 를 갱신한다.
+    """Compare with updated excluded, and bump updated only if something changed.
 
-    updated 를 무조건 새로 쓰면 compile 을 두 번 돌릴 때마다 모든 페이지가
-    달라져 멱등성이 깨진다. 스펙 검증 1번이 이것을 잡는다.
+    Always rewriting updated makes every page differ on a second compile run,
+    which breaks idempotence. Spec verification item 1 catches this.
     """
     previous, _ = vaultio.read_page(page)
     candidate = {k: v for k, v in meta.items() if k != "updated"}
@@ -95,35 +95,36 @@ STAMP = ".llmwiki-vault"
 
 
 def _check_vault_identity(home: Path, vault: Path) -> tuple[str | None, bool, str]:
-    """이 볼트가 전에도 여기였는지 확인하고, 아니면 경고를 돌려준다.
+    """Check whether this vault was here before, and return a warning if not.
 
-    볼트는 순수한 파생물이 아니다. GEN 마커 안쪽은 events 에서 다시 만들
-    수 있지만 마커 밖의 글 - 지금 상태, 실패한 시도, 결정과 근거 - 과
-    tasks/ 아래 태스크 페이지는 볼트에만 존재한다. 경로를 바꾸고 compile
-    하면 새 위치에 볼트가 생기고 그것들이 조용히 사라진다. 실측했다.
+    The vault is not a pure derivative. What is inside the GEN markers can be
+    rebuilt from events, but the prose outside the markers - 지금 상태, 실패한
+    시도, 결정과 근거 - and the task pages under tasks/ exist only in the vault.
+    Change the path and compile, and a vault appears at the new location while
+    those quietly disappear. Measured for real.
 
-    스탬프는 한 번만 쓴다. 매번 갱신하면 compile 이 늘 변경을 만들어
-    멱등성이 깨진다.
+    The stamp is written once. Refreshing it every time would make compile always
+    produce a change and break idempotence.
     """
     here = str(vault.resolve())
     warning = None
 
-    # home 쪽 기록. 교체를 가로질러 변하지 않는 것은 home 뿐이라, 설정을 빈
-    # 새 경로로 돌린 경우는 여기서만 잡힌다. 볼트 쪽 표식은 볼트와 함께
-    # 움직이므로 그 경우 새 위치에 찍히고 조용히 넘어간다.
+    # The home-side record. Only home stays fixed across a swap, so pointing the
+    # config at an empty new path is caught here alone. The vault-side stamp
+    # travels with the vault, so it just gets written at the new spot in silence.
     state_path = home / "state.json"
     previous = ""
     if state_path.exists():
         try:
             previous = str(store.load_state(state_path).get("vault", "") or "")
-        except Exception:  # state 를 못 읽어도 compile 을 막지 않는다
+        except Exception:  # an unreadable state must not block compile
             previous = ""
     if previous and previous != here:
         warning = (f"마지막으로 컴파일한 볼트는 {previous} 였고 지금은 {here} 다. "
                    f"GEN 영역은 다시 만들어지지만 직접 쓴 글과 tasks/ 는 볼트에만 "
                    f"있다. 옛 볼트를 확인하라")
 
-    # 볼트 쪽 표식. 볼트를 통째로 옮기거나 복사한 경우를 잡는다.
+    # The vault-side stamp. Catches a vault moved or copied wholesale.
     stamp = vault / STAMP
     if not stamp.exists():
         vault.mkdir(parents=True, exist_ok=True)
@@ -134,10 +135,10 @@ def _check_vault_identity(home: Path, vault: Path) -> tuple[str | None, bool, st
             warning = (f"이 볼트는 {was} 에서 만들어졌고 지금은 {here} 다. "
                        f"옮긴 것이 맞으면 {stamp} 를 지워라")
 
-    # state 갱신은 호출자가 컴파일을 끝낸 뒤에 한다. 여기서 적으면 뒤에서
-    # 죽은 실행이 경고를 삼킨다 - state 는 이미 새 볼트라고 적혔는데 경고는
-    # 출력되지 못했고, 재시도는 조용히 지나간다. 재지정이 실패하는 경우는
-    # 마운트 안 된 볼륨이나 권한 문제라 드물지도 않다.
+    # The caller updates state after the compile finishes. Writing it here lets a
+    # run that dies later swallow the warning - state already says the new vault
+    # while the warning never got printed, and the retry passes silently.
+    # Repointing fails on unmounted volumes or permissions, which is not rare.
     return warning, (previous != here), previous
 
 
@@ -148,8 +149,8 @@ def run(home: Path, vault: Path, cfg) -> dict:
     for event in events:
         raw = event["project"]
         slug = cfg.resolve_project(raw)
-        # 어디서 왔는지를 잃으면 되돌릴 수 없다. mapping 으로 꺼내려면
-        # 원래 이름이 페이지에 보여야 한다.
+        # Losing where it came from makes it unrecoverable. To pull it out with
+        # a mapping, the original name has to be visible on the page.
         origin = raw if slug == config.UNFILED and raw != config.UNFILED else None
         resolved.append({**event, "project": safe_slug(slug), "origin": origin})
 
@@ -160,8 +161,8 @@ def run(home: Path, vault: Path, cfg) -> dict:
     for row in rows:
         per_project.setdefault(row["project"], []).append(row)
 
-    # 프로젝트별 열린 태스크 수. 태스크 페이지의 project 프론트매터 기준으로 센다
-    # (스펙 4.3: 크로스 프로젝트 바인딩이 있어도 태스크의 project 가 기준이다).
+    # Open task count per project. Counted by the task page's project frontmatter
+    # (spec 4.3: even with a cross-project binding, the task's project rules).
     open_by_project: dict[str, int] = {}
     task_meta: dict[str, dict] = {}
     for page in _task_pages(vault):
@@ -228,7 +229,7 @@ def run(home: Path, vault: Path, cfg) -> dict:
                 (stamps[-1], f"- projects/{slug}.md — project — {sessions}세션")
             )
 
-    # 태스크 진행 로그. 바인딩된 세션만 담는다.
+    # Task progress log. Only bound sessions go in.
     by_task: dict[str, list[dict]] = {}
     for row in rows:
         task_id = (binds.get(row["session_id"]) or {}).get("task_id")
@@ -274,32 +275,34 @@ def run(home: Path, vault: Path, cfg) -> dict:
         vaultio.append_log(vault, "promote", f"{slug} 활성 승격")
     for slug in archived:
         vaultio.append_log(vault, "archive", f"{slug} 강등 ({cfg.archive_days}일 무활동)")
-    # 스펙 5.5: 상태 변화만 기록한다. 매 실행마다 붙이면 log.md 가 무한 증식하고
-    # compile 의 멱등성도 깨진다.
+    # Spec 5.5: record only state changes. Appending on every run makes log.md
+    # grow without bound and breaks compile's idempotence too.
     if changed:
         vaultio.append_log(vault, "compile", f"projects={len(per_project)} tasks={task_count}")
 
-    # 컴파일이 끝난 뒤에야 이 볼트를 "마지막으로 쓴 곳" 으로 기록한다.
+    # Only after the compile finishes is this vault recorded as "last written to".
     #
-    # 교체가 없어도 매번 확인한다. 교체할 때만 손보면 옛 볼트를 지운 뒤에도
-    # 그 경로가 state 에 남고, 나중에 같은 자리에 무언가 생기면 이미 끝난
-    # 교체의 경고가 되살아난다. 기본 경로는 특히 재사용될 만하다.
+    # Checked every time, even with no swap. Touching it only on a swap leaves the
+    # old vault's path in state after it is deleted, and if something later
+    # appears at the same spot the warning for an already-finished swap comes back
+    # to life. The default path is especially likely to get reused.
     here = str(vault.resolve())
     previous = _previous_vault if _record_vault else ""
     state_path = home / "state.json"
     current = store.load_state(state_path) if state_path.exists() else {}
 
-    # 목록으로 쌓는다. 단일 슬롯이면 A→B→C 로 두 번 옮길 때 A 가 묻히고,
-    # A 에 남은 글은 아무도 알리지 않는다. 사라진 경로는 여기서 빠지므로
-    # 목록이 무한히 자라지도 않는다.
+    # Accumulated as a list. With a single slot, moving twice A to B to C buries A
+    # and nobody reports the prose left behind in A. Vanished paths drop out here,
+    # so the list does not grow without bound either.
     stranded = [v for v in current.get("vaults_previous", [])
                 if v != here and Path(v).is_dir()]
     if previous and previous != here and previous not in stranded \
             and Path(previous).is_dir():
         stranded.append(previous)
 
-    # 바뀔 것이 없으면 쓰지 않는다. 매 실행마다 쓰면 잠금과 파일 교체가
-    # 공짜가 아니고, 멱등성 확인도 흐려진다.
+    # Do not write when nothing would change. Writing on every run is not free -
+    # locking and file replacement cost something, and it muddies the idempotence
+    # check.
     if current.get("vault") != here or current.get("vaults_previous", []) != stranded:
         store.update_state(state_path,
                            lambda st: st.update({"vault": here,

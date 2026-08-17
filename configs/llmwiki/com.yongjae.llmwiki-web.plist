@@ -4,14 +4,16 @@
 <dict>
   <key>Label</key><string>com.yongjae.llmwiki-web</string>
   <!--
-    읽기 전용 뷰어. tmux 안에서 돌던 것을 옮겼다 - 창을 닫거나 재부팅하면
-    사라졌고, 죽어도 아무도 몰랐다.
+    Read-only viewer. Moved here from a tmux session - closing the window or
+    rebooting made it disappear, and when it died nobody knew.
 
-    localhost 에만 바인딩한다. tailnet 노출은 `tailscale serve` 가 앞단에서
-    맡고, 이 프로세스는 외부에 직접 열리지 않는다. Funnel 은 쓰지 않는다.
+    Binds to localhost only. tailnet exposure is handled up front by
+    `tailscale serve`; this process is never opened directly to the outside.
+    Funnel is not used.
 
-    파이썬 해석은 야간 작업 plist 와 같은 이유로 여기서도 필요하다: launchd
-    는 ~/.zshrc 를 읽지 않아 tomllib 없는 3.9 를 잡는다.
+    Python resolution is needed here for the same reason as the nightly job
+    plist: launchd does not read ~/.zshrc, so it picks up 3.9, which has no
+    tomllib.
   -->
   <key>ProgramArguments</key>
   <array>

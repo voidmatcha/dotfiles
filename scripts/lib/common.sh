@@ -98,12 +98,12 @@ link_file() {
   info "Linked: $src -> $dst"
 }
 
-# launchd 전용. plist 는 심링크가 아니라 실파일로 둔다.
+# launchd only. plists are kept as real files, not symlinks.
 #
-# 로그인 시점의 launchd 스캔이 심링크를 따라간다는 보장이 없고, 그것은
-# 재부팅해야만 확인되는 종류의 가정이다. 이 머신의 다른 LaunchAgent 는
-# 전부 실파일이므로 관례도 그쪽이다. 대가는 사본이 낡을 수 있다는 것인데,
-# 그건 doctor 의 launchd-drift 검사가 본다.
+# Nothing guarantees the launchd scan at login follows a symlink, and that is
+# the kind of assumption only a reboot can confirm. Every other LaunchAgent on
+# this machine is a real file, so convention points the same way. The price is
+# that the copy can go stale, which doctor's launchd-drift check watches for.
 copy_file() {
   local src="$1"
   local dst="$2"

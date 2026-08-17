@@ -21,7 +21,8 @@ SPEC.loader.exec_module(DOC)
 
 
 class TreeDigestTest(unittest.TestCase):
-    """rglob 이 심링크 디렉터리를 건너뛰어 0파일로 집계하던 버그의 회귀 방지."""
+    """Regression guard for the bug where rglob skipped symlinked directories
+    and counted them as 0 files."""
 
     def test_follows_symlinked_directories(self) -> None:
         with tempfile.TemporaryDirectory() as d:
@@ -139,7 +140,8 @@ class CodexHooksTest(unittest.TestCase):
 
 
 class LocalPluginCacheTest(unittest.TestCase):
-    """배달 검사. "설치 성공"이 아니라 "캐시에 파일이 있나"를 본다."""
+    """Delivery check. It looks at whether the cache holds files, not at
+    whether the install reported success."""
 
     def _setup(self, d: str, source_body: str | None, cache_body: str | None,
                declared_source: str = "./plugins/mine", installed: bool = True,
@@ -199,11 +201,12 @@ class LocalPluginCacheTest(unittest.TestCase):
             self.assertIn("버전을 올려야", detail)
 
     def test_installed_but_empty_cache_is_a_delivery_failure(self) -> None:
-        """설치 성공을 보고했는데 캐시가 비면 고장이다.
+        """An install that reports success but leaves an empty cache is broken.
 
-        실측: 심링크 프로젝션을 소스로 등록하면 `claude plugin install` 이
-        성공을 찍고 캐시에 0개를 남긴다. 이전 판정은 이 상태를 'unknown' 과
-        'ok' 로 덮었고, 그래서 두 달 가까이 빈 설치가 정상으로 보고됐다.
+        Measured: register a symlink projection as the source and `claude
+        plugin install` prints success while leaving 0 files in the cache. The
+        previous verdict covered this state with 'unknown' and 'ok', so for
+        nearly two months an empty install was reported as healthy.
         """
         with tempfile.TemporaryDirectory() as d:
             _, state, detail = self._run(d, *self._setup(d, "내용\n", None))
@@ -212,11 +215,12 @@ class LocalPluginCacheTest(unittest.TestCase):
             self.assertIn(state, DOC.BAD_STATES)
 
     def test_root_source_is_copied_not_referenced(self) -> None:
-        """source='./' 도 복사된다. 빈 캐시는 정상이 아니다.
+        """source='./' is copied too. An empty cache is not healthy.
 
-        이전에는 './' 를 "소스를 직접 참조하므로 편집이 즉시 반영된다"고
-        판정했다. 150MB 더미를 넣은 마켓플레이스로 재현해보니 그대로 캐시에
-        복사됐고, 원본 SKILL.md 를 고쳐도 캐시 값은 변하지 않았다.
+        Previously './' was judged as "references the source directly, so edits
+        take effect immediately". Reproducing it with a marketplace holding a
+        150MB dummy showed it was copied into the cache as-is, and editing the
+        original SKILL.md left the cached value unchanged.
         """
         with tempfile.TemporaryDirectory() as d:
             _, state, detail = self._run(
@@ -232,7 +236,8 @@ class LocalPluginCacheTest(unittest.TestCase):
             self.assertIn("심링크", detail)
 
     def test_build_residue_in_cache_is_stale(self) -> None:
-        """.venv/node_modules 가 캐시에 실리면 소스 선정이 잘못된 것이다."""
+        """.venv/node_modules landing in the cache means the source selection
+        is wrong."""
         with tempfile.TemporaryDirectory() as d:
             _, state, detail = self._run(
                 d, *self._setup(d, "내용\n", "내용\n", cache_extra=".venv"))
@@ -240,7 +245,8 @@ class LocalPluginCacheTest(unittest.TestCase):
             self.assertIn(".venv", detail)
 
     def test_not_installed_is_info_not_failure(self) -> None:
-        """마켓플레이스에만 있고 설치 안 한 플러그인은 고장이 아니다."""
+        """A plugin that is only in the marketplace and never installed is not
+        a failure."""
         with tempfile.TemporaryDirectory() as d:
             _, state, detail = self._run(
                 d, *self._setup(d, "내용\n", None, installed=False))
@@ -277,7 +283,8 @@ install_upstream_skill_from_url "Codex" "$CODEX_CONFIG_DIR/skills" "nonexistent-
             self.assertNotIn("$", str(entries[0]["path"]))
 
     def test_uninstalled_skill_reports_missing(self) -> None:
-        """머신에 실제로 없는 이름을 써서 상태에 의존하지 않게 한다."""
+        """Use a name that genuinely does not exist on the machine so the test
+        does not depend on local state."""
         with tempfile.TemporaryDirectory() as d:
             (Path(d) / "scripts").mkdir()
             (Path(d) / "scripts" / "skills.sh").write_text(self.SKILLS_SH, encoding="utf-8")
@@ -296,11 +303,14 @@ class ExitCodeTest(unittest.TestCase):
             self.assertNotIn(good, DOC.BAD_STATES)
 
     def test_every_registered_check_is_callable_and_well_formed(self) -> None:
-        """개수를 세지 않는다. 검사를 늘릴 때마다 깨지고, 깨진 걸 숫자만 고치게 된다.
+        """Do not count checks. A count breaks every time a check is added, and
+        the break gets fixed by bumping the number.
 
-        대신 모든 검사가 실제로 돌고 약속한 모양을 내는지 본다.
+        Instead, verify that every check actually runs and returns the promised
+        shape.
         """
-        # 실제 파일과 네트워크를 안 타게 막는다. 느린 테스트는 안 돌게 된다.
+        # Keep real files and the network out of it. A slow test stops getting
+        # run.
         missing = Path("/nonexistent")
         for name, fn in DOC.CHECKS.items():
             with self.subTest(check=name), \
@@ -350,7 +360,8 @@ class DuplicateCheckoutTest(unittest.TestCase):
 
 class OrphanedCacheTest(unittest.TestCase):
     def test_aborted_install_leftovers_are_stale(self) -> None:
-        """중단된 directory 소스 설치가 남긴 temp_local_* 를 잡는다."""
+        """Catch the temp_local_* left behind by an aborted directory-source
+        install."""
         with tempfile.TemporaryDirectory() as d:
             cache = Path(d) / "cache"
             leftover = cache / "temp_local_123_abc" / "x"
@@ -362,10 +373,10 @@ class OrphanedCacheTest(unittest.TestCase):
             self.assertTrue(any("중단된 설치" in detail for _, _, detail in rows))
 
     def test_temp_markers_are_not_counted_as_orphaned_versions(self) -> None:
-        """임시 트리 안의 .orphaned_at 은 버전 고아가 아니다.
+        """.orphaned_at inside a temp tree is not an orphaned version.
 
-        실측에서 이걸 세는 바람에 296개 47GB 로 보고했고, 실체는 중단된
-        설치 하나였다.
+        Counting these in a real run reported 296 entries / 47GB, when the
+        reality was a single aborted install.
         """
         with tempfile.TemporaryDirectory() as d:
             cache = Path(d) / "cache"
@@ -395,7 +406,8 @@ class OrphanedCacheTest(unittest.TestCase):
 
 
 class LlmwikiCaptureTest(unittest.TestCase):
-    """등록이 아니라 결과를 본다. 훅이 등록돼 있어도 기록이 없으면 고장이다."""
+    """Look at the outcome, not the registration. Even with the hooks
+    registered, no recorded output means it is broken."""
 
     def _state(self, d: str, watermark: int = 100, snapshot_age_days: float | None = 0.0):
         state = Path(d) / "share"
@@ -470,12 +482,13 @@ class LlmwikiCaptureTest(unittest.TestCase):
             self.assertTrue(any(s == "stale" and "훅 실패" in det for _, s, det in rows))
 
     def test_foreign_host_watermark_cannot_mask_a_dead_local_ingest(self) -> None:
-        """워터마크는 호스트별이다. max() 를 쓰면 남의 값이 우리 정지를 가린다.
+        """The watermark is per host. With max(), another host's value hides
+        our own stall.
 
-        state 디렉터리를 머신 간에 동기화하거나 hostname 이 바뀌면 키가 둘이
-        된다. 그때 max() 는 남의 최신 값을 집어 '적재 최신' 이라고 답하고,
-        이 머신은 한 건도 적재하지 않은 채 조용히 지나간다 - 이번 세션 내내
-        쫓던 거짓 정상 그대로다.
+        Syncing the state directory between machines, or a hostname change,
+        leaves two keys. max() then picks the other host's newer value and
+        answers 'ingest is current' while this machine has ingested nothing,
+        passing silently - exactly the false-healthy state chased all session.
         """
         with tempfile.TemporaryDirectory() as d:
             rows = self._run(d, watermark={f"claude-mem:{DOC._llmwiki_host()}": 0,
@@ -485,11 +498,11 @@ class LlmwikiCaptureTest(unittest.TestCase):
                             [det for _, _, det in rows])
 
     def test_old_hook_failures_age_out(self) -> None:
-        """한 번의 일시적 실패가 영원히 stale 로 남으면 안 된다.
+        """A single transient failure must not stay stale forever.
 
-        오류 로그는 append 전용이고 아무것도 정리하지 않는다. 창을 두지
-        않으면 한 시간짜리 사고가 매주 알림을 울리고, 사람은 그 알림을
-        무시하게 된다.
+        The error log is append-only and nothing prunes it. Without a time
+        window, a one-hour incident rings the alarm every week, and people
+        learn to ignore that alarm.
         """
         with tempfile.TemporaryDirectory() as d:
             old_ts = "2020-01-01T00:00:00Z"
@@ -504,11 +517,13 @@ class LlmwikiCaptureTest(unittest.TestCase):
             self.assertTrue(any(s == "stale" and "훅 실패" in det for _, s, det in rows))
 
     def test_garbage_log_line_does_not_stick_forever(self) -> None:
-        """타임스탬프를 잃은 줄은 문자열 비교에서 항상 cutoff 보다 크다.
+        """A line that lost its timestamp always compares greater than the
+        cutoff as a string.
 
-        ASCII 에서 글자가 숫자보다 뒤라, 부분 기록으로 앞부분이 잘린 줄
-        하나가 영원히 '최근 실패' 로 집계된다. 방향은 거짓 경보지만, 매주
-        울리는 경보를 무시하는 습관이 곧 거짓 정상과 같은 결과를 만든다.
+        Letters sort after digits in ASCII, so one line truncated at the front
+        by a partial write counts as a 'recent failure' forever. The error
+        direction is a false alarm, but the habit of ignoring a weekly alarm
+        produces the same outcome as a false healthy.
         """
         with tempfile.TemporaryDirectory() as d:
             rows = self._run(d, errors="SessionStart\tboom\nboom-without-timestamp\n")
@@ -516,7 +531,8 @@ class LlmwikiCaptureTest(unittest.TestCase):
                              [det for _, _, det in rows])
 
     def test_vault_differing_from_last_compile_is_flagged(self) -> None:
-        """교체 경고는 한 번 stderr 로 나가고 끝이다. 주간 검사가 봐야 한다."""
+        """The swap warning goes to stderr once and that is it. The weekly
+        check has to see it."""
         with tempfile.TemporaryDirectory() as d:
             vault = self._vault(d)
             rows = self._run(d, vault=vault, last_vault="/somewhere/else")
@@ -530,16 +546,18 @@ class LlmwikiCaptureTest(unittest.TestCase):
             self.assertFalse(any("마지막으로 컴파일한" in det for _, _, det in rows))
 
     def test_ingest_falling_behind_is_stale(self) -> None:
-        """워터마크가 뒤처지면 훅이 등록돼 있어도 기록은 멈춘 것이다."""
+        """When the watermark falls behind, recording has stopped even though
+        the hooks are registered."""
         with tempfile.TemporaryDirectory() as d:
             rows = self._run(d, watermark=100, newest=5000)
             self.assertTrue(any(s == "stale" and "밀렸다" in det for _, s, det in rows))
 
     def test_dead_ingest_on_a_small_database_is_still_caught(self) -> None:
-        """고정 임계값 200 은 새 머신에서 정지를 가린다.
+        """The fixed threshold of 200 hides a stall on a new machine.
 
-        db 가 200건 미만이면 한 건도 적재하지 않아도 behind 가 임계값을
-        넘지 않아 '적재 최신' 이 나온다. db 가 커질 때까지 조용하다.
+        Under 200 rows in the db, behind never exceeds the threshold even with
+        nothing ingested, so it reports 'ingest is current'. It stays quiet
+        until the db grows.
         """
         with tempfile.TemporaryDirectory() as d:
             rows = self._run(d, watermark=0, newest=150)
@@ -552,13 +570,13 @@ class LlmwikiCaptureTest(unittest.TestCase):
             self.assertFalse(any(s == "stale" and "밀렸다" in det for _, s, det in rows))
 
     def test_watermark_ahead_of_the_database_is_broken_not_ok(self) -> None:
-        """워터마크가 db 보다 앞서면 적재는 영원히 멈춘다.
+        """A watermark ahead of the db stalls ingest forever.
 
-        claude-mem 을 재설치하거나 db 를 복원하면 id 가 1부터 다시 시작한다.
-        ingest 의 WHERE s.id > watermark 는 그 뒤로 한 건도 맞추지 못한다.
-        그런데 behind 가 음수라 임계값을 넘지 않아 '적재 최신' 이 나오고,
-        session-capture 는 새 db 가 잘 기록되므로 초록이다. 두 검사 모두
-        정상인데 llmwiki 는 아무것도 받지 못한다.
+        Reinstalling claude-mem or restoring the db restarts ids from 1.
+        Ingest's WHERE s.id > watermark then matches nothing ever again. But
+        behind is negative, so it never crosses the threshold and reports
+        'ingest is current', while session-capture is green because the new db
+        records fine. Both checks pass and llmwiki receives nothing.
         """
         with tempfile.TemporaryDirectory() as d:
             rows = self._run(d, watermark=12985, newest=50)
@@ -566,12 +584,14 @@ class LlmwikiCaptureTest(unittest.TestCase):
                             [det for _, _, det in rows])
 
     def test_stranded_previous_vault_is_reported_until_it_is_gone(self) -> None:
-        """교체가 끝나면 state 가 새 볼트와 일치해 모든 검사가 초록이 된다.
+        """Once the swap is done, state matches the new vault and every check
+        turns green.
 
-        그런데 옛 볼트에는 직접 쓴 글과 tasks/ 가 그대로 남아 있고, 그것을
-        알리는 것은 교체 시점의 stderr 한 줄뿐이다. launchd 아래에서는 그
-        줄이 /tmp/llmwiki.err 로 들어가 아무도 읽지 않는다. 승인 절차를
-        만드는 대신 정말 중요한 질문을 묻는다 - 옛 볼트에 내용이 남아 있나.
+        But the old vault still holds hand-written notes and tasks/, and the
+        only notice is a single stderr line at swap time. Under launchd that
+        line goes to /tmp/llmwiki.err, where nobody reads it. Rather than
+        building an acknowledgement flow, ask the question that matters - is
+        there content left in the old vault?
         """
         with tempfile.TemporaryDirectory() as d:
             old = Path(d) / "old-vault"
@@ -584,7 +604,8 @@ class LlmwikiCaptureTest(unittest.TestCase):
                             [det for _, _, det in rows])
 
     def test_previous_vault_that_no_longer_exists_is_quiet(self) -> None:
-        """지웠거나 합쳤으면 저절로 조용해진다. 승인 절차가 필요 없다."""
+        """Once it is deleted or merged, it goes quiet on its own. No
+        acknowledgement flow needed."""
         with tempfile.TemporaryDirectory() as d:
             vault = self._vault(d)
             rows = self._run(d, vault=vault, last_vault=str(vault.resolve()),
@@ -592,7 +613,8 @@ class LlmwikiCaptureTest(unittest.TestCase):
             self.assertFalse(any("옛 볼트" in det for _, _, det in rows))
 
     def test_old_vault_with_no_markdown_is_still_reported(self) -> None:
-        """.md 만 보면 bases/ 나 첨부만 남은 볼트를 비었다고 읽는다."""
+        """Looking only at .md reads a vault holding just bases/ or attachments
+        as empty."""
         with tempfile.TemporaryDirectory() as d:
             old = Path(d) / "old-vault"
             (old / "bases").mkdir(parents=True)
@@ -604,7 +626,7 @@ class LlmwikiCaptureTest(unittest.TestCase):
                             [det for _, _, det in rows])
 
     def test_old_vault_holding_only_its_stamp_is_quiet(self) -> None:
-        """표식만 남았으면 잃을 것이 없다."""
+        """If only the stamp is left, there is nothing to lose."""
         with tempfile.TemporaryDirectory() as d:
             old = Path(d) / "old-vault"
             old.mkdir()
@@ -615,7 +637,7 @@ class LlmwikiCaptureTest(unittest.TestCase):
             self.assertFalse(any("옛 볼트" in det for _, _, det in rows))
 
     def test_every_stranded_vault_is_reported_not_just_the_last(self) -> None:
-        """A→B→C 로 두 번 옮기면 단일 슬롯은 A 를 묻는다."""
+        """Moving twice, A to B to C, buries A if there is only one slot."""
         with tempfile.TemporaryDirectory() as d:
             olds = []
             for name in ("A", "B"):
@@ -631,9 +653,9 @@ class LlmwikiCaptureTest(unittest.TestCase):
                 self.assertIn(o, detail)
 
     def test_old_vault_containing_the_new_one_ignores_the_new_ones_files(self) -> None:
-        """옛 볼트 안으로 새 볼트를 옮기면, 옛 경로를 훑을 때 현재 볼트의
-        파일이 잡힌다. 그러면 "옮기거나 지워라" 는 살아있는 볼트를 지우라는
-        말이 되고, 해소할 수 없는 경보가 매주 울린다.
+        """Moving the new vault inside the old one makes a scan of the old path
+        pick up the current vault's files. Then "move it or delete it" means
+        deleting the live vault, and an unresolvable alarm rings every week.
         """
         with tempfile.TemporaryDirectory() as d:
             old = Path(d) / "vault"
@@ -647,7 +669,8 @@ class LlmwikiCaptureTest(unittest.TestCase):
                              [det for _, _, det in rows])
 
     def test_old_parent_vault_with_its_own_content_is_still_reported(self) -> None:
-        """중첩이어도 옛 볼트가 제 파일을 갖고 있으면 알려야 한다."""
+        """Even when nested, an old vault holding files of its own must be
+        reported."""
         with tempfile.TemporaryDirectory() as d:
             old = Path(d) / "vault"
             new = old / "wiki"
@@ -671,7 +694,8 @@ class LlmwikiCaptureTest(unittest.TestCase):
             self.assertTrue(any(s == "stale" and "스냅샷" in det for _, s, det in rows))
 
     def test_env_vault_override_is_flagged_as_divergence(self) -> None:
-        """셸에만 있는 LLMWIKI_VAULT 는 CLI 와 자동 실행을 갈라놓는다."""
+        """An LLMWIKI_VAULT that exists only in the shell splits the CLI from
+        the automated runs."""
         with tempfile.TemporaryDirectory() as d:
             with mock.patch.dict(os.environ, {"LLMWIKI_VAULT": "/tmp/somewhere"}):
                 rows = self._run(d)
@@ -679,7 +703,8 @@ class LlmwikiCaptureTest(unittest.TestCase):
                                 for _, s, det in rows))
 
     def test_binding_without_a_task_page_is_flagged(self) -> None:
-        """볼트를 교체하면 바인딩은 home 에 남고 태스크 페이지는 사라진다."""
+        """Swapping the vault leaves the bindings in home while the task pages
+        disappear."""
         with tempfile.TemporaryDirectory() as d:
             vault = self._vault(d, tasks=())
             rows = self._run(d, vault=vault,
@@ -700,7 +725,7 @@ class LlmwikiCaptureTest(unittest.TestCase):
             self.assertTrue(any(s == "stale" and "옮겨졌다" in det for _, s, det in rows))
 
     def test_unstamped_vault_is_unknown_not_broken(self) -> None:
-        """스탬프 이전에 만든 볼트는 고장이 아니다."""
+        """A vault created before stamping existed is not broken."""
         with tempfile.TemporaryDirectory() as d:
             vault = self._vault(d, stamped=False)
             rows = self._run(d, vault=vault)
@@ -708,11 +733,12 @@ class LlmwikiCaptureTest(unittest.TestCase):
             self.assertFalse(any(s == "stale" for _, s, det in rows))
 
     def test_task_page_without_a_title_slug_is_not_an_orphan(self) -> None:
-        """tasks.py:59 는 제목이 없으면 T-0001.md 로 쓴다.
+        """tasks.py:59 writes T-0001.md when there is no title.
 
-        파일명을 '-' 로 잘라 앞 두 조각을 붙이면 그 경우 'T-0001.md' 가 되어
-        바인딩의 'T-0001' 과 영원히 어긋난다. 멀쩡한 상태를 고장으로 신고하는
-        검사는 무시하는 습관을 만들고, 그 습관이 두 달짜리 사고를 만들었다.
+        Splitting the filename on '-' and joining the first two pieces yields
+        'T-0001.md' in that case, which never matches the binding's 'T-0001'. A
+        check that reports a healthy state as broken breeds the habit of
+        ignoring it, and that habit caused the two-month incident.
         """
         with tempfile.TemporaryDirectory() as d:
             vault = Path(d) / "vault"
@@ -733,7 +759,8 @@ class LlmwikiCaptureTest(unittest.TestCase):
 
 
 class LaunchdJobsTest(unittest.TestCase):
-    """설치·로드·동기는 서로 다른 사실이다. 셋 다 따로 확인한다."""
+    """Installed, loaded, and in sync are three different facts. Check all
+    three separately."""
 
     def _setup(self, d: str, *, installed=True, symlink=False, drifted=False):
         root = Path(d) / "repo"
@@ -771,14 +798,16 @@ class LaunchdJobsTest(unittest.TestCase):
             self.assertIn("install.sh", detail)
 
     def test_symlinked_plist_is_stale(self) -> None:
-        """다른 LaunchAgent 는 전부 실파일이고, 심링크는 재부팅해야만 검증된다."""
+        """Every other LaunchAgent is a real file, and a symlink can only be
+        validated by rebooting."""
         with tempfile.TemporaryDirectory() as d:
             _, state, detail = self._run(*self._setup(d, symlink=True))
             self.assertEqual(state, "stale")
             self.assertIn("심링크", detail)
 
     def test_drifted_copy_is_stale(self) -> None:
-        """복사 설치의 대가. 리포를 고쳐도 사본은 그대로다."""
+        """The price of installing by copy: editing the repo leaves the copy
+        untouched."""
         with tempfile.TemporaryDirectory() as d:
             _, state, detail = self._run(*self._setup(d, drifted=True))
             self.assertEqual(state, "stale")
@@ -793,18 +822,18 @@ class LaunchdJobsTest(unittest.TestCase):
 
 
 class DuplicateCheckoutPathTest(unittest.TestCase):
-    """체크아웃 경로는 이름이 바뀐다. 못 찾았으면 그 사실을 말해야 한다."""
+    """Checkout paths get renamed. When one is not found, say so."""
 
     def test_missing_dev_checkout_reports_skip_not_silence(self) -> None:
-        """아무 줄도 안 내면 '검사했고 문제없음' 과 구분되지 않는다.
+        """Emitting no row is indistinguishable from 'checked, nothing wrong'.
 
-        실제로 ui-skills 가 ui-clone-skills 로 바뀌었을 때 이 검사는
-        조용히 건너뛰면서 전체 요약은 ok 로 남았다.
+        When ui-skills was actually renamed to ui-clone-skills, this check
+        skipped silently and the overall summary stayed ok.
         """
         with tempfile.TemporaryDirectory() as d:
             with mock.patch.object(DOC.Path, "home", staticmethod(lambda: Path(d))):
                 rows = DOC.check_duplicate_checkouts(Path(d))
-            self.assertTrue(rows, "빈 결과는 침묵과 같다")
+            self.assertTrue(rows, "an empty result is the same as silence")
             self.assertEqual(rows[0][1], "skip")
             self.assertIn("찾지 못했다", rows[0][2])
 
@@ -819,13 +848,14 @@ class DuplicateCheckoutPathTest(unittest.TestCase):
             self.assertNotEqual(rows[0][1], "skip")
 
     def test_marketplace_source_drifting_from_dev_checkout_is_reported(self) -> None:
-        """플러그인을 실제로 먹이는 경로를 봐야 한다.
+        """Look at the path that actually feeds the plugin.
 
-        이름을 박아두면 마켓플레이스가 제3의 경로를 가리킬 때 검사가 서로
-        일치하는 엉뚱한 쌍을 보며 ok 를 낸다. 실측: 마켓플레이스 소스는
-        ~/.local/share/ui-clone-skills-claude-src 라는 분리된 복사본이고
-        plugin.json 이 0.7.25 인데 개발 체크아웃은 0.7.26 이었다 - 이후
-        커밋은 플러그인에 영원히 닿지 않는다.
+        With hardcoded names, a marketplace pointing at a third path makes the
+        check compare an irrelevant pair that happens to match and report ok.
+        Measured: the marketplace source was a separate copy at
+        ~/.local/share/ui-clone-skills-claude-src with plugin.json at 0.7.25
+        while the dev checkout was at 0.7.26 - later commits would never reach
+        the plugin.
         """
         with tempfile.TemporaryDirectory() as d:
             home = Path(d)

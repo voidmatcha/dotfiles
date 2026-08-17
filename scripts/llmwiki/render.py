@@ -24,7 +24,7 @@ def progress_line(row: dict, truncate_request: int, truncate_next: int) -> str:
 
 def timeline_line(row: dict, task_id: str | None) -> str:
     suffix = f" [[{task_id}]]" if task_id else ""
-    # unfiled 항목은 원래 디렉터리를 함께 보여준다. 그것만이 이 줄을 제
-    # 프로젝트로 되돌릴 단서다.
+    # unfiled entries also show the original directory. That is the only clue for
+    # putting this line back into its own project.
     origin = f" ({row['origin']})" if row.get("origin") else ""
     return f"- [{_head(row)}]{origin} {_clip(row.get('request', ''), 90)}{suffix}"

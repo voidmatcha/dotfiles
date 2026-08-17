@@ -99,7 +99,8 @@ class IngestTest(unittest.TestCase):
             self.assertEqual(len(events), 1)
 
     def test_snapshot_handles_wal_mode_source(self) -> None:
-        """실제 claude-mem DB 는 WAL 모드다. 사본이 WAL 로 남으면 읽을 수 없다."""
+        """The real claude-mem DB is in WAL mode. If the copy stays WAL, it
+        cannot be read."""
         with tempfile.TemporaryDirectory() as d:
             home, db = Path(d) / "home", Path(d) / "wal.db"
             make_db(db, [ROW_A])
@@ -131,8 +132,8 @@ class IngestTest(unittest.TestCase):
 
 class MultiHostTest(unittest.TestCase):
     def test_same_rowid_on_two_hosts_does_not_collide(self) -> None:
-        """두 머신의 claude-mem 이 모두 rowid 1 부터 시작한다.
-        호스트 네임스페이스가 없으면 한쪽 세션이 조용히 사라진다."""
+        """claude-mem on both machines starts numbering rowids from 1.
+        Without a host namespace, one machine's sessions silently vanish."""
         with tempfile.TemporaryDirectory() as d:
             home = Path(d) / "home"
             for host, row in (("mac-a", ROW_A), ("mac-b", ROW_B)):

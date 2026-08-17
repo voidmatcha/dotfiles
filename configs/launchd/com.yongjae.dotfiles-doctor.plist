@@ -4,13 +4,15 @@
 <dict>
   <key>Label</key><string>com.yongjae.dotfiles-doctor</string>
   <!--
-    주간 점검. claude-mem 이 두 달 밀린 근본 원인은 검사가 틀렸다는 것이
-    아니라 아무도 아무것도 돌리지 않았다는 것이다. 검사를 자동으로 돌리되,
-    결과를 조용한 로그에만 남기면 같은 실패를 반복한다 - 문제가 있을 때만
-    알림을 띄우고, 전체 출력은 로그에 둔다.
+    Weekly check. The root cause of claude-mem falling two months behind was
+    not that the checks were wrong, but that nobody ran anything at all. Run
+    the checks automatically - but leaving the result in a quiet log only would
+    repeat the same failure, so raise a notification only when something is
+    wrong and keep the full output in the log.
 
-    출력은 매주 덮어쓰지 않고 누적한다. 언제부터 나빠졌는지가 대부분의
-    진단에서 가장 중요한 정보였다.
+    The output accumulates instead of being overwritten each week. When things
+    started going bad has been the single most useful piece of information in
+    most diagnoses.
   -->
   <key>ProgramArguments</key>
   <array>

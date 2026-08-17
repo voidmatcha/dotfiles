@@ -53,7 +53,7 @@ class ResolveTest(unittest.TestCase):
             self.assertIsNotNone(WV.resolve_page(vault, "어떤자료"))
 
     def test_title_with_a_space_resolves(self) -> None:
-        """공백을 막으면 그 노트만 조용히 404 가 된다."""
+        """Rejecting spaces silently turns just those notes into 404s."""
         with tempfile.TemporaryDirectory() as d:
             vault = self._vault(d)
             self.assertIsNotNone(WV.resolve_page(vault, "아스테로이드 시티"))
@@ -66,7 +66,8 @@ class ResolveTest(unittest.TestCase):
                 self.assertIsNone(WV.resolve_page(vault, bad), bad)
 
     def test_nested_snapshot_path_resolves(self) -> None:
-        """공고 원본은 library/jobs/<공고>/<날짜> 로 한 단계 더 들어간다."""
+        """Job-posting originals sit one level deeper, at
+        library/jobs/<posting>/<date>."""
         with tempfile.TemporaryDirectory() as d:
             vault = self._vault(d)
             snap = vault / "library" / "jobs" / "어떤회사 - 어떤직무"
@@ -76,7 +77,8 @@ class ResolveTest(unittest.TestCase):
                 WV.resolve_page(vault, "library/jobs/어떤회사 - 어떤직무/2026-08-15"))
 
     def test_nested_path_did_not_open_traversal(self) -> None:
-        """구분자를 허용해도 세그먼트 검사와 폴더 화이트리스트가 남아야 한다."""
+        """Allowing the separator must not drop the per-segment check or the
+        folder whitelist."""
         with tempfile.TemporaryDirectory() as d:
             vault = self._vault(d)
             (Path(d) / "secret.md").write_text("비밀\n", encoding="utf-8")
@@ -85,7 +87,8 @@ class ResolveTest(unittest.TestCase):
                 self.assertIsNone(WV.resolve_page(vault, bad), bad)
 
     def test_name_with_comma_or_parens_resolves(self) -> None:
-        """쉼표와 괄호를 막으면 그 노트만 조용히 404 가 된다."""
+        """Rejecting commas and parentheses silently turns just those notes
+        into 404s."""
         with tempfile.TemporaryDirectory() as d:
             vault = self._vault(d)
             for stem in ("어떤회사 - 직무, 세부", "어떤회사 (지사)"):
@@ -93,14 +96,15 @@ class ResolveTest(unittest.TestCase):
                 self.assertIsNotNone(WV.resolve_page(vault, stem), stem)
 
     def test_aliased_wikilink_becomes_a_link(self) -> None:
-        """[[경로|표시]] 를 못 잡으면 원문 그대로 화면에 남는다."""
+        """If [[path|label]] is not matched, the raw markup stays on screen."""
         out = WV.markdown("- [[library/jobs/A - B/2026-08-15|수집 2026-08-15]]\n")
         self.assertIn('href="/page/library/jobs/A%20-%20B/2026-08-15"', out)
         self.assertIn(">수집 2026-08-15</a>", out)
         self.assertNotIn("[[", out)
 
     def test_backslash_escapes_are_unwrapped(self) -> None:
-        """defuddle 본문은 마크다운 특수문자를 이스케이프해서 넘어온다."""
+        """Bodies coming from defuddle arrive with markdown special
+        characters escaped."""
         out = WV.markdown("Booking Holdings \\[NASDAQ: BKNG\\]\n")
         self.assertIn("[NASDAQ: BKNG]", out)
         self.assertNotIn("\\[", out)
@@ -116,8 +120,8 @@ class ResolveTest(unittest.TestCase):
             body = WV._folder_html(vault, "rest")
             self.assertIn("쉴 때 할 것", body)
             self.assertIn("아스테로이드 시티", body)
-            self.assertIn("할 것", body)          # status 를 사람 말로 보여준다
-            self.assertIn("%20", body)            # 공백이 URL 로 인코딩된다
+            self.assertIn("할 것", body)          # status shown in human words
+            self.assertIn("%20", body)            # spaces are URL-encoded
 
     def test_folder_page_says_empty_instead_of_failing(self) -> None:
         with tempfile.TemporaryDirectory() as d:
@@ -126,7 +130,8 @@ class ResolveTest(unittest.TestCase):
             self.assertIn("없음", WV._folder_html(vault, "rest"))
 
     def test_status_screen_keeps_leisure_off_the_front_page(self) -> None:
-        """메인은 작업 상태를 보는 곳이다. 볼거리가 섞이면 성격이 흐려진다."""
+        """The front page is for work status. Mixing leisure items in blurs
+        what the page is for."""
         with tempfile.TemporaryDirectory() as d:
             vault = self._vault(d)
             cfg = CFG.Config({})
@@ -172,7 +177,8 @@ class MarkdownTest(unittest.TestCase):
         self.assertIn("<td>1</td>", out)
 
     def test_code_fence_preserves_layout(self) -> None:
-        """계산식·다이어그램이 문단으로 흩어지면 공백 정렬이 전부 무너진다."""
+        """If formulas and diagrams get scattered into paragraphs, all of the
+        whitespace alignment collapses."""
         out = WV.markdown("앞\n\n```\n a  b\n ┌──┴──┐\n```\n\n뒤")
         self.assertIn("<pre><code>", out)
         self.assertIn(" a  b\n ┌──┴──┐", out)
@@ -191,7 +197,7 @@ class MarkdownTest(unittest.TestCase):
         self.assertIn("&lt;script&gt;", out)
 
     def test_unclosed_fence_does_not_swallow_content(self) -> None:
-        """내용이 조용히 사라지는 것이 최악이다."""
+        """Content silently disappearing is the worst outcome."""
         out = WV.markdown("앞\n\n```\n안 닫힌 블록")
         self.assertIn("안 닫힌 블록", out)
 
@@ -201,7 +207,8 @@ class MarkdownTest(unittest.TestCase):
         self.assertIn("<p>뒤 문단</p>", out)
 
     def test_obsidian_embed_does_not_leave_a_broken_link(self) -> None:
-        """![[x]] 는 옵시디언 전용이다. 그냥 두면 '!' 만 남고 링크가 404 가 된다."""
+        """![[x]] is Obsidian-only. Left alone, a bare '!' remains and the
+        link 404s."""
         out = WV.markdown("![[tasks.base]]")
         self.assertNotIn('href="/page/tasks.base"', out)
         self.assertNotIn("!<a", out)
@@ -224,7 +231,8 @@ class MarkdownTest(unittest.TestCase):
         self.assertIn('rel="noopener noreferrer"', out)
 
     def test_query_string_ampersand_survives(self) -> None:
-        """국세청 URL 이 mi=..&cntntsId=.. 형태다. 엔티티로 남아야 맞다."""
+        """The nts.go.kr URLs look like mi=..&cntntsId=.. - the ampersand has
+        to survive as an entity."""
         out = WV.markdown("[a](https://www.nts.go.kr/x?mi=2515&cntntsId=7821)")
         self.assertIn("mi=2515&amp;cntntsId=7821", out)
 
@@ -243,7 +251,8 @@ class MarkdownTest(unittest.TestCase):
         self.assertIn('href="https://nts.go.kr"', out)
 
     def test_wikilink_with_a_space_is_url_encoded(self) -> None:
-        """href 에 날 공백이 들어가면 URL 로 부정확하다. 표시 텍스트는 그대로 둔다."""
+        """A raw space in href is an inaccurate URL. The displayed text is
+        left as is."""
         out = WV.markdown("[[투자 심리]] 참고")
         self.assertIn('href="/page/%ED%88%AC%EC%9E%90%20%EC%8B%AC%EB%A6%AC"', out)
         self.assertIn(">투자 심리</a>", out)
