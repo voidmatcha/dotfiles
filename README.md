@@ -107,12 +107,38 @@ Codex setup writes `~/.codex/config.toml` from [`configs/codex/config.toml`](con
 | [Codex] | Codex execution with goals, memories, and native subagents. | [`scripts/codex.sh`](scripts/codex.sh), [`configs/codex/config.toml`](configs/codex/config.toml) |
 | [RTK] | Command-output compression before noisy shell output enters context. | [`configs/RTK.md`](configs/RTK.md), [`configs/rtk-config.toml`](configs/rtk-config.toml) |
 | Local skills | Repo-owned procedures for context pressure, handoff, verification, previews, cleanup, and provenance. | [`plugins/local-skills/skills`](plugins/local-skills/skills) |
+| [llmwiki](#llmwiki) | Work history from both harnesses compiled into one Obsidian vault. | [`scripts/llmwiki`](scripts/llmwiki), [`configs/llmwiki`](configs/llmwiki) |
 
 `ResumerBar`/`agent-resumer` and `cmux-deck` are machine-local runtime
 integrations, not components installed or configured by this repository. Do not
 commit their generated shims, sockets, state, LaunchAgents, or injected shell
 blocks here. The supported `cmux` references below mean the current cmux CLI and
 display backend, not the separate `cmux-deck` project.
+
+### llmwiki
+
+Session history lives in per-harness stores that nothing reads together, so
+"what did we decide about X" has no answer a month later. llmwiki imports that
+history incrementally and compiles it into an Obsidian vault that both Claude
+and Codex write into and a human can edit.
+
+| Piece | What it does |
+| --- | --- |
+| `ingest` | Reads new claude-mem rows into an append-only event log. The live database is copied through SQLite's backup API first, never read while its WAL is active. |
+| `compile` | Rewrites vault views from those events, but only between `GEN:` markers. Everything outside them is human-owned and never touched. |
+| `search`, `list-open`, `status` | An `rg` wrapper over the vault plus task queries. Deep cross-session search stays with `mem-search`; no embeddings, no vector store. |
+| `serve` | Read-only web view of the vault, refreshed without waiting for a compile. |
+| `snapshot` | Dated backups of vault and event store. The vault is not a pure derivative — hand-written sections exist only there. |
+| Hooks | `SessionStart` injects the current project's open tasks (5 tasks, 1,000 chars max) and binds a session named `T-0043` to that task. `UserPromptSubmit` records cwd changes so work can be attributed to a project. Both fail open, and log their failures. |
+
+Claude reads the vault convention from [`configs/AGENTS.md`](configs/AGENTS.md);
+Codex gets the same text composed into `~/.codex/AGENTS.md` by
+[`scripts/codex.sh`](scripts/codex.sh). Collection, compile, and snapshot run
+unattended on a schedule; writing lessons and Library notes is manual and goes
+through [`llmwiki-curate`](plugins/local-skills/skills/llmwiki-curate/SKILL.md).
+
+The vault path is configured, not hardcoded — `compile` refuses to run against a
+swapped vault without saying what would be lost.
 
 ### Installed external skills and plugins
 
@@ -179,7 +205,7 @@ Claude/Codex sessions.
 | Surface | Config | Policy |
 | --- | --- | --- |
 | [Claude Code] MCP | [`configs/mcp.json`](configs/mcp.json) | Registers local and hosted MCPs for Claude Code. Hooks and deny rules catch common mistakes. |
-| [Codex] MCP | [`configs/codex/config.toml`](configs/codex/config.toml) | Registers [Chrome DevTools MCP][chrome-devtools-mcp], [serena], [codegraph], [context7], [OpenAI Docs MCP], and personal/default [Figma hosted MCP][Figma MCP]. |
+| [Codex] MCP | [`configs/codex/config.toml`](configs/codex/config.toml) | Registers [serena], [codegraph], [context7], [OpenAI Docs MCP], and personal/default [Figma hosted MCP][Figma MCP]. |
 | Company/local fallback | `company/` overlay when present | Uses company-scoped MCP or local browser surfaces when hosted tools are inappropriate. |
 
 Do not route internal URLs through hosted tools such as [Exa], [Jina Reader], or personal/default [Figma hosted MCP][Figma MCP]. Company Figma context is separate. Use the company fallback (`figma-developer-mcp`) or a local browser surface.
@@ -195,7 +221,7 @@ Do not route internal URLs through hosted tools such as [Exa], [Jina Reader], or
 | Clean public web page extraction. | [Jina Reader] or [defuddle] | Fast Markdown extraction for public pages. Example: `defuddle parse <url> --markdown`. |
 | Broad public web research. | [Exa] | Public search only, not for sensitive or internal URLs. |
 | Authenticated or sensitive browsing. | [agent-browser] or local browser | Keeps auth and internal context out of hosted readers. |
-| Throwaway browser automation. | [Chrome DevTools MCP][chrome-devtools-mcp] | Clean browser automation for local targets. |
+| Throwaway browser automation. | [agent-browser] | Clean browser automation for local targets; reap leftovers with [`agent-reap`](plugins/local-skills/skills/agent-reap/SKILL.md). |
 | Knowledge graph exploration. | [graphify] | Installed as a Claude/Codex skill with `graphify install --platform claude` and `graphify install --platform codex`. |
 | Session context policy. | [`context-check`](plugins/local-skills/skills/context-check/SKILL.md) | Returns continue, compact, clear, or handoff advice. |
 
@@ -317,7 +343,6 @@ See [`company/README.md`](company/README.md) for overlay maintenance.
 
 [agent-browser]: https://github.com/vercel-labs/agent-browser
 [Bats]: https://github.com/bats-core/bats-core
-[chrome-devtools-mcp]: https://github.com/ChromeDevTools/chrome-devtools-mcp
 [Claude Code]: https://docs.anthropic.com/en/docs/claude-code/overview
 [code-server]: https://coder.com/docs/code-server/latest
 [codegraph]: https://www.npmjs.com/package/@colbymchenry/codegraph

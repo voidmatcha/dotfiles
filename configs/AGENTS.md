@@ -25,6 +25,14 @@ tool-routing tables and exact one-liners, open this dotfiles repo's
 - A few known lines from a known file: read the file directly.
 - Current public web page content: prefer Jina Reader or defuddle; for sensitive
   pages use local browser tooling.
+- **Blocked by a bot wall → escalate to `agent-browser`, do not give up.** When
+  `defuddle`/`curl` return 403, a redirect loop, an empty body, or a Cloudflare
+  interstitial, open it with `agent-browser`. Read via
+  `agent-browser get text <selector>` (a selector is required) or
+  `agent-browser eval <js>`; `--profile` is ignored while a daemon is already
+  running, so `agent-browser close` first if the profile matters.
+  **A dead deep link usually means the page was replaced, not removed** — re-find
+  it from the site's own index before recording anything as gone.
 - Mixed non-code project content (docs, PDFs, papers, images, knowledge graphs)
   or explicit `/graphify`: use the graphify skill. For pure code structure,
   prefer codegraph/serena first.
