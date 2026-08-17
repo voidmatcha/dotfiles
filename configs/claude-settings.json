@@ -16,7 +16,6 @@
   },
   "enableAllProjectMcpServers": false,
   "enabledMcpjsonServers": [
-    "chrome-devtools",
     "serena",
     "codegraph",
     "context7",
@@ -47,9 +46,6 @@
     "project-session-manager": "user-invocable-only"
   },
   "allowedMcpServers": [
-    {
-      "serverName": "chrome-devtools"
-    },
     {
       "serverName": "serena"
     },

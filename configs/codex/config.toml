@@ -58,11 +58,6 @@ min_rate_limit_remaining_percent = 20
 approval_policy = "never"
 sandbox_mode = "danger-full-access"
 
-[mcp_servers.chrome-devtools]
-command = "npx"
-args = ["-y", "chrome-devtools-mcp@1.2.0"]
-startup_timeout_sec = 60
-
 # serena — LSP-backed semantic code navigation + editing (cross-file rename,
 # symbol-aware edits). Personal/user scope; not in NAVER MCP catalog.
 # `--open-web-dashboard false` keeps the dashboard server reachable at
@@ -113,12 +108,13 @@ enabled = false
 startup_timeout_sec = 5
 tool_timeout_sec = 120
 
-# korean-tech-humanizer 저장소의 로컬 번역 Worker. 이 템플릿은 모든 머신에
-# 그대로 복사되므로 체크아웃 경로를 담을 수 없다. 그래서 경로 대신 런처 이름을
-# 부르고, 런처는 저장소의 `pnpm setup:local`이 ~/.local/bin에 깔면서 자기
-# 체크아웃을 가리키게 만든다. 저장소가 없는 머신에는 런처가 없어 이 서버가
-# failed로 뜬다 — enabled 상태는 이 템플릿 소유라 머신별로 나눌 수 없다.
-# 실제로 붙으려면 Worker가 떠 있어야 한다:
+# Local translation Worker from the korean-tech-humanizer repo. This template is
+# copied verbatim to every machine, so it cannot carry a checkout path. It calls
+# a launcher by name instead; the repo's `pnpm setup:local` installs that
+# launcher into ~/.local/bin pointing at its own checkout. On machines without
+# the repo there is no launcher, so this server shows up as failed — the enabled
+# state belongs to this template and cannot be split per machine.
+# The Worker must be running for this to actually connect:
 # pnpm --filter @translation-mcp/server dev
 [mcp_servers.translation-mcp]
 command = "translation-mcp-bridge"

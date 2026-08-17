@@ -902,9 +902,6 @@ assert 'openai-primary-runtime' not in cfg.get('marketplaces', {})
 assert 'documents@openai-primary-runtime' not in cfg.get('plugins', {})
 assert 'spreadsheets@openai-primary-runtime' not in cfg.get('plugins', {})
 assert 'presentations@openai-primary-runtime' not in cfg.get('plugins', {})
-mcp = cfg['mcp_servers']['chrome-devtools']
-assert mcp['command'] == 'npx'
-assert mcp['args'] == ['-y', 'chrome-devtools-mcp@1.2.0']
 assert cfg['mcp_servers']['context7']['url'] == 'https://mcp.context7.com/mcp'
 PY
 }
@@ -1173,7 +1170,6 @@ PY
   # README describes Codex MCP entries by name without hardcoding exact
   # [mcp_servers.*] token — the prose moves when entries are added/removed.
   grep -q 'mcp_servers' "$REPO_ROOT/README.md"
-  grep -q 'chrome-devtools' "$REPO_ROOT/README.md"
   grep -q 'serena' "$REPO_ROOT/README.md"
   grep -q 'codegraph' "$REPO_ROOT/README.md"
   grep -q 'personal/default \[Figma hosted MCP\]' "$REPO_ROOT/README.md"
@@ -1336,20 +1332,19 @@ cfg = json.loads((Path('$REPO_ROOT') / 'configs/claude-settings.json').read_text
 mcp = json.loads((Path('$REPO_ROOT') / 'configs/mcp.json').read_text())
 assert cfg['enableAllProjectMcpServers'] is False
 assert cfg['enabledMcpjsonServers'] == [
-    'chrome-devtools',
     'serena',
     'codegraph',
     'context7',
     'figma-developer-mcp',
-    # korean-tech-humanizer/.mcp.json 이 선언하는 프로젝트 서버다. 이 목록에
-    # 없으면 그 저장소를 열 때마다 승인 프롬프트가 뜬다. mcp.json 이 등록하는
-    # 전역 서버가 아니므로 allowedMcpServers 대상은 아니다.
+    # The project server declared by korean-tech-humanizer/.mcp.json. Without
+    # it in this list, an approval prompt appears every time that repository is
+    # opened. It is not a global server registered by mcp.json, so it does not
+    # belong in allowedMcpServers.
     'translation-mcp',
 ]
 assert cfg['disabledMcpjsonServers'] == []
 assert cfg['allowManagedMcpServersOnly'] is True
 assert cfg['allowedMcpServers'] == [
-    {'serverName': 'chrome-devtools'},
     {'serverName': 'serena'},
     {'serverName': 'codegraph'},
     {'serverName': 'context7'},
@@ -1358,7 +1353,6 @@ assert cfg['allowedMcpServers'] == [
     {'serverName': 'figma-developer-mcp'},
 ]
 assert {'serverName': 'filesystem'} in cfg['deniedMcpServers']
-assert 'chrome-devtools' in mcp['mcpServers']
 assert 'serena' in mcp['mcpServers']
 assert 'codegraph' in mcp['mcpServers']
 assert 'context7' in mcp['mcpServers']
@@ -2522,8 +2516,8 @@ SH
   [ -z "$missing" ] || { echo "skills missing from README:$missing"; false; }
 }
 
-# codex.sh 의 훅 병합 함수만 떼어 임시 스크립트로 실행한다. 전체 스크립트는
-# npm 을 건드리므로 테스트에서 돌릴 수 없다.
+# Extract only codex.sh's hook merge function and run it as a temporary script.
+# The full script touches npm, so it cannot be run from a test.
 _run_hook_merge() {
   local home="$1" runner="$BATS_TEST_TMPDIR/run-merge-$RANDOM.sh"
   {
@@ -2537,8 +2531,9 @@ _run_hook_merge() {
 }
 
 @test "codex.sh merges claude-mem Codex hooks onto a machine that has none" {
-  # claude-mem 은 Claude 플러그인으로만 설치되고 Codex 훅은 스스로 등록하지
-  # 않는다. 손으로 병합한 복구는 다음 머신에서 사라지므로 스크립트가 소유한다.
+  # claude-mem installs only as a Claude plugin and never registers the Codex
+  # hooks itself. A hand-merged fix disappears on the next machine, so the
+  # script owns the merge.
   local home="$BATS_TEST_TMPDIR/fresh"
   local plug="$home/.claude/plugins/cache/thedotmack/claude-mem/13.0.0/hooks"
   mkdir -p "$plug" "$home/.codex"
@@ -2558,7 +2553,7 @@ import json;d=json.load(open('$home/.codex/hooks.json'))
 print(sorted(h['command'] for a in d['hooks'].values() for g in a for h in g['hooks']))"
   [[ "$output" == *"CM_CONTEXT"* ]]
   [[ "$output" == *"CM_STOP"* ]]
-  [[ "$output" == *"OTHER"* ]]   # 남의 훅을 지우지 않는다
+  [[ "$output" == *"OTHER"* ]]   # does not delete another tool's hooks
 }
 
 @test "codex.sh does not duplicate claude-mem hooks on re-run" {
@@ -2605,9 +2600,9 @@ print(sum(len(g['hooks']) for a in d['hooks'].values() for g in a))"
 }
 
 @test "install.sh bootstraps llmwiki only when it has never been set up" {
-  # init 을 부르지 않으면 새 머신의 야간 작업이 "config.toml 이 없다" 로
-  # 멈춘 채 방치된다. 두 번째 실행에서 다시 만들면 사용자가 고친 설정을
-  # 덮어쓴다. 조건은 config.toml 의 존재다.
+  # Without calling init, the nightly job on a new machine sits stalled on
+  # "config.toml is missing". Creating it again on a second run overwrites the
+  # settings the user edited. The condition is the existence of config.toml.
   grep -q 'scripts.llmwiki init' "$REPO_ROOT/install.sh"
   grep -q 'config.toml' "$REPO_ROOT/install.sh"
 }
@@ -2621,7 +2616,8 @@ print(sum(len(g['hooks']) for a in d['hooks'].values() for g in a))"
 
   run env LLMWIKI_HOME="$home" LLMWIKI_VAULT="$vault" \
       python3 -m scripts.llmwiki init
-  # 두 번째는 볼트가 비어 있지 않아 거부한다. 설정은 그대로여야 한다.
+  # The second run refuses because the vault is not empty. The config must be
+  # left untouched.
   run cat "$home/config.toml"
   [[ "$output" == *'blocklist = ["mine"]'* ]]
 }
@@ -2638,10 +2634,11 @@ print(sum(len(g['hooks']) for a in d['hooks'].values() for g in a))"
 }
 
 @test "codex.sh replaces claude-mem hooks on upgrade instead of stacking them" {
-  # 실측: claude-mem 13.2.0 은 명령 7개, 13.13.1 은 5개이고 문자열이 전부
-  # 다르다. 추가만 하면 업그레이드 후 12개가 남아 같은 이벤트에서 두 번
-  # 발동하고, 아무것도 옛것을 지우지 않는다. doctor 의 codex-hooks 검사는
-  # "claude-mem 이 하나라도 있으면 ok" 라 중복을 정상으로 읽는다.
+  # Measured: claude-mem 13.2.0 ships 7 commands, 13.13.1 ships 5, and every
+  # string differs. Appending only leaves 12 after an upgrade, firing twice on
+  # the same event, and nothing removes the old ones. doctor's codex-hooks
+  # check reads "ok if any claude-mem hook exists", so it calls the duplicates
+  # healthy.
   local home="$BATS_TEST_TMPDIR/upgrade"
   local old="$home/.claude/plugins/cache/thedotmack/claude-mem/13.2.0/hooks"
   local new="$home/.claude/plugins/cache/thedotmack/claude-mem/13.13.1/hooks"
@@ -2667,10 +2664,10 @@ print('NEW' if any('NEW' in x for x in c) else 'no-new',
 }
 
 @test "codex.sh refuses to prune when the template declares no hooks" {
-  # 빈 템플릿은 "원하는 것이 없다" 가 아니라 "무엇을 원하는지 모른다" 다.
-  # 그것을 원하는 집합으로 취급하면 claude-mem 훅을 전부 지우고 아무것도
-  # 넣지 않은 채 성공을 보고한다 - Codex 기록이 조용히 멈춘다. 이 저장소는
-  # 이미 그 방식으로 두 달을 잃었다.
+  # An empty template does not mean "nothing is wanted", it means "what is
+  # wanted is unknown". Treating it as the desired set wipes every claude-mem
+  # hook, installs nothing, and reports success - Codex recording stops
+  # silently. This repository already lost two months that way.
   local home="$BATS_TEST_TMPDIR/empty-template"
   local plug="$home/.claude/plugins/cache/thedotmack/claude-mem/13.0.0/hooks"
   mkdir -p "$plug" "$home/.codex"
@@ -2701,8 +2698,9 @@ print('NEW' if any('NEW' in x for x in c) else 'no-new',
 }
 
 @test "codex.sh leaves an unparseable hooks.json alone and says so" {
-  # 덮어쓰면 다른 도구의 훅까지 날아간다. 지금까지는 traceback 이 stderr 로만
-  # 가고 stdout 이 비어 호출부가 "할 일 없음" 으로 읽었다.
+  # Overwriting it would blow away other tools' hooks too. Until now the
+  # traceback went to stderr only and stdout stayed empty, so the caller read
+  # it as "nothing to do".
   local home="$BATS_TEST_TMPDIR/bad-hooks"
   local plug="$home/.claude/plugins/cache/thedotmack/claude-mem/13.0.0/hooks"
   mkdir -p "$plug" "$home/.codex"
@@ -2717,8 +2715,8 @@ print('NEW' if any('NEW' in x for x in c) else 'no-new',
 }
 
 @test "codex.sh treats an empty hooks.json as absent, not corrupt" {
-  # 0바이트는 잘린 쓰기로 흔히 생기고 안전하게 대체할 수 있다. 손상으로
-  # 취급해 거부하면 병합이 영원히 막힌다.
+  # A 0-byte file commonly comes from a truncated write and can be replaced
+  # safely. Treating it as corrupt and refusing would block the merge forever.
   local home="$BATS_TEST_TMPDIR/empty-hooks"
   local plug="$home/.claude/plugins/cache/thedotmack/claude-mem/13.0.0/hooks"
   mkdir -p "$plug" "$home/.codex"
@@ -2748,8 +2746,9 @@ _run_agents_compose() {
 }
 
 @test "codex.sh composes AGENTS.md from the shared contract plus the Codex-only part" {
-  # Codex 는 ~/.agent/AGENTS.md 를 읽지 않는다. 합성이 빠지면 Claude 와
-  # Cursor 만 공용 규약을 받고 Codex 만 조용히 빠진 원래 상태로 돌아간다.
+  # Codex does not read ~/.agent/AGENTS.md. Without the composition, only
+  # Claude and Cursor get the shared contract and things revert to the original
+  # state where Codex alone was silently left out.
   local home="$BATS_TEST_TMPDIR/compose-fresh"
   mkdir -p "$home/.codex"
 
@@ -2787,8 +2786,9 @@ _run_agents_compose() {
 }
 
 @test "Codex AGENTS.md fragment leaves the commit protocol to the shared contract" {
-  # 두 조각이 각자 커밋 규격을 들고 있으면 합성물이 서로 다른 규격 둘을
-  # 동시에 지시한다. 커밋 프로토콜은 configs/AGENTS.md 가 단독으로 소유한다.
+  # If both fragments carry their own commit spec, the composed file dictates
+  # two different specs at once. configs/AGENTS.md solely owns the commit
+  # protocol.
   run grep -c 'Commit message protocol' "$REPO_ROOT/configs/AGENTS.md"
   [ "$output" = "1" ]
   run grep -Ei 'commit protocol|lore_commit' "$REPO_ROOT/configs/codex/AGENTS.md"
@@ -2796,11 +2796,12 @@ _run_agents_compose() {
 }
 
 @test "llmwiki hooks resolve a python that has tomllib" {
-  # 훅은 로그인 셸 환경에서 돈다. 거기서 python3 는 /usr/bin/python3(3.9)이고
-  # tomllib 이 없다. 볼트 경로를 config.toml 로 옮기면서 모든 훅 호출이 설정을
-  # 파싱하게 됐고, 그 결과 실제 세션에서 매번 죽었다 - fail-open 이라 세션은
-  # 안 막혔지만 cwd 기록이 통째로 멈췄다. plist 는 같은 이유로 이미 해결돼
-  # 있었는데 훅만 빠져 있었다.
+  # Hooks run in the login shell environment, where python3 is
+  # /usr/bin/python3 (3.9) and has no tomllib. Moving the vault path into
+  # config.toml made every hook invocation parse the config, so it died on
+  # every real session - fail-open kept sessions unblocked, but cwd recording
+  # stopped entirely. The plist had already been fixed for the same reason;
+  # only the hooks were missed.
   for hook in hook-session-start hook-user-prompt; do
     run grep -c 'import tomllib' "$REPO_ROOT/configs/llmwiki/$hook.sh"
     [ "$output" != "0" ]
@@ -2810,11 +2811,13 @@ _run_agents_compose() {
 }
 
 @test "llmwiki hooks still exit 0 when no usable python exists" {
-  # fail-open 이 최우선이다. 쓸 만한 파이썬이 없어도 세션을 막지 않는다.
+  # fail-open comes first: a session is never blocked, even with no usable
+  # python.
   #
-  # 후보 목록을 갈아끼워야 이 분기에 닿는다. PATH 만 비우면 절대경로 후보들이
-  # 그대로 살아 있어서, Homebrew 파이썬이 있는 머신에서는 정상 경로를 타고
-  # 통과한다 - 이름이 주장하는 것과 다른 것을 검증하게 된다.
+  # Reaching this branch requires swapping out the candidate list. Clearing
+  # PATH alone leaves the absolute-path candidates alive, so on a machine with
+  # Homebrew python it takes the happy path and passes - verifying something
+  # other than what the test name claims.
   local log="$BATS_TEST_TMPDIR/state/llmwiki"
   run env HOME="$BATS_TEST_TMPDIR" XDG_STATE_HOME="$BATS_TEST_TMPDIR/state" \
       DOTFILES_DIR="$REPO_ROOT" \
@@ -2822,7 +2825,8 @@ _run_agents_compose() {
       /bin/sh "$REPO_ROOT/configs/llmwiki/hook-user-prompt.sh" </dev/null
   [ "$status" -eq 0 ]
 
-  # 조용히 죽지 않는다: doctor 가 읽는 형식으로 한 줄 남아야 한다.
+  # It must not die silently: one line has to be left in the format doctor
+  # reads.
   [ -f "$log/hook-errors.log" ]
   run cat "$log/hook-errors.log"
   [[ "$output" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T ]]
@@ -2830,10 +2834,11 @@ _run_agents_compose() {
 }
 
 @test "llmwiki hooks use the first candidate that has tomllib" {
-  # 실패하는 후보를 앞에 두고, 훅이 실제로 일을 끝냈는지로 판정한다.
-  # "잘못된 오류가 안 났다" 로 보면 약하다 - tomllib 검사를 지워도 통과한다
-  # (가짜가 뽑혀 다른 오류를 내고, 그 다른 오류는 단언에 안 걸린다).
-  # 결과를 본다: cwd 가 기록됐으면 쓸 수 있는 파이썬이 돌았다는 뜻이다.
+  # Put a failing candidate first and judge by whether the hook actually
+  # finished its work. Asserting "the wrong error did not appear" is weak - it
+  # would still pass with the tomllib check deleted (the fake gets picked,
+  # raises a different error, and that error trips no assertion). Look at the
+  # outcome instead: a recorded cwd means a usable python ran.
   local fake="$BATS_TEST_TMPDIR/fake-python3"
   printf '#!/bin/sh\nexit 1\n' > "$fake"
   chmod +x "$fake"
@@ -2855,12 +2860,12 @@ _run_agents_compose() {
 }
 
 @test "Brewfile provides lefthook so the pre-push gate can exist" {
-  # lefthook.yml 은 "run automatically by install.sh" 라고 적어두었고
-  # install.sh 도 부르려 하지만, 조건이 `command -v lefthook` 이라 바이너리가
-  # 없으면 조용히 건너뛴다. 그 경고문은 "install via Brewfile" 이라고 안내하는데
-  # 정작 Brewfile 에 없었다. 결과: verify.sh + 필수 gitleaks 스캔으로 구성된
-  # pre-push 게이트가 이 저장소에서 한 번도 돈 적이 없다. gitleaks 는 바로 그
-  # 게이트를 위해 이미 설치돼 있었다.
+  # lefthook.yml says it is "run automatically by install.sh", and install.sh
+  # does try to call it, but the condition is `command -v lefthook`, so it is
+  # skipped silently when the binary is absent. That warning points at
+  # "install via Brewfile" - and it was not in the Brewfile. Result: the
+  # pre-push gate of verify.sh plus the mandatory gitleaks scan had never run
+  # once in this repository. gitleaks was already installed for that very gate.
   grep -q '^brew "lefthook"' "$REPO_ROOT/Brewfile"
 }
 
