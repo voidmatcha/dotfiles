@@ -60,16 +60,25 @@ if tool_name == 'Bash':
     if not isinstance(command, str):
         deny('malformed Bash command')
 
+    # Newlines separate statements exactly like `;` does. Splitting only on
+    # &&/||/; let `echo hi\ngit push --force` through as one segment whose
+    # first token was `echo`, so every check below silently passed.
     def command_segments(value):
-        return re.split(r'\s*(?:&&|\|\||;)\s*', value)
+        return re.split(r'\s*(?:&&|\|\||;|\||&|\n)\s*', value)
+
+    # Shell grouping and control keywords sit in front of the real command.
+    # Left in place they shift the command out of tokens[0] and defeat the
+    # first-token checks the same way a missed separator does.
+    _prefixes = {'sudo', 'command', 'then', 'else', 'elif', 'do', '!', '(', '{'}
 
     def segment_tokens(segment):
+        segment = segment.lstrip('(){} \t')
         try:
             tokens = shlex.split(segment)
         except ValueError:
             return []
 
-        while tokens and tokens[0] in {'sudo', 'command'}:
+        while tokens and tokens[0] in _prefixes:
             tokens = tokens[1:]
         return tokens
 
@@ -101,9 +110,16 @@ if tool_name == 'Bash':
 
         if len(tokens) >= 2 and tokens[0] == 'git' and tokens[1] == 'push':
             rest = tokens[2:]
-            if any(token in {'-f', '--force'} or token.startswith('+') for token in rest):
+
+            # `-f` also arrives bundled, as in `git push -uf origin`.
+            def is_short_force(token):
+                return (token.startswith('-') and not token.startswith('--')
+                        and 'f' in token[1:])
+
+            if any(token == '--force' or is_short_force(token)
+                   or token.startswith('+') for token in rest):
                 deny('Blocked risky Bash command: force push')
-            # --force-with-lease is allowed (fails if the remote ref moved),
+            # --force-with-lease is allowed (it fails if the remote ref moved),
             # except toward protected branches.
             if any(token.startswith('--force-with-lease') for token in rest):
                 protected = {'main', 'master'}
@@ -111,6 +127,13 @@ if tool_name == 'Bash':
                     if token.startswith('--force-with-lease='):
                         return token.split('=', 1)[1].split(':', 1)[0].split('/')[-1]
                     return None
+                operands = [token for token in rest if not token.startswith('-')]
+                # With no refspec git pushes the current branch, which the hook
+                # cannot see. `git push --force-with-lease origin` on main read
+                # as an unprotected push because only `origin` was inspected.
+                if len(operands) < 2:
+                    deny('Blocked risky Bash command: lease push without an '
+                         'explicit refspec - name the branch')
                 for token in rest:
                     ref = token.split(':', 1)[-1].split('/')[-1] if not token.startswith('-') else lease_target(token)
                     if ref in protected:
