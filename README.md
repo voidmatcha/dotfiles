@@ -24,6 +24,7 @@ These are separate counters, not one additive savings total.
 | --- | --- | --- |
 | [RTK] ingress reduction | 23,903 global commands. 26.2M estimated tokens removed (57.3%). In this repo: 1.26M removed (63.5%). | Substantial command/tool-output reduction before transcript ingress. Not a bill-savings percentage. |
 | Public usage ledger | [Tokscale]: 93.711B tokens and 95.8% cache-read through 2026-07-05. | Public token-mix snapshot. Not causality proof for one repo change. |
+| Headroom proxy health *(retired 2026-08)* | 22,337 routed requests. 18,469 cached (82.7%). 54 failed (0.24%). 0 rate-limited. 1 cache-bust. | Measured while the Headroom proxy was in use. It is proxy telemetry, never a token-savings figure — output-token savings were never claimed, because no baseline or holdout run existed. Kept as a record of what was measured; the layer has since been removed. |
 
 Cross-machine totals are omitted until each machine is refreshed with the same capture window.
 
@@ -127,7 +128,7 @@ and Codex write into and a human can edit.
 | `ingest` | Reads new claude-mem rows into an append-only event log. The live database is copied through SQLite's backup API first, never read while its WAL is active. |
 | `compile` | Rewrites vault views from those events, but only between `GEN:` markers. Everything outside them is human-owned and never touched. |
 | `search`, `list-open`, `status` | An `rg` wrapper over the vault plus task queries. Deep cross-session search stays with `mem-search`; no embeddings, no vector store. |
-| `serve` | Read-only web view of the vault, refreshed without waiting for a compile. |
+| `serve` | Read-only web view of the vault, refreshed without waiting for a compile. It binds `127.0.0.1`; reaching it from another machine needs `ENABLE_TAILSCALE_SERVE=1` at install time, which publishes it on the tailnet only. |
 | `snapshot` | Dated backups of vault and event store. The vault is not a pure derivative — hand-written sections exist only there. |
 | Hooks | `SessionStart` injects the current project's open tasks (5 tasks, 1,000 chars max) and binds a session named `T-0043` to that task. `UserPromptSubmit` records cwd changes so work can be attributed to a project. Both fail open, and log their failures. |
 

@@ -363,7 +363,7 @@ def check_llmwiki_capture(_root: Path) -> list[tuple[str, str, str]]:
     vault = _llmwiki_vault(state)
 
     # compile emits the replacement warning to stderr once and that is it. If
-    # the nightly job noticed first, that one line went into /tmp/llmwiki.err
+    # the nightly job noticed first, that one line went into ~/Library/Logs/llmwiki.err
     # and every later run is silent. Comparing the last compiled vault that
     # state remembers against the vault the config points at keeps the weekly
     # check showing it.

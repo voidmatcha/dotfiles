@@ -35,7 +35,7 @@ cd "$d"
 # failing ingest or compile ended the run before it ever got there, so one
 # damaged hand-edited page stopped every backup from that night on and nothing
 # said so. Run all three regardless, and still exit non-zero so launchd and
-# /tmp/llmwiki.err keep reporting the failure.
+# __HOME__/Library/Logs/llmwiki.err keep reporting the failure.
 rc=0
 "$py" -m scripts.llmwiki ingest || rc=1
 "$py" -m scripts.llmwiki compile || rc=1
@@ -44,7 +44,7 @@ exit "$rc"</string>
   </array>
   <key>StartCalendarInterval</key>
   <dict><key>Hour</key><integer>4</integer><key>Minute</key><integer>0</integer></dict>
-  <key>StandardOutPath</key><string>/tmp/llmwiki.log</string>
-  <key>StandardErrorPath</key><string>/tmp/llmwiki.err</string>
+  <key>StandardOutPath</key><string>__HOME__/Library/Logs/llmwiki.log</string>
+  <key>StandardErrorPath</key><string>__HOME__/Library/Logs/llmwiki.err</string>
 </dict>
 </plist>

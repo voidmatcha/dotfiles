@@ -589,7 +589,7 @@ class LlmwikiCaptureTest(unittest.TestCase):
 
         But the old vault still holds hand-written notes and tasks/, and the
         only notice is a single stderr line at swap time. Under launchd that
-        line goes to /tmp/llmwiki.err, where nobody reads it. Rather than
+        line goes to ~/Library/Logs/llmwiki.err, where nobody reads it. Rather than
         building an acknowledgement flow, ask the question that matters - is
         there content left in the old vault?
         """

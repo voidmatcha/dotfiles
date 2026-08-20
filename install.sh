@@ -171,11 +171,14 @@ fi
 # llmwiki 야간 작업. 훅은 세션 중에만 기록한다. 적재/컴파일/스냅샷은 아무도
 # 부르지 않으면 영원히 돌지 않는다 - 실측으로 볼트가 14시간 밀린 적이 있다.
 ensure_dir "$HOME/Library/LaunchAgents"
-copy_file "$DOTFILES_DIR/configs/llmwiki/com.yongjae.llmwiki.plist" \
+ensure_dir "$HOME/Library/Logs"
+render_file "$DOTFILES_DIR/configs/llmwiki/com.yongjae.llmwiki.plist" \
   "$HOME/Library/LaunchAgents/com.yongjae.llmwiki.plist"
-copy_file "$DOTFILES_DIR/configs/llmwiki/com.yongjae.llmwiki-web.plist" \
+render_file "$DOTFILES_DIR/configs/llmwiki/com.yongjae.llmwiki-web.plist" \
   "$HOME/Library/LaunchAgents/com.yongjae.llmwiki-web.plist"
-if command -v launchctl >/dev/null 2>&1; then
+if $DRY_RUN; then
+  info "[dry-run] launchctl bootstrap com.yongjae.llmwiki, com.yongjae.llmwiki-web"
+elif command -v launchctl >/dev/null 2>&1; then
   for _job in com.yongjae.llmwiki com.yongjae.llmwiki-web; do
     launchctl bootout "gui/$(id -u)/$_job" 2>/dev/null || true
     launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/$_job.plist" 2>/dev/null \
@@ -183,9 +186,11 @@ if command -v launchctl >/dev/null 2>&1; then
   done
 fi
 # 주간 점검. 검사가 있어도 아무도 돌리지 않으면 두 달이 지나간다.
-copy_file "$DOTFILES_DIR/configs/launchd/com.yongjae.dotfiles-doctor.plist" \
+render_file "$DOTFILES_DIR/configs/launchd/com.yongjae.dotfiles-doctor.plist" \
   "$HOME/Library/LaunchAgents/com.yongjae.dotfiles-doctor.plist"
-if command -v launchctl >/dev/null 2>&1; then
+if $DRY_RUN; then
+  info "[dry-run] launchctl bootstrap com.yongjae.dotfiles-doctor"
+elif command -v launchctl >/dev/null 2>&1; then
   launchctl bootout "gui/$(id -u)/com.yongjae.dotfiles-doctor" 2>/dev/null || true
   launchctl bootstrap "gui/$(id -u)" \
     "$HOME/Library/LaunchAgents/com.yongjae.dotfiles-doctor.plist" 2>/dev/null \
@@ -193,7 +198,13 @@ if command -v launchctl >/dev/null 2>&1; then
 fi
 
 # 읽기 전용 뷰어를 tailnet 에만 연다. Funnel(공개)은 쓰지 않는다.
-if command -v tailscale >/dev/null 2>&1; then
+# Publishing is opt-in, the same gate scripts/services.sh uses. The vault holds
+# personal notes, so reaching the tailnet must be a decision, not a side effect
+# of running the installer.
+if $DRY_RUN; then
+  info "[dry-run] llmwiki viewer publish opt-in is ENABLE_TAILSCALE_SERVE=1"
+  info "[dry-run] tailscale serve --bg --https=8391 http://127.0.0.1:8391"
+elif [ "${ENABLE_TAILSCALE_SERVE:-0}" = "1" ] && command -v tailscale >/dev/null 2>&1; then
   tailscale serve status 2>/dev/null | grep -q ":8391" \
     || tailscale serve --bg --https=8391 http://127.0.0.1:8391 >/dev/null 2>&1 \
     || warn "could not publish llmwiki viewer on the tailnet"

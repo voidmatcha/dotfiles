@@ -395,7 +395,24 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
+    # Binding 127.0.0.1 does not stop a page on the open web: it can point its
+    # own hostname at 127.0.0.1 and let the browser read the vault back to it.
+    # The Host header is what separates a real local visit from that, so it is
+    # checked before any vault content is read.
+    def _host_allowed(self) -> bool:
+        host = (self.headers.get("Host") or "").strip().lower()
+        if not host:
+            return False
+        if host.startswith("["):  # [::1]:8391
+            name = host[1:host.find("]")] if "]" in host else host
+        else:
+            name = host.rsplit(":", 1)[0] if host.count(":") == 1 else host
+        return name in {"localhost", "127.0.0.1", "::1"} or name.endswith(".ts.net")
+
     def do_GET(self) -> None:
+        if not self._host_allowed():
+            self._send(_shell("거부됨", "<p>Host 헤더가 허용 목록에 없다.</p>"), code=403)
+            return
         path = unquote(urlparse(self.path).path)
         if path == "/":
             self._send(_shell("llmwiki", _status_html(self._home, self._vault, self._cfg)))

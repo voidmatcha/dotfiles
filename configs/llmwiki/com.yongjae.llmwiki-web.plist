@@ -34,7 +34,7 @@ exec "$py" -m scripts.llmwiki serve --port 8391 --refresh 60</string>
   </array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>/tmp/llmwiki-web.log</string>
-  <key>StandardErrorPath</key><string>/tmp/llmwiki-web.err</string>
+  <key>StandardOutPath</key><string>__HOME__/Library/Logs/llmwiki-web.log</string>
+  <key>StandardErrorPath</key><string>__HOME__/Library/Logs/llmwiki-web.err</string>
 </dict>
 </plist>

@@ -125,6 +125,32 @@ copy_file() {
   info "Copied: $src -> $dst"
 }
 
+# render_file <src> <dst>
+# copy_file, but expanding __HOME__ first. launchd does not expand variables in
+# a plist, so a LaunchAgent that must write under the user's home has to be
+# rendered at install time rather than copied.
+render_file() {
+  local src="$1"
+  local dst="$2"
+
+  if $DRY_RUN; then
+    info "[dry-run] render $src -> $dst"
+    return 0
+  fi
+
+  mkdir -p "$(dirname "$dst")"
+  local tmp
+  tmp="$(mktemp)"
+  sed -e "s|__HOME__|$HOME|g" "$src" > "$tmp"
+  if [ -f "$dst" ] && cmp -s "$tmp" "$dst"; then
+    rm -f "$tmp"
+    return 0
+  fi
+  mv "$tmp" "$dst"
+  chmod 0644 "$dst"
+  info "Rendered: $src -> $dst"
+}
+
 # with_timeout <secs> <cmd> [args...]
 # macOS has no `timeout`; perl's alarm sends SIGALRM after N seconds (exit 142).
 # Use to bound third-party CLIs that may hang on first-run downloads, network

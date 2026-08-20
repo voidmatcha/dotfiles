@@ -266,3 +266,30 @@ class MarkdownTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HostHeaderTest(unittest.TestCase):
+    """Binding loopback is not an origin check.
+
+    A page on the open web can resolve its own hostname to 127.0.0.1 and read
+    the vault back to itself. Only the Host header separates that from a real
+    local visit.
+    """
+
+    def _allowed(self, host: str | None) -> bool:
+        handler = WV.Handler.__new__(WV.Handler)
+        handler.headers = {"Host": host} if host is not None else {}
+        return WV.Handler._host_allowed(handler)
+
+    def test_loopback_hosts_are_allowed(self) -> None:
+        for host in ("localhost:8391", "127.0.0.1:8391", "[::1]:8391",
+                     "localhost", "127.0.0.1", "LOCALHOST:8391"):
+            self.assertTrue(self._allowed(host), host)
+
+    def test_tailnet_host_is_allowed(self) -> None:
+        self.assertTrue(self._allowed("mac.tail1234.ts.net"))
+
+    def test_rebinding_host_is_refused(self) -> None:
+        for host in ("evil.example:8391", "127.0.0.1.evil.example",
+                     "notts.net.evil.example", "", None):
+            self.assertFalse(self._allowed(host), host)
