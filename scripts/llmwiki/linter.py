@@ -30,6 +30,17 @@ TASK_REQUIRED = ("type", "id", "project", "status")
 PROJECT_REQUIRED = ("type", "slug", "status")
 INDEX_EXEMPT = ("done", "archived")
 
+# Hand-editable pages that live outside tasks/ and projects/ but that compile
+# still writes into through GEN markers. Nothing checked them, so damage here
+# surfaced only as a traceback from the middle of a compile run.
+#
+# A warning, not an error, on purpose. An error stops compile (see __main__),
+# and the nightly job chains compile with the snapshot - blocking the run to
+# protect a table that only gets rebuilt from events would cost the one backup
+# of the prose that exists nowhere else. compile skips the damaged section and
+# keeps going; this line is what makes the skip visible.
+LOOSE_PAGES = ("dashboard.md",)
+
 
 def _strict_ok(text: str) -> bool:
     """Run it through a strict parser too if PyYAML is present; skip if it is not.
@@ -80,6 +91,13 @@ def run(home: Path, vault: Path, cfg) -> tuple[list[str], list[str]]:
                 slugs.append(str(meta["slug"]))
             if meta.get("status") not in INDEX_EXEMPT and rel not in index_text:
                 warnings.append(f"{rel}: index.md 에 없는 고아 페이지")
+
+    for name in LOOSE_PAGES:
+        page = vault / name
+        if not page.is_file():
+            continue
+        for problem in markers.validate(page.read_text(encoding="utf-8", errors="replace")):
+            warnings.append(f"{name}: {problem} — compile 이 이 구역을 건너뛴다")
 
     duplicates = {s for s in slugs if slugs.count(s) > 1}
     errors.extend(f"slug 중복: {s}" for s in sorted(duplicates))

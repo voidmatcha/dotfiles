@@ -10,6 +10,22 @@ from pathlib import Path
 # Where unclassified work collects. Not a project, a waiting room.
 UNFILED = "unfiled"
 
+_UNSAFE_SLUG = re.compile(r"[^\w가-힣.-]+")
+
+
+def safe_slug(raw: str) -> str:
+    """Make a value usable as a filename.
+
+    claude-mem's project field carries worktree paths such as
+    'ui-skills/2026-06-27-adcker4'. Used as is, it creates subdirectories, so
+    pages scatter and index links break. In the real data 5 of 28 had this shape.
+
+    Lives here rather than in compiler because it is one half of the project
+    identity below, and identity has to be shared by every writer and reader.
+    compiler re-exports it for the callers that already import it from there.
+    """
+    return _UNSAFE_SLUG.sub("-", raw).strip("-") or "unnamed"
+
 
 def host() -> str:
     """A stable short name for this machine.
@@ -95,6 +111,25 @@ class Config:
         """
         slug = self.mapping.get(raw, raw)
         return UNFILED if slug in self.blocklist else slug
+
+    def project_id(self, raw: str) -> str:
+        """The single canonical project identity: mapping, blocklist, then slug.
+
+        compile keys project pages off this, and the SessionStart hook derives
+        its injection filter from it - but 'llmwiki new' used to skip it and
+        store the raw --project string, so the two were compared with == while
+        being produced by different code. A directory named 'My Project' became
+        'My-Project' on the page and stayed 'My Project' on the task, and that
+        project got zero task injection forever without ever saying so.
+
+        Applied at every write and again at every read. The read side is not
+        redundant: task pages already in the vault still hold raw values, and
+        normalizing them on the way in is what keeps them from being orphaned.
+
+        Idempotent for the values it produces - a slugged name is not itself a
+        mapping key - which is what makes the double application safe.
+        """
+        return safe_slug(self.resolve_project(raw))
 
 
 def load(home_dir: Path) -> Config:

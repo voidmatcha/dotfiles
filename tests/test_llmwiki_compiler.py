@@ -206,6 +206,43 @@ class SlugTest(unittest.TestCase):
             self.assertEqual(pages[0].parent, vault / "projects")
             self.assertNotIn("/", pages[0].stem)
 
+    def test_open_tasks_counts_a_task_stored_under_a_raw_project_name(self) -> None:
+        """A task page left over from before identity was canonicalized still
+        has to be counted, linked, and then repaired.
+
+        open_by_project was keyed off the raw frontmatter string while the
+        project page is named by the slug, so 'My Project' and 'My-Project'
+        never met and the page reported open_tasks: 0 with an empty task list.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            home, vault = Path(d) / "h", Path(d) / "v"
+            seed(home, "My Project", 5)
+            VIO.write_page(vault / "tasks" / "T-0001-legacy.md", {
+                "type": "task", "id": "T-0001", "title": "옛 태스크",
+                "project": "My Project", "status": "doing",
+            }, "본문\n")
+            CP.run(home, vault, CFG.Config())
+            meta, body = VIO.read_page(vault / "projects" / "My-Project.md")
+            self.assertEqual(meta["open_tasks"], 1)
+            self.assertIn("T-0001", body)
+            # compile rewrites the page anyway, so it is where the raw value
+            # gets retired instead of lingering for the next reader to handle.
+            healed, _ = VIO.read_page(vault / "tasks" / "T-0001-legacy.md")
+            self.assertEqual(healed["project"], "My-Project")
+
+    def test_blocklisted_task_project_is_counted_under_unfiled(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            home, vault = Path(d) / "h", Path(d) / "v"
+            cfg = CFG.Config(blocklist=frozenset({"Documents"}))
+            seed(home, "Documents", 5)
+            VIO.write_page(vault / "tasks" / "T-0001-legacy.md", {
+                "type": "task", "id": "T-0001", "title": "옛 태스크",
+                "project": "Documents", "status": "doing",
+            }, "본문\n")
+            CP.run(home, vault, cfg)
+            meta, _ = VIO.read_page(vault / "projects" / "unfiled.md")
+            self.assertEqual(meta["open_tasks"], 1)
+
     def test_safe_slug_keeps_korean_and_hyphens(self) -> None:
         self.assertEqual(CP.safe_slug("ui-skills"), "ui-skills")
         self.assertEqual(CP.safe_slug("ui-skills/2026-06"), "ui-skills-2026-06")
@@ -349,3 +386,66 @@ class VaultIdentityTest(unittest.TestCase):
             first = (vault / ".llmwiki-vault").read_bytes()
             CP.run(home, vault, CFG.Config())
             self.assertEqual(first, (vault / ".llmwiki-vault").read_bytes())
+
+
+DAMAGED_DASHBOARD = (
+    "# 대시보드\n\n<!-- GEN:activity -->\n_아직 compile 되지 않음_\n"
+)
+
+
+class DamagedDashboardTest(unittest.TestCase):
+    """dashboard.md is hand-editable and the linter never validated its markers.
+
+    Deleting the <!-- /GEN:activity --> line made markers.replace raise from
+    _write_dashboard, which runs at the very end of compile: the project pages
+    and index.md were already written, and state.json's vault record had not
+    been updated yet. Worse, the nightly job chains ingest, compile and
+    snapshot under set -e, so from that night on the snapshot - the only backup
+    of what exists nowhere but the vault - never ran again, silently.
+    """
+
+    def _vault(self, d: str) -> tuple[Path, Path]:
+        home, vault = Path(d) / "h", Path(d) / "v"
+        seed(home, "proj", 5)
+        vault.mkdir(parents=True)
+        (vault / "dashboard.md").write_text(DAMAGED_DASHBOARD, encoding="utf-8")
+        return home, vault
+
+    def test_damaged_dashboard_does_not_abort_the_compile(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            home, vault = self._vault(d)
+            result = CP.run(home, vault, CFG.Config())
+            self.assertTrue((vault / "projects" / "proj.md").exists())
+            self.assertTrue((vault / "index.md").exists())
+
+            # The part that used to be skipped: everything after
+            # _write_dashboard. Without the vault record, the next run cannot
+            # tell a repointed vault from a first run.
+            state = json.loads((home / "state.json").read_text())
+            self.assertEqual(state.get("vault"), str(vault.resolve()))
+            self.assertIsNotNone(result.get("dashboard_warning"),
+                                 "건너뛴 사실이 보고되지 않으면 조용한 손실이다")
+            self.assertIn("dashboard.md", result["dashboard_warning"])
+
+    def test_damaged_dashboard_is_left_exactly_as_the_human_wrote_it(self) -> None:
+        """Skip means skip. Appending a fresh block would leave the file with two
+        GEN:activity sections and still broken."""
+        with tempfile.TemporaryDirectory() as d:
+            home, vault = self._vault(d)
+            CP.run(home, vault, CFG.Config())
+            self.assertEqual((vault / "dashboard.md").read_text(encoding="utf-8"),
+                             DAMAGED_DASHBOARD)
+
+    def test_a_healthy_dashboard_still_gets_its_table(self) -> None:
+        """The skip must be narrow. Swallowing every failure would make the
+        activity table quietly stop updating and read as healthy."""
+        with tempfile.TemporaryDirectory() as d:
+            home, vault = Path(d) / "h", Path(d) / "v"
+            seed(home, "proj", 5)
+            vault.mkdir(parents=True)
+            (vault / "dashboard.md").write_text(
+                DAMAGED_DASHBOARD + "<!-- /GEN:activity -->\n", encoding="utf-8")
+            result = CP.run(home, vault, CFG.Config())
+            self.assertIsNone(result.get("dashboard_warning"))
+            self.assertIn("프로젝트 활동",
+                          (vault / "dashboard.md").read_text(encoding="utf-8"))

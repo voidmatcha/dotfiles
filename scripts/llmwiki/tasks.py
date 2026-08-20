@@ -27,7 +27,7 @@ def _load(name: str):
     return module
 
 
-store, vaultio = _load("store"), _load("vaultio")
+store, vaultio, config = _load("store"), _load("vaultio"), _load("config")
 
 BODY = """## 목표
 
@@ -60,10 +60,17 @@ def path_for(vault: Path, task_id: str) -> Path:
 
 
 def create(home: Path, vault: Path, project: str, title: str | None = None,
-           bind_session: str | None = None, next_steps_hint: str = "") -> str:
+           bind_session: str | None = None, next_steps_hint: str = "",
+           cfg=None) -> str:
     if not title:
         first = re.split(r"[.。\n]", next_steps_hint.strip())[0].strip()
         title = first or "제목 없음"
+    # Store the canonical identity, never the raw --project string. compile
+    # names project pages by that identity and the SessionStart hook filters by
+    # it, so a raw value here produced a task no page and no injection matched.
+    # Without a cfg the mapping and blocklist are unknown, so apply the half of
+    # the identity that carries no configuration.
+    project = cfg.project_id(project) if cfg is not None else config.safe_slug(project)
     task_id = store.next_task_id(home / "state.json")
     meta = {
         "type": "task", "id": task_id, "title": title, "project": project,

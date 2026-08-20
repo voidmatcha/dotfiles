@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import importlib.util
 import sqlite3
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 
@@ -128,6 +132,78 @@ class IngestTest(unittest.TestCase):
             IN.run(home, db, HOST)
             events, _ = ST.read_json(home / "events.ndjson")
             self.assertEqual(events[0]["project"], "zeppelin")
+
+
+@contextlib.contextmanager
+def events_lock(events: Path):
+    """Take the events lock the way a concurrent ingest would.
+
+    Hand-rolled instead of calling store.lock_file so the test still runs against
+    a store.py that has no lock at all, and fails on the assertion rather than on
+    a missing attribute.
+    """
+    events.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = events.with_suffix(events.suffix + ".lock")
+    with lock_path.open("w") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
+class ConcurrentIngestTest(unittest.TestCase):
+    def test_overlapping_runs_do_not_append_the_same_rows_twice(self) -> None:
+        """The 60s web refresher and the 04:00 nightly job can overlap. Both see
+        the same `s.id > watermark` rows, and a duplicated event later shows up
+        as doubled merged_from."""
+        with tempfile.TemporaryDirectory() as d:
+            home, db = Path(d) / "home", Path(d) / "cm.db"
+            make_db(db, [ROW_A, ROW_B])
+            real_snapshot = IN.snapshot_db
+
+            def slow_snapshot(src: Path, dst: Path) -> None:
+                # Guarantee the two runs are actually in flight together.
+                real_snapshot(src, dst)
+                time.sleep(0.3)
+
+            results: list[dict] = []
+            lock = threading.Lock()
+
+            def worker() -> None:
+                out = IN.run(home, db, HOST)
+                with lock:
+                    results.append(out)
+
+            IN.snapshot_db = slow_snapshot
+            try:
+                threads = [threading.Thread(target=worker) for _ in range(2)]
+                for t in threads:
+                    t.start()
+                for t in threads:
+                    t.join(30)
+            finally:
+                IN.snapshot_db = real_snapshot
+
+            events, _ = ST.read_json(home / "events.ndjson")
+            self.assertEqual(len(events), 2)
+            self.assertEqual(len({e["event_id"] for e in events}), 2)
+            self.assertEqual(sum(r["imported"] for r in results), 2)
+
+    def test_run_skips_instead_of_crashing_when_the_lock_is_held(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            home, db = Path(d) / "home", Path(d) / "cm.db"
+            make_db(db, [ROW_A])
+            events = home / "events.ndjson"
+            with events_lock(events):
+                result = IN.run(home, db, HOST)
+            self.assertEqual(result["imported"], 0)
+            self.assertTrue(result.get("locked"))
+            self.assertFalse(events.exists())
+            # A skipped run loses nothing: the next tick imports the same rows.
+            later = IN.run(home, db, HOST)
+            self.assertEqual(later["imported"], 1)
+            self.assertFalse(later.get("locked"))
 
 
 class MultiHostTest(unittest.TestCase):

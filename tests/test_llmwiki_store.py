@@ -52,6 +52,26 @@ class StoreTest(unittest.TestCase):
             ST.update_state(p, bump)
             self.assertEqual(ST.load_state(p)["watermark"]["claude-mem"], 42)
 
+    def test_read_json_raw_keeps_the_unparsable_line(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "events.ndjson"
+            ST.append_json(p, {"a": 1})
+            with p.open("a", encoding="utf-8") as fh:
+                fh.write('{"a": 2, "trunc\n')
+            pairs = ST.read_json_raw(p)
+            self.assertEqual([obj for obj, _raw in pairs], [{"a": 1}, None])
+            self.assertEqual(pairs[1][1], '{"a": 2, "trunc')
+
+    def test_lock_file_is_exclusive_and_non_blocking_reports_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "events.ndjson"
+            with ST.lock_file(p) as first:
+                self.assertTrue(first)
+                with ST.lock_file(p, blocking=False) as second:
+                    self.assertFalse(second)
+            with ST.lock_file(p, blocking=False) as third:
+                self.assertTrue(third)
+
     def test_next_task_id_increments_and_is_zero_padded(self) -> None:
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "state.json"

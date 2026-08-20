@@ -101,6 +101,32 @@ class LinterTest(unittest.TestCase):
             _, warnings = LT.run(home, vault, CFG.Config())
             self.assertTrue(any("깨진" in w for w in warnings))
 
+    def test_damaged_dashboard_marker_is_reported(self) -> None:
+        """dashboard.md is hand-editable and compile writes into its GEN markers,
+        but only tasks/ and projects/ were ever validated. Damage there showed up
+        as a traceback from the middle of a compile run instead of a lint line."""
+        with tempfile.TemporaryDirectory() as d:
+            vault = self._vault(d)
+            (vault / "dashboard.md").write_text(
+                "# 대시보드\n\n<!-- GEN:activity -->\n닫히지 않음\n", encoding="utf-8"
+            )
+            errors, warnings = LT.run(Path(d) / "h", vault, CFG.Config())
+            self.assertTrue(any("dashboard.md" in w and "activity" in w for w in warnings))
+            # A warning, not an error: an error stops compile, and the nightly
+            # job runs the snapshot after compile. Blocking the only backup to
+            # protect a table that gets rebuilt from events is the wrong trade.
+            self.assertFalse(any("dashboard.md" in e for e in errors))
+
+    def test_intact_dashboard_is_not_reported(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            vault = self._vault(d)
+            (vault / "dashboard.md").write_text(
+                "# 대시보드\n\n<!-- GEN:activity -->\n표\n<!-- /GEN:activity -->\n",
+                encoding="utf-8",
+            )
+            errors, warnings = LT.run(Path(d) / "h", vault, CFG.Config())
+            self.assertFalse(any("dashboard.md" in m for m in [*errors, *warnings]))
+
     def test_zero_events_warns_that_automation_stopped(self) -> None:
         with tempfile.TemporaryDirectory() as d:
             _, warnings = LT.run(Path(d) / "h", self._vault(d), CFG.Config())

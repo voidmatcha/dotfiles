@@ -26,6 +26,7 @@ def _load(name: str):
 
 
 store, merge, vaultio = _load("store"), _load("merge"), _load("vaultio")
+config = _load("config")
 
 OPEN_STATUSES = ("doing", "queued", "blocked", "review")
 
@@ -52,11 +53,7 @@ def _merged(home: Path, cfg=None) -> list[dict]:
     events, _ = store.read_json(home / "events.ndjson")
     if cfg is None:
         return merge.by_session_project(events)
-    compiler = _load("compiler")
-    resolved = []
-    for event in events:
-        slug = cfg.resolve_project(event["project"])
-        resolved.append({**event, "project": compiler.safe_slug(slug)})
+    resolved = [{**e, "project": cfg.project_id(e["project"])} for e in events]
     return merge.by_session_project(resolved)
 
 
@@ -64,6 +61,10 @@ def unclassified(home: Path, cfg, project: str | None = None,
                  days: int | None = None) -> list[dict]:
     window = _cutoff(days if days is not None else cfg.unclassified_days)
     binds = _bindings(home)
+    # Same identity rule as everywhere else: rows are canonical, so a hand-typed
+    # --project has to go through the mapping and blocklist before it can be
+    # compared, or 'Documents' matches nothing.
+    wanted = _canonical(cfg, project) if project else None
     out = []
     for row in _merged(home, cfg):
         binding = binds.get(row["session_id"]) or {}
@@ -75,7 +76,7 @@ def unclassified(home: Path, cfg, project: str | None = None,
             continue
         if row["at"] < window:
             continue
-        if project and row["project"] != project:
+        if wanted is not None and row["project"] != wanted:
             continue
         out.append(row)
     return sorted(out, key=lambda r: r["at"], reverse=True)
@@ -108,11 +109,46 @@ def _tasks(vault: Path) -> list[dict]:
     return out
 
 
-def list_open(vault: Path, project: str | None = None, limit: int = 5) -> list[dict]:
+def _canonical(cfg, raw: str) -> str:
+    """Project identity for the read side.
+
+    Without a cfg the mapping and blocklist are unknown, so apply only the slug
+    - the half of the identity that carries no configuration. Callers that have
+    a cfg should pass it, or a blocklisted name never lines up with 'unfiled'.
+    """
+    if not raw:
+        return ""
+    return cfg.project_id(raw) if cfg is not None else config.safe_slug(raw)
+
+
+def _recency(task: dict) -> str:
+    """Sort key for "most recently worked on".
+
+    Falls back to created because last_active is written by compile, which runs
+    overnight - a task made today still has an empty one. Sorting descending on
+    an empty string would push a brand new task past the cap, which is the same
+    silent disappearance this ordering exists to prevent. status() already falls
+    back to created for the same reason.
+    """
+    return str(task.get("last_active") or task.get("created") or "")
+
+
+def list_open(vault: Path, project: str | None = None, limit: int = 5,
+              cfg=None) -> list[dict]:
     rows = [t for t in _tasks(vault) if t.get("status") in OPEN_STATUSES]
     if project:
-        rows = [t for t in rows if t.get("project") == project]
-    rows.sort(key=lambda t: (t.get("status") != "doing", str(t.get("last_active", ""))))
+        # Normalize both sides. Writers canonicalize from now on, but task pages
+        # already in the vault hold raw --project strings, and an == against the
+        # hook's slugged cwd matched nothing - the project silently got zero
+        # injection and no error said why.
+        want = _canonical(cfg, project)
+        rows = [t for t in rows if _canonical(cfg, str(t.get("project", ""))) == want]
+    # Most recent first, then hoist doing. Two stable passes, because a string
+    # key cannot be negated to mix directions inside one sort. This used to sort
+    # ascending, so the cap handed the hook the 5 stalest tasks and dropped the
+    # one worked on yesterday; every other view is most-recent-first.
+    rows.sort(key=_recency, reverse=True)
+    rows.sort(key=lambda t: t.get("status") != "doing")
     return rows[:limit]
 
 

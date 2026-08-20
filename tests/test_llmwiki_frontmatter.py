@@ -57,6 +57,81 @@ class FrontmatterTest(unittest.TestCase):
         self.assertEqual(m2["priority"], 2)
         self.assertEqual(m2["type"], "task")
 
+    def test_block_style_list_survives_a_rewrite(self) -> None:
+        """Obsidian's native block style used to parse to '' and be rewritten as
+        tags: "", destroying the user's hand-written list."""
+        text = "---\ntype: task\ntags:\n  - wiki\n  - personal\nid: T-0001\n---\n\n## 목표\n"
+        meta, body = FM.parse(text)
+        self.assertNotEqual(meta.get("tags"), "")
+        self.assertEqual(FM.render(meta, body), text)
+
+    def test_unowned_frontmatter_shapes_survive_byte_for_byte(self) -> None:
+        """Nested maps, multi-line scalars, comments and null keys are not the
+        compiler's to rewrite, so they must come back unchanged."""
+        text = (
+            "---\n"
+            "# 손으로 쓴 주석\n"
+            "type: project\n"
+            "author:\n"
+            "  name: 이용재\n"
+            "  role: 유지보수\n"
+            "note: >\n"
+            "  여러 줄로 이어지는\n"
+            "  설명\n"
+            "cssclasses:\n"
+            "- wide\n"
+            "empty:\n"
+            "\n"
+            "slug: llmwiki\n"
+            "---\n본문\n"
+        )
+        meta, body = FM.parse(text)
+        self.assertEqual(FM.render(meta, body), text)
+        self.assertEqual(meta["type"], "project")
+        self.assertEqual(meta["slug"], "llmwiki")
+
+    def test_owned_keys_still_rewrite_next_to_preserved_blocks(self) -> None:
+        text = "---\nstatus: doing\ntags:\n  - wiki\n---\n본문\n"
+        meta, body = FM.parse(text)
+        meta["status"] = "done"
+        self.assertEqual(FM.render(meta, body), "---\nstatus: done\ntags:\n  - wiki\n---\n본문\n")
+
+    def test_quote_and_unquote_are_exact_inverses(self) -> None:
+        """quote escaped but _unquote never unescaped, so backslashes doubled on
+        every rewrite."""
+        for value in (
+            'he said: "no"',
+            '"foo" bar',
+            "back\\slash",
+            "C:\\path: here",
+            "trailing space ",
+            "line: one\nline: two",
+            "#해시로 시작",
+            "일반 한글 제목",
+            "quote' single: mark",
+        ):
+            with self.subTest(value=value):
+                self.assertEqual(FM._unquote(FM.quote(value)), value)
+                meta, _ = FM.parse(FM.render({"title": value}, "본문\n"))
+                self.assertEqual(meta["title"], value)
+
+    def test_dangerous_title_is_stable_across_repeated_compiles(self) -> None:
+        meta, body = {"type": "task", "title": 'he said: "no"'}, "본문\n"
+        text = FM.render(meta, body)
+        for _ in range(3):
+            meta, body = FM.parse(text)
+            text = FM.render(meta, body)
+        self.assertEqual(meta["title"], 'he said: "no"')
+        self.assertEqual(text, FM.render(*FM.parse(text)))
+
+    def test_quoted_leading_title_is_not_corrupted_once(self) -> None:
+        meta, _ = FM.parse(FM.render({"title": '"foo" bar'}, "본문\n"))
+        self.assertEqual(meta["title"], '"foo" bar')
+
+    def test_list_items_with_commas_round_trip(self) -> None:
+        meta, _ = FM.parse(FM.render({"harnesses": ["claude-code", "a, b"]}, "본문\n"))
+        self.assertEqual(meta["harnesses"], ["claude-code", "a, b"])
+
     def test_merge_overwrites_owned_and_preserves_unknown(self) -> None:
         existing = {"id": "T-0001", "status": "doing", "priority": 1, "mine": "keep"}
         merged = FM.merge(existing, {"session_count": 3, "status": "IGNORED"}, {"session_count"})

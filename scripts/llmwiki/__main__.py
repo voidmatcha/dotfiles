@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -12,6 +13,14 @@ from pathlib import Path
 
 _HERE = Path(__file__).parent
 TASK_NAME = re.compile(r"^T-\d{4}$")
+
+# The event names configs/llmwiki/hook-*.sh already writes into the log. Keeping
+# them identical means one grep answers "is the hook working", whether the
+# failure happened in the wrapper or inside python.
+HOOK_EVENT_NAMES = {
+    "hook-session-start": "SessionStart",
+    "hook-user-prompt": "UserPromptSubmit",
+}
 
 
 def _load(name: str):
@@ -138,7 +147,7 @@ def _project_at(cfg, payload: dict) -> str | None:
     cwd = str(payload.get("cwd") or "")
     if not cwd:
         return None
-    return _load("compiler").safe_slug(cfg.resolve_project(Path(cwd).name))
+    return cfg.project_id(Path(cwd).name)
 
 
 def _hook_session_start(home: Path, vault: Path, cfg) -> None:
@@ -152,8 +161,11 @@ def _hook_session_start(home: Path, vault: Path, cfg) -> None:
     # Spec 8.3 says to inject the open tasks "of that project". Without the
     # filter, project B tasks leak into a project A session and fill the 5-item
     # cap, bringing back through the injection path the mixing 8.2 blocked.
+    # cfg goes to list_open too, so tasks stored before identity was
+    # canonicalized are normalized on read instead of silently missing the cwd.
     context = queries.brief(
-        queries.list_open(vault, project=_project_at(cfg, payload)), max_chars=1000
+        queries.list_open(vault, project=_project_at(cfg, payload), cfg=cfg),
+        max_chars=1000,
     )
     print(json.dumps(
         {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": context}},
@@ -170,6 +182,53 @@ def _hook_user_prompt(home: Path, vault: Path) -> None:
         )
 
 
+def hook_log_path() -> Path:
+    """The file configs/llmwiki/hook-*.sh already appends to.
+
+    Resolved exactly the way the wrapper resolves it
+    (${XDG_STATE_HOME:-$HOME/.local/state}), including treating an empty value
+    as unset, and exactly the way agent_tooling_doctor.LLMWIKI_ERRLOG does. If
+    these three ever point at different files, doctor reads a green log while
+    the hook is dead - which is the whole failure being fixed here.
+    """
+    state = os.environ.get("XDG_STATE_HOME") or (Path.home() / ".local/state")
+    return Path(state) / "llmwiki" / "hook-errors.log"
+
+
+def log_hook_failure(command: str, exc: BaseException) -> None:
+    """Record a swallowed hook failure, then let the caller keep failing open.
+
+    The guard below returns 0 whatever happens, and the shell wrapper only logs
+    when python exits non-zero, so before this every exception inside a hook
+    body was invisible: a corrupt bindings.ndjson, a full disk, or an
+    unwritable LLMWIKI_HOME stopped all recording while every session looked
+    perfectly healthy. This repo already lost two months of history to exactly
+    that silence.
+
+    One tab-separated line with the timestamp first. doctor's llmwiki-capture
+    check only counts lines whose first field parses as a timestamp, so a raw
+    multi-line traceback would be counted as zero failures and read as green.
+    """
+    try:
+        # The deepest frame, not the shallowest: the top of the traceback is
+        # always this dispatcher, which says nothing about what broke.
+        frame, tb = "", exc.__traceback__
+        while tb is not None:
+            frame = f"{Path(tb.tb_frame.f_code.co_filename).name}:{tb.tb_lineno}"
+            tb = tb.tb_next
+        detail = " ".join(f"{type(exc).__name__}: {exc} ({frame})".split())[:400]
+        path = hook_log_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(f"{stamp}\t{HOOK_EVENT_NAMES.get(command, command)}\t{detail}\n")
+    except BaseException:
+        # Logging a failure must never become a second failure. An unwritable
+        # state directory is one of the causes this is meant to catch, so this
+        # branch is reachable, and fail-open still outranks the record.
+        pass
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     config = _load("config")
@@ -177,15 +236,16 @@ def main(argv: list[str] | None = None) -> int:
     vault = config.vault(home)
     cfg = config.load(home)
 
-    # Hooks must never block the session, no matter what happens.
+    # Hooks must never block the session, no matter what happens. Swallowing the
+    # exception is the guarantee; swallowing the evidence was the bug.
     if args.command in ("hook-session-start", "hook-user-prompt"):
         try:
             if args.command == "hook-session-start":
                 _hook_session_start(home, vault, cfg)
             else:
                 _hook_user_prompt(home, vault)
-        except BaseException:
-            pass
+        except BaseException as exc:
+            log_hook_failure(args.command, exc)
         return 0
 
     if args.command == "serve":
@@ -229,13 +289,18 @@ def main(argv: list[str] | None = None) -> int:
         # human-written text could disappear, so emit it separately on stderr.
         if result.get("vault_warning"):
             print(f"warn: {result['vault_warning']}", file=sys.stderr)
+        # Same reasoning for a skipped dashboard section: compile left a piece
+        # of the vault stale and only a human can repair it, so it does not
+        # belong buried in a dict printed to stdout.
+        if result.get("dashboard_warning"):
+            print(f"warn: {result['dashboard_warning']}", file=sys.stderr)
         print(result)
         return 0
 
     tasks, queries = _load("tasks"), _load("queries")
 
     if args.command == "new":
-        print(tasks.create(home, vault, args.project, args.title, args.bind))
+        print(tasks.create(home, vault, args.project, args.title, args.bind, cfg=cfg))
         return 0
     if args.command == "set-status":
         tasks.set_status(vault, args.task, args.status)
@@ -263,7 +328,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{row['session_id'][:8]}  {row['project']:<24} {row['at'][:10]}  {nxt}")
         return 0
     if args.command == "list-open":
-        rows = queries.list_open(vault, args.project)
+        rows = queries.list_open(vault, args.project, cfg=cfg)
         print(queries.brief(rows) if args.format == "brief"
               else "\n".join(f"{t['id']} [{t.get('status')}] {t.get('title')}" for t in rows))
         return 0

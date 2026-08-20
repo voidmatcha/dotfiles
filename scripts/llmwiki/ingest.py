@@ -144,36 +144,51 @@ def run(home: Path, db: Path, host: str | None = None) -> dict:
     host = host or config.host()
     key = watermark_key(host)
     events_path, state_path = home / "events.ndjson", home / "state.json"
-    state = store.load_state(state_path)
-    watermark = int(state["watermark"].get(key, 0))
 
-    existing, _ = store.read_json(events_path)
-    seen = {e["event_id"] for e in existing}
+    # Serialize the whole import against other ingests and against the migrate
+    # rewrite. `seen` is a snapshot of events.ndjson taken before the slow SQLite
+    # copy, so two overlapping runs (the 60s web refresher and the 04:00 nightly
+    # job) select the same `s.id > watermark` rows and both append them; the
+    # duplicate surfaces later as merged_from doubling. A run that loses the race
+    # skips instead of waiting: ingest is incremental, so the next tick picks the
+    # rows up, and waiting would stack refresher threads behind a slow snapshot.
+    with store.lock_file(events_path, blocking=False) as acquired:
+        if not acquired:
+            held = store.load_state(state_path)
+            return {"imported": 0, "watermark": int(held["watermark"].get(key, 0)),
+                    "skipped": 0, "host": host, "locked": True}
 
-    with tempfile.TemporaryDirectory() as tmp:
-        copy = Path(tmp) / "claude-mem.db"
-        snapshot_db(db, copy)
-        rows = rows_since(copy, watermark)
+        state = store.load_state(state_path)
+        watermark = int(state["watermark"].get(key, 0))
 
-    imported = skipped = 0
-    highest = watermark
-    cwd_index = cwdmap.build(home)
-    # Write the events first, raise the watermark after. If it dies in between,
-    # event_id deduplication absorbs the rerun. In the opposite order, events are
-    # silently lost.
-    for row in rows:
-        event = to_event(row, host)
-        event["project"] = cwdmap.project_at(
-            cwd_index, event["session_id"], event["at"], event["project"]
-        )
-        highest = max(highest, int(row["id"]))
-        if event["event_id"] in seen:
-            skipped += 1
-            continue
-        store.append_json(events_path, event)
-        seen.add(event["event_id"])
-        imported += 1
+        existing, _ = store.read_json(events_path)
+        seen = {e["event_id"] for e in existing}
 
-    if highest > watermark:
-        store.update_state(state_path, lambda s: s["watermark"].update({key: highest}))
-    return {"imported": imported, "watermark": highest, "skipped": skipped, "host": host}
+        with tempfile.TemporaryDirectory() as tmp:
+            copy = Path(tmp) / "claude-mem.db"
+            snapshot_db(db, copy)
+            rows = rows_since(copy, watermark)
+
+        imported = skipped = 0
+        highest = watermark
+        cwd_index = cwdmap.build(home)
+        # Write the events first, raise the watermark after. If it dies in between,
+        # event_id deduplication absorbs the rerun. In the opposite order, events are
+        # silently lost.
+        for row in rows:
+            event = to_event(row, host)
+            event["project"] = cwdmap.project_at(
+                cwd_index, event["session_id"], event["at"], event["project"]
+            )
+            highest = max(highest, int(row["id"]))
+            if event["event_id"] in seen:
+                skipped += 1
+                continue
+            store.append_json(events_path, event)
+            seen.add(event["event_id"])
+            imported += 1
+
+        if highest > watermark:
+            store.update_state(state_path, lambda s: s["watermark"].update({key: highest}))
+        return {"imported": imported, "watermark": highest, "skipped": skipped,
+                "host": host, "locked": False}

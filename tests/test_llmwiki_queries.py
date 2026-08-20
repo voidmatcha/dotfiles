@@ -117,6 +117,71 @@ class QueriesTest(unittest.TestCase):
             self.assertNotIn(stale, [t["id"] for t in result["doing"]])
             self.assertIn(queued, [t["id"] for t in result["queued"]])
 
+    def test_list_open_cap_keeps_the_most_recently_active(self) -> None:
+        """The cap must drop the stalest tasks, not the freshest.
+
+        The hook injects only `limit` of them, so ascending order meant the
+        session opened with the five tasks nobody had touched in months while
+        the one worked on yesterday was cut. Every other view - the compile
+        timeline, the Bases 진행 중 view - is most-recent-first.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            home, vault = Path(d) / "h", Path(d) / "v"
+            ids = {}
+            for day in ("01", "02", "03", "04", "05", "06"):
+                tid = TK.create(home, vault, "p", title=f"t{day}", bind_session=f"s{day}")
+                page = TK.path_for(vault, tid)
+                meta, body = VIO.read_page(page)
+                meta["last_active"] = f"2026-01-{day}"
+                VIO.write_page(page, meta, body)
+                ids[day] = tid
+            rows = QR.list_open(vault, "p")
+            self.assertEqual([r["id"] for r in rows],
+                             [ids["06"], ids["05"], ids["04"], ids["03"], ids["02"]])
+
+    def test_list_open_keeps_doing_ahead_of_other_statuses(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            home, vault = Path(d) / "h", Path(d) / "v"
+            old_doing = TK.create(home, vault, "p", title="오래된 진행", bind_session="s1")
+            fresh_queued = TK.create(home, vault, "p", title="새 대기")
+            for tid, when in ((old_doing, "2026-01-01"), (fresh_queued, "2026-07-01")):
+                page = TK.path_for(vault, tid)
+                meta, body = VIO.read_page(page)
+                meta["last_active"] = when
+                VIO.write_page(page, meta, body)
+            self.assertEqual([r["id"] for r in QR.list_open(vault, "p")],
+                             [old_doing, fresh_queued])
+
+    def test_list_open_does_not_drop_a_task_created_before_any_compile(self) -> None:
+        """last_active is written by compile, which runs overnight.
+
+        A task made today has an empty one, and sorting descending on "" would
+        push it behind every stale task and off the end of the cap.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            home, vault = Path(d) / "h", Path(d) / "v"
+            for day in ("01", "02", "03", "04", "05"):
+                tid = TK.create(home, vault, "p", title=f"t{day}", bind_session=f"s{day}")
+                page = TK.path_for(vault, tid)
+                meta, body = VIO.read_page(page)
+                meta["last_active"] = f"2026-01-{day}"
+                VIO.write_page(page, meta, body)
+            brand_new = TK.create(home, vault, "p", title="오늘 만든 것", bind_session="s9")
+            rows = QR.list_open(vault, "p")
+            self.assertEqual(rows[0]["id"], brand_new)
+
+    def test_list_open_matches_a_task_stored_under_a_raw_project_name(self) -> None:
+        """Read-time normalization repairs vault rows written before the fix."""
+        with tempfile.TemporaryDirectory() as d:
+            home, vault = Path(d) / "h", Path(d) / "v"
+            VIO.write_page(vault / "tasks" / "T-0001-legacy.md", {
+                "type": "task", "id": "T-0001", "title": "옛 태스크",
+                "project": "Documents", "status": "doing",
+            }, "본문\n")
+            cfg = CFG.Config(blocklist=frozenset({"Documents"}))
+            rows = QR.list_open(vault, "unfiled", cfg=cfg)
+            self.assertEqual([r["id"] for r in rows], ["T-0001"])
+
     def test_brief_respects_char_budget(self) -> None:
         rows = [{"id": f"T-{i:04d}", "title": "제" * 200, "status": "doing"} for i in range(5)]
         self.assertLessEqual(len(QR.brief(rows, max_chars=1000)), 1000)

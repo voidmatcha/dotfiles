@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import importlib.util
-import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,18 +30,11 @@ config = _load("config")
 markers, vaultio = _load("markers"), _load("vaultio")
 
 OPEN_STATUSES = ("doing", "queued", "blocked", "review")
-_UNSAFE_SLUG = re.compile(r"[^\w가-힣.-]+")
 SKELETON = "## 지금 상태\n\n## 실패한 시도 (다시 하지 말 것)\n\n## 결정과 근거\n"
 
-
-def safe_slug(raw: str) -> str:
-    """Make a value usable as a filename.
-
-    claude-mem's project field carries worktree paths such as
-    'ui-skills/2026-06-27-adcker4'. Used as is, it creates subdirectories, so
-    pages scatter and index links break. In the real data 5 of 28 had this shape.
-    """
-    return _UNSAFE_SLUG.sub("-", raw).strip("-") or "unnamed"
+# Re-exported from config, which owns project identity now. Kept under this name
+# because library.py and the tests reach for compiler.safe_slug.
+safe_slug = config.safe_slug
 
 
 def _now() -> datetime:
@@ -169,9 +161,15 @@ def run(home: Path, vault: Path, cfg) -> dict:
         meta, _body = vaultio.read_page(page)
         if not meta.get("id"):
             continue
+        # Normalize on read. Task pages written before project identity was
+        # canonicalized still carry the raw --project string, and counting those
+        # under their own spelling keys open_tasks to a name no project page has
+        # - so the page that does exist reports open_tasks: 0 forever.
+        raw_project = str(meta.get("project", ""))
+        meta = {**meta, "project": cfg.project_id(raw_project) if raw_project else ""}
         task_meta[str(meta["id"])] = meta
         if meta.get("status") in OPEN_STATUSES:
-            key = str(meta.get("project", ""))
+            key = str(meta["project"])
             open_by_project[key] = open_by_project.get(key, 0) + 1
 
     promoted: list[str] = []
@@ -246,6 +244,10 @@ def run(home: Path, vault: Path, cfg) -> dict:
         task_count += 1
         task_rows = sorted(by_task.get(task_id, []), key=lambda r: r["at"])
         owned = {
+            # Migration, not just a read fix: compile rewrites the page anyway,
+            # so it is the one place that can retire a raw project value for
+            # good. Idempotent afterwards, so the next run sees no change.
+            "project": task_meta[task_id].get("project", meta.get("project", "")),
             "last_active": task_rows[-1]["at"][:10] if task_rows else "",
             "last_harness": task_rows[-1].get("harness", "") if task_rows else "",
             "session_count": len(task_rows),
@@ -269,7 +271,7 @@ def run(home: Path, vault: Path, cfg) -> dict:
         total += len(line) + 1
     vaultio.write_atomic(vault / "index.md", "# index\n\n" + "\n".join(lines) + "\n")
 
-    _write_dashboard(home, vault, cfg)
+    dashboard_warning = _write_dashboard(home, vault, cfg)
 
     for slug in promoted:
         vaultio.append_log(vault, "promote", f"{slug} 활성 승격")
@@ -315,13 +317,26 @@ def run(home: Path, vault: Path, cfg) -> dict:
         "archived": archived,
         "index_truncated": truncated,
         "vault_warning": vault_warning,
+        "dashboard_warning": dashboard_warning,
     }
 
 
-def _write_dashboard(home: Path, vault: Path, cfg) -> None:
+def _write_dashboard(home: Path, vault: Path, cfg) -> str | None:
+    """Refresh the activity table. Returns a warning instead of raising.
+
+    dashboard.md is hand-editable and the linter only validated markers under
+    tasks/ and projects/, so a hand-deleted <!-- /GEN:activity --> reached
+    markers.replace here and raised ValueError. That killed compile at the very
+    end - after the project pages and index.md were already written, before
+    state.json's vault record was updated - and the nightly job runs
+    "ingest; compile; snapshot" under set -e, so from that night on the
+    snapshot stopped running and nothing said so. The snapshot is the only copy
+    of what lives solely in the vault, so a stale activity table is by far the
+    cheaper loss. Report and skip.
+    """
     dashboard = vault / "dashboard.md"
     if not dashboard.exists():
-        return
+        return None
     queries = _load("queries")
     header = "| 프로젝트 | 세션 | 미분류 | 마지막 |\n|---|---|---|---|"
     body_rows = "\n".join(
@@ -330,4 +345,14 @@ def _write_dashboard(home: Path, vault: Path, cfg) -> None:
     )
     section = f"## 프로젝트 활동 (최근 {cfg.unclassified_days}일)\n\n{header}\n{body_rows}"
     text = dashboard.read_text(encoding="utf-8")
-    vaultio.write_atomic(dashboard, markers.replace(text, "activity", section))
+    try:
+        updated = markers.replace(text, "activity", section)
+    except ValueError as exc:
+        # Do not fall back to appending a fresh block. markers.replace only
+        # finds a well-formed open/close pair, so on damaged markers it would
+        # append a second GEN:activity and leave the file duplicated and still
+        # broken. Leave the file exactly as the human left it.
+        return (f"dashboard.md 의 GEN 마커가 깨져서 활동 표를 갱신하지 못했다 ({exc}). "
+                f"직접 고쳐라 — 나머지 컴파일은 정상 진행했다")
+    vaultio.write_atomic(dashboard, updated)
+    return None

@@ -30,9 +30,17 @@ for c in "$HOME/.pyenv/shims/python3" /opt/homebrew/bin/python3 /usr/local/bin/p
 done
 [ -n "$py" ] || { echo "llmwiki: no python3 with tomllib (needs 3.11+)" &gt;&amp;2; exit 1; }
 cd "$d"
-"$py" -m scripts.llmwiki ingest
-"$py" -m scripts.llmwiki compile
-"$py" -m scripts.llmwiki snapshot</string>
+# The snapshot is the only copy of what lives nowhere but the vault - the prose
+# outside the GEN markers and the pages under tasks/. Under a bare `set -e` a
+# failing ingest or compile ended the run before it ever got there, so one
+# damaged hand-edited page stopped every backup from that night on and nothing
+# said so. Run all three regardless, and still exit non-zero so launchd and
+# /tmp/llmwiki.err keep reporting the failure.
+rc=0
+"$py" -m scripts.llmwiki ingest || rc=1
+"$py" -m scripts.llmwiki compile || rc=1
+"$py" -m scripts.llmwiki snapshot || rc=1
+exit "$rc"</string>
   </array>
   <key>StartCalendarInterval</key>
   <dict><key>Hour</key><integer>4</integer><key>Minute</key><integer>0</integer></dict>
