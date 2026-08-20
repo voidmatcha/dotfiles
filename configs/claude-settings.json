@@ -286,8 +286,7 @@
     "seo-technical-optimization@claude-code-workflows": false,
     "seo-analysis-monitoring@claude-code-workflows": false,
     "claude-mem@thedotmack": true,
-    "local-skills@dotfiles-local": true,
-    "ui-clone-skills@voidmatcha": true
+    "local-skills@dotfiles-local": true
   },
   "extraKnownMarketplaces": {
     "claude-code-workflows": {
