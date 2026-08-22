@@ -813,6 +813,19 @@ class LaunchdJobsTest(unittest.TestCase):
             self.assertEqual(state, "stale")
             self.assertIn("다시 돌려야", detail)
 
+    def test_rendered_plist_is_not_reported_stale(self) -> None:
+        """launchd does not expand variables, so a job that logs under the
+        user's home is rendered at install time. Compared against the
+        unrendered source it reads as stale on every run, and a check that is
+        permanently red is a check nobody reads."""
+        with tempfile.TemporaryDirectory() as d:
+            root, agents = self._setup(d)
+            src = root / "configs/llmwiki/com.yongjae.job.plist"
+            src.write_text("<plist>__HOME__/Library/Logs/job.log</plist>", encoding="utf-8")
+            (agents / "com.yongjae.job.plist").write_text(
+                f"<plist>{Path.home()}/Library/Logs/job.log</plist>", encoding="utf-8")
+            self.assertEqual(self._run(root, agents)[1], "ok")
+
     def test_installed_but_not_loaded_is_missing(self) -> None:
         with tempfile.TemporaryDirectory() as d:
             root, agents = self._setup(d)

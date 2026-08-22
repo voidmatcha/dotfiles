@@ -168,6 +168,14 @@ REPO_LAUNCH_JOBS = {
 }
 
 
+
+# launchd does not expand variables in a plist, so a job that writes under the
+# user's home is rendered at install time rather than copied. Comparing the
+# installed file against the unrendered source reports every such job stale
+# forever, which is how a real staleness check stops being read.
+def _rendered(src: Path) -> bytes:
+    return src.read_bytes().replace(b"__HOME__", str(Path.home()).encode())
+
 def check_launchd_jobs(root: Path) -> list[tuple[str, str, str]]:
     """Is the scheduled job installed, loaded, and identical to the repo?
 
@@ -196,7 +204,7 @@ def check_launchd_jobs(root: Path) -> list[tuple[str, str, str]]:
         elif dst.is_symlink():
             out.append(("launchd", "stale",
                         f"{label} 이 심링크다 — 로그인 시점 launchd 가 따라간다는 보장이 없다"))
-        elif src.read_bytes() != dst.read_bytes():
+        elif _rendered(src) != dst.read_bytes():
             out.append(("launchd", "stale",
                         f"{label} 설치본이 리포와 다르다 — install.sh 를 다시 돌려야 반영된다"))
         elif label not in loaded:
