@@ -1,6 +1,8 @@
 ---
 name: test-engineer
 description: Use PROACTIVELY for regression coverage, TDD planning, failing test design, flaky test isolation, or analyzing test output. Focuses on what should be proven, not feature implementation.
+model: sonnet
+effort: medium
 tools: Read, Grep, Glob, Bash
 ---
 

@@ -70,35 +70,21 @@ SKILL_REPOS=(
   # install.sh — the `skills add` path skips required system tooling
   # (uv, ffmpeg, imagemagick, dssim, agent-browser) and the ui_clone/
   # Python package, both of which the skill's preflight checks expect.
-  "blader/humanizer"
-  "epoko77-ai/im-not-ai"
-  "forrestchang/andrej-karpathy-skills@karpathy-guidelines"
-  # obra/superpowers: removed — already installed via `superpowers@claude-plugins-official`
-  # plugin (which pins to a tested sha, more stable than tracking main).
-  # vercel-labs/agent-skills currently publishes PromptScript skills (Vercel
-  # patterns, deploy, optimization, and writing/design guidelines). The skills
-  # CLI rejects PromptScript global installs, so keep this repo out of the
-  # global bootstrap loop. Also keep the CLI target pinned to Claude Code below:
-  # when `--global --yes` is used without `--agent`, skills CLI auto-expands
-  # universal `.agents/skills` targets and currently includes PromptScript, which
-  # is project-only.
-  "anthropics/skills@doc-coauthoring"        # handover docs / specs
-  "anthropics/skills@internal-comms"         # status reports / FAQs
-  "anthropics/skills@webapp-testing"         # cake-pc-web Playwright
-  "anthropics/skills@mcp-builder"            # author new MCP servers
-  "anthropics/skills@skill-creator"          # author / tune custom skills
-  # supercent-io/skills-template: removed — repository deleted/private on GitHub
-  # (clone now fails with auth prompt). Built-in /code-review and
-  # /security-review cover the same ground.
-  # yeachan-heo/oh-my-claudecode@project-session-manager and @ai-slop-cleaner
-  # are PromptScript skills. The skills CLI rejects PromptScript global
-  # installs, so keep them out of the global SKILL_REPOS bootstrap path.
 )
 
-SKILL_URLS=(
-  # pbakaus/impeccable and kepano/obsidian-skills currently publish
-  # PromptScript skills. The skills CLI rejects PromptScript global installs,
-  # so do not feed them to the global `skills add --global` loop.
+RETIRED_GLOBAL_SKILLS=(
+  "humanizer"
+  "humanize"
+  "humanize-korean"
+  "humanize-redo"
+  "karpathy-guidelines"
+  "doc-coauthoring"
+  "frontend-design"
+  "internal-comms"
+  "webapp-testing"
+  "mcp-builder"
+  "skill-creator"
+  "graphify"
 )
 
 for repo in "${SKILL_REPOS[@]}"; do
@@ -113,20 +99,14 @@ for repo in "${SKILL_REPOS[@]}"; do
   fi
 done
 
-if [ "${#SKILL_URLS[@]}" -gt 0 ]; then
-  for url_args in "${SKILL_URLS[@]}"; do
-    if $DRY_RUN; then
-      info "[dry-run] npx skills add $url_args --yes --global --agent claude-code"
-    else
-      # shellcheck disable=SC2086
-      # url_args intentionally stores pre-tokenized flags.
-      if npx skills add $url_args --yes --global --agent claude-code 2> >(grep -v "invalid option" >&2); then
-        info "Installed: $url_args"
-      else
-        info "⚠️  Failed: $url_args"
-      fi
-    fi
-  done
+if $DRY_RUN; then
+  info "[dry-run] skills remove ${RETIRED_GLOBAL_SKILLS[*]} --global --yes"
+elif command -v skills &>/dev/null; then
+  if skills remove "${RETIRED_GLOBAL_SKILLS[@]}" --global --yes; then
+    info "Removed retired global skills"
+  else
+    warn "Retired global skill cleanup failed; existing skills were left visible"
+  fi
 fi
 
 # Repo-local skills/plugin bundle. This keeps locally-authored skills in this
@@ -194,6 +174,81 @@ PY
   fi
 }
 
+cleanup_ui_clone_staging_venv() {
+  local staging_parent="$HOME/.local/share"
+  local staging_source="$staging_parent/ui-clone-skills-claude-src"
+  local staging_venv="$staging_source/.venv"
+  local parent_real source_real
+
+  if [ ! -e "$staging_venv" ] && [ ! -L "$staging_venv" ]; then
+    return 0
+  fi
+  if [ -L "$staging_source" ]; then
+    warn "ui-clone-skills: refusing symlinked staging source cleanup"
+    return 1
+  fi
+  if [ -L "$staging_venv" ]; then
+    warn "ui-clone-skills: refusing symlinked staging venv cleanup"
+    return 1
+  fi
+  if [ ! -d "$staging_venv" ]; then
+    warn "ui-clone-skills: staging .venv is not a directory; leaving it untouched"
+    return 1
+  fi
+
+  parent_real=$(cd "$staging_parent" 2>/dev/null && pwd -P) || {
+    warn "ui-clone-skills: could not resolve staging parent; leaving .venv untouched"
+    return 1
+  }
+  source_real=$(cd "$staging_source" 2>/dev/null && pwd -P) || {
+    warn "ui-clone-skills: could not resolve staging source; leaving .venv untouched"
+    return 1
+  }
+  if [ "$source_real" != "$parent_real/ui-clone-skills-claude-src" ]; then
+    warn "ui-clone-skills: staging source escaped its expected boundary"
+    return 1
+  fi
+
+  rm -rf -- "$staging_venv"
+  info "ui-clone-skills: removed disabled Claude staging environment"
+}
+
+restore_ui_clone_plugin_policy() {
+  local plugin="ui-clone-skills@voidmatcha"
+
+  # The upstream installer enables its plugin after every refresh. Keep it
+  # installed for project-specific use, but restore this repo's user-scope
+  # default so unrelated Claude sessions do not load the full UI harness.
+  if [ "${UI_CLONE_PLUGIN_POLICY:-true}" = "false" ]; then
+    if claude plugin disable "$plugin" --scope user >/dev/null 2>&1; then
+      info "ui-clone-skills: restored disabled-by-default policy"
+    else
+      warn "ui-clone-skills: could not restore disabled-by-default policy"
+    fi
+
+    # Cleanup is intentionally fixed to the default disposable staging source.
+    # UI_CLONE_CLAUDE_SRC_DIR may point at a real checkout and is never a
+    # deletion authority.
+    cleanup_ui_clone_staging_venv || true
+  fi
+}
+
+run_ui_clone_installer() {
+  # The upstream delivery probe intentionally warms a 200+ MB uv environment
+  # inside Claude's plugin cache. Skip that warm-up when this repo will disable
+  # the plugin immediately; Codex uses the separate live checkout.
+  if [ "${UI_CLONE_PLUGIN_POLICY:-true}" = "false" ]; then
+    UI_CLONE_SKIP_HOOK_PROBE=1 \
+      "$UI_CLONE_DIR/install.sh" "$@"
+  else
+    "$UI_CLONE_DIR/install.sh" "$@"
+  fi
+}
+
+UI_CLONE_PLUGIN_POLICY="$(jq -r \
+  '.enabledPlugins["ui-clone-skills@voidmatcha"] // false' \
+  "$DOTFILES_DIR/configs/claude-settings.json" 2>/dev/null || printf 'false')"
+
 if $DRY_RUN; then
   info "[dry-run] would clone voidmatcha/ui-clone-skills to $UI_CLONE_DIR and run install.sh"
 else
@@ -215,45 +270,32 @@ else
     $NON_INTERACTIVE && ui_clone_flags+=(--yes)
     # ${arr[@]+...} avoids "unbound variable" under `set -u` when the array
     # is empty (bash 3.2 on macOS still trips on a bare "${arr[@]}" here).
-    if "$UI_CLONE_DIR/install.sh" ${ui_clone_flags[@]+"${ui_clone_flags[@]}"}; then
+    if run_ui_clone_installer ${ui_clone_flags[@]+"${ui_clone_flags[@]}"}; then
       info "ui-clone-skills: install.sh OK — run '/plugin install ui-clone-skills@voidmatcha' inside Claude Code to activate"
     else
       warn "ui-clone-skills: install.sh exited non-zero"
     fi
+    restore_ui_clone_plugin_policy
   fi
   remove_tracked_claude_local_marketplace
 fi
 
 PLUGIN_MARKETPLACES=(
-  "openai/codex-plugin-cc"
-  # jarrodwatts/claude-hud — native statusline HUD for context/tool/agent/todo
-  # visibility. Requires one-time `/claude-hud:setup` to write statusLine.
   "jarrodwatts/claude-hud"
-  # khendzel/skills-janitor — cross-scope skill hygiene report/fix/value tools
-  # for Claude Code + Codex skill installs.
-  "khendzel/skills-janitor"
-  # wshobson/agents — 80+ focused plugins (185 agents, 153 skills, 100 commands)
-  # registered under the marketplace id `claude-code-workflows`.
-  # Catalog: https://github.com/wshobson/agents/blob/main/docs/plugins.md
-  "wshobson/agents"
-  # thedotmack/claude-mem — persistent memory + cross-session search (~75k★).
-  # Hooks SessionStart/End + 5 others, SQLite + Chroma vector DB, MCP search tools,
-  # web viewer at localhost:37777, <private> tag for sensitive content.
   "thedotmack/claude-mem"
-  # uditgoenka/autoresearch — Claude-native autonomous metric loop
-  # (`/autoresearch`, `/autoresearch:debug`, `/autoresearch:fix`, etc.).
-  "uditgoenka/autoresearch"
-  # hamelsmu/claude-review-loop — Claude implements, Codex reviews, Claude fixes.
-  # We set REVIEW_LOOP_CODEX_FLAGS in settings to avoid the plugin's dangerous
-  # default `--dangerously-bypass-approvals-and-sandbox`.
-  "hamelsmu/claude-review-loop"
 )
 
 PLUGINS=(
+  "claude-hud@claude-hud"
+  "security-guidance@claude-plugins-official"
+  "claude-mem@thedotmack"
+)
+
+RETIRED_PLUGINS=(
+  "codex@openai-codex"
   "ralph-loop@claude-plugins-official"
-  "autoresearch@autoresearch"                         # bounded metric loop + 13 Claude commands
-  "claude-hud@claude-hud"                             # statusline context/tool/agent/todo HUD
-  "skills-janitor@skills-janitor"                     # skill inventory, dupes, token value
+  "autoresearch@autoresearch"
+  "skills-janitor@skills-janitor"
   "superpowers@claude-plugins-official"
   "frontend-design@claude-plugins-official"
   "rust-analyzer-lsp@claude-plugins-official"
@@ -262,30 +304,31 @@ PLUGINS=(
   "session-report@claude-plugins-official"
   "claude-md-management@claude-plugins-official"
   "hookify@claude-plugins-official"
-  "security-guidance@claude-plugins-official"         # edit/stop security review hooks + agent
-  "review-loop@hamel-review"                          # explicit /review-loop Claude→Codex loop
-
-  # wshobson/agents — one plugin per role. Each is isolated (own agents +
-  # commands + skills); only what you install is loaded into context.
-  "comprehensive-review@claude-code-workflows"          # architect + code-review + security
-  "javascript-typescript@claude-code-workflows"         # cake-pc-web stack
+  "review-loop@hamel-review"
+  "comprehensive-review@claude-code-workflows"
+  "javascript-typescript@claude-code-workflows"
   "python-development@claude-code-workflows"
   "frontend-mobile-development@claude-code-workflows"
-  "security-scanning@claude-code-workflows"             # SAST
-  "documentation-generation@claude-code-workflows"      # OpenAPI / mermaid / tutorials
-  "unit-testing@claude-code-workflows"                  # pytest + jest generators
+  "security-scanning@claude-code-workflows"
+  "documentation-generation@claude-code-workflows"
+  "unit-testing@claude-code-workflows"
   "git-pr-workflows@claude-code-workflows"
-  "tdd-workflows@claude-code-workflows"                 # test-first methodology
-  "error-debugging@claude-code-workflows"               # error analysis + trace debugging
-  "ui-design@claude-code-workflows"                     # iOS/Android/RN/web UI guidance
-  "accessibility-compliance@claude-code-workflows"      # WCAG auditing
+  "tdd-workflows@claude-code-workflows"
+  "error-debugging@claude-code-workflows"
+  "ui-design@claude-code-workflows"
+  "accessibility-compliance@claude-code-workflows"
   "content-marketing@claude-code-workflows"
   "seo-content-creation@claude-code-workflows"
-  "seo-technical-optimization@claude-code-workflows"    # meta tags, schema markup
+  "seo-technical-optimization@claude-code-workflows"
   "seo-analysis-monitoring@claude-code-workflows"
+)
 
-  # thedotmack/claude-mem — persistent memory across sessions
-  "claude-mem@thedotmack"
+RETIRED_MARKETPLACES=(
+  "openai-codex"
+  "skills-janitor"
+  "claude-code-workflows"
+  "autoresearch"
+  "hamel-review"
 )
 
 info "Installing Claude Code Plugins..."
@@ -299,8 +342,12 @@ KNOWN_MARKETPLACES_JSON="$HOME/.claude/plugins/known_marketplaces.json"
 INSTALLED_PLUGINS_JSON="$HOME/.claude/plugins/installed_plugins.json"
 # shellcheck disable=SC2016 # jq variables are passed via --arg.
 MARKETPLACE_REPO_FILTER='to_entries[] | select(.value.source.repo == $r)'
+# A plugin key can hold entries from several project/user scopes. Setup owns
+# only the user entry; project installations belong to those projects.
 # shellcheck disable=SC2016 # jq variables are passed via --arg.
-INSTALLED_PLUGIN_FILTER='.plugins | has($p)'
+INSTALLED_PLUGIN_FILTER='any(.plugins[$p][]?; .scope == "user")'
+# shellcheck disable=SC2016 # jq variables are passed via --arg.
+MARKETPLACE_NAME_FILTER='has($m)'
 
 for marketplace in "${PLUGIN_MARKETPLACES[@]}"; do
   if $DRY_RUN; then
@@ -313,6 +360,31 @@ for marketplace in "${PLUGIN_MARKETPLACES[@]}"; do
       info "Added marketplace: $marketplace"
     else
       info "⚠️  Failed marketplace: $marketplace (timeout or error — re-run manually if needed)"
+    fi
+  fi
+done
+
+for plugin in "${RETIRED_PLUGINS[@]}"; do
+  if $DRY_RUN; then
+    info "[dry-run] claude plugin uninstall $plugin"
+  elif json_entry_exists "$INSTALLED_PLUGINS_JSON" "$INSTALLED_PLUGIN_FILTER" --arg p "$plugin"; then
+    if with_timeout 60 claude plugin uninstall --scope user --yes "$plugin" </dev/null; then
+      info "Uninstalled retired plugin: $plugin"
+    else
+      warn "Could not uninstall retired plugin: $plugin"
+    fi
+  fi
+done
+
+for marketplace in "${RETIRED_MARKETPLACES[@]}"; do
+  if $DRY_RUN; then
+    info "[dry-run] claude plugin marketplace remove $marketplace"
+  elif json_entry_exists "$KNOWN_MARKETPLACES_JSON" \
+      "$MARKETPLACE_NAME_FILTER" --arg m "$marketplace"; then
+    if with_timeout 60 claude plugin marketplace remove "$marketplace" </dev/null; then
+      info "Removed retired marketplace: $marketplace"
+    else
+      warn "Could not remove retired marketplace: $marketplace"
     fi
   fi
 done
@@ -405,68 +477,30 @@ PY
     fi
     return 0
   fi
-  if ! command -v jq &>/dev/null || ! command -v envsubst &>/dev/null || ! command -v claude &>/dev/null; then
-    warn "jq, envsubst, or claude not available — cannot register MCPs from $mcp_file"
+  if ! command -v jq &>/dev/null || ! command -v claude &>/dev/null; then
+    warn "jq or claude not available — cannot register MCPs from $mcp_file"
     return 1
   fi
 
-  # Load dev/user secrets so any ${VAR} placeholders in mcp.json expand below.
-  # ~/.dev.secrets.env is gitignored (*.secrets.env in .gitignore).
-  # Public mcp.json currently has no ${VAR} placeholders, but this keeps the
-  # door open for adding entries that need keys later without code changes.
-  if [ -f "$HOME/.dev.secrets.env" ]; then
-    set -a
-    # shellcheck source=/dev/null
-    . "$HOME/.dev.secrets.env"
-    set +a
-  fi
-
   local names registration_failed=0
-  local envsubst_allowlist
-  # shellcheck disable=SC2016 # envsubst receives a variable allowlist.
-  envsubst_allowlist='${EXA_API_KEY} ${FIGMA_API_KEY}'
   names=$(jq -r '.mcpServers | keys[]' "$mcp_file" 2>/dev/null)
   while IFS= read -r name; do
     [ -z "$name" ] && continue
-    local raw_entry entry placeholder_names placeholder_name placeholder_value
-    local missing_placeholders old_entry install_status rollback_status
-    # Use --arg to safely pass the key (avoids jq filter string-interpolation injection).
-    # Refuse to render when a referenced variable is unset/empty. Rendering an
-    # empty secret and removing the old entry first destroys a working config.
-    # Extend the allowlist as new keys are added to mcp.json.
+    local raw_entry entry old_entry install_status rollback_status
+    # Use --arg to safely pass the key (avoids jq filter string-interpolation
+    # injection). Validate the source object before replacing a working entry.
     raw_entry=$(jq -c --arg n "$name" '.mcpServers[$n]' "$mcp_file")
     if ! printf '%s' "$raw_entry" | jq -e 'type == "object"' >/dev/null 2>&1; then
       warn "Invalid MCP $name: entry must be a JSON object (keeping existing config)"
       registration_failed=1
       continue
     fi
-    # `envsubst --variables` recognizes both $VAR and ${VAR} forms without
-    # expanding values, so missing unbraced secrets cannot collapse to "".
-    placeholder_names=$(envsubst --variables "$raw_entry" | sort -u)
-    missing_placeholders=""
-    while IFS= read -r placeholder_name; do
-      [ -z "$placeholder_name" ] && continue
-      placeholder_value="${!placeholder_name-}"
-      if [ -z "$placeholder_value" ]; then
-        if [ -n "$missing_placeholders" ]; then
-          missing_placeholders="$missing_placeholders, $placeholder_name"
-        else
-          missing_placeholders="$placeholder_name"
-        fi
-      fi
-    done <<< "$placeholder_names"
-    if [ -n "$missing_placeholders" ]; then
-      warn "Skipping MCP $name: missing environment placeholder(s): $missing_placeholders (keeping existing config)"
-      continue
-    fi
-
-    entry=$(printf '%s' "$raw_entry" | envsubst "$envsubst_allowlist")
-    if printf '%s' "$entry" | grep -Eq '\$\{?[A-Za-z_][A-Za-z0-9_]*\}?'; then
-      warn "Skipping MCP $name: unresolved environment placeholder remains (keeping existing config)"
-      continue
-    fi
+    # Claude Code expands ${VAR} placeholders when it starts. Store those
+    # references verbatim so credentials stay in Keychain/process scope instead
+    # of being rendered into ~/.claude.json during installation.
+    entry="$raw_entry"
     if ! printf '%s' "$entry" | jq -e . >/dev/null 2>&1; then
-      warn "Skipping MCP $name: rendered entry is invalid JSON (keeping existing config)"
+      warn "Skipping MCP $name: entry is invalid JSON (keeping existing config)"
       registration_failed=1
       continue
     fi
@@ -517,9 +551,9 @@ PY
       fi
     else
       install_status=$?
-      # add-json receives rendered secrets. Never echo its diagnostics because
-      # a failing CLI may print the full rejected argument back to the caller.
-      warn "Failed to register MCP: $name (exit $install_status; CLI output suppressed to protect rendered secrets)"
+      # add-json can receive credential-bearing JSON. Never echo its diagnostics
+      # because a failing CLI may print the full rejected argument back.
+      warn "Failed to register MCP: $name (exit $install_status; CLI output suppressed to protect credentials)"
     fi
 
     if [ "$replacement_ok" -ne 1 ]; then
@@ -532,7 +566,7 @@ PY
           warn "MCP replacement failed; restored and verified previous config: $name"
         else
           rollback_status=$?
-          warn "CRITICAL: MCP rollback failed verification for $name (exit $rollback_status; CLI output suppressed to protect rendered secrets)"
+          warn "CRITICAL: MCP rollback failed verification for $name (exit $rollback_status; CLI output suppressed to protect credentials)"
         fi
       else
         # No prior entry existed, so remove any unverified partial registration.
@@ -547,25 +581,34 @@ PY
 info "Registering user-scope MCP servers from configs/mcp.json..."
 register_mcp_from_file "$DOTFILES_DIR/configs/mcp.json"
 
-# session-wrap plugin — pinned SHA prevents silent main-branch breakage
-SESSION_WRAP_SHA="fd9c20754dba0b0ab040f3f2cd2cb533fc43347d"  # 2026-05-20, checked via gh api
+# session-wrap overlaps the llmwiki/handover lifecycle. Retire the old manually
+# installed directory recoverably instead of leaving an untracked active plugin.
 SESSION_WRAP_DIR="$HOME/.claude/plugins/session-wrap"
-if ! [ -d "$SESSION_WRAP_DIR" ]; then
+if [ -d "$SESSION_WRAP_DIR" ]; then
+  SESSION_WRAP_TRASH="$(next_backup_path "$HOME/.Trash/session-wrap")"
   if $DRY_RUN; then
-    info "[dry-run] install session-wrap plugin (SHA: $SESSION_WRAP_SHA)"
+    info "[dry-run] retire session-wrap -> $SESSION_WRAP_TRASH"
   else
-    TMPDIR=$(mktemp -d)
-    if git clone https://github.com/team-attention/plugins-for-claude-natives "$TMPDIR" \
-      && git -C "$TMPDIR" checkout "$SESSION_WRAP_SHA" \
-      && cp -r "$TMPDIR/plugins/session-wrap" "$SESSION_WRAP_DIR"; then
-      info "Installed plugin: session-wrap ($SESSION_WRAP_SHA)"
-    else
-      info "⚠️  Failed plugin: session-wrap"
-    fi
-    rm -rf "$TMPDIR"
+    ensure_dir "$HOME/.Trash"
+    mv "$SESSION_WRAP_DIR" "$SESSION_WRAP_TRASH"
+    info "Retired session-wrap recoverably: $SESSION_WRAP_TRASH"
   fi
+fi
+
+# Claude marks superseded plugin versions as orphaned but never reclaims them.
+# Keep a seven-day grace period so an already-running session can finish using
+# its loaded version, then remove only exact-depth cache entries carrying the
+# marker Claude wrote itself.
+cache_prune_args=(
+  --root "$HOME/.claude/plugins/cache"
+  --min-age-days 7
+)
+$DRY_RUN && cache_prune_args+=(--dry-run)
+if cache_prune_output=$(python3 "$DOTFILES_DIR/scripts/prune_claude_plugin_cache.py" \
+    "${cache_prune_args[@]}"); then
+  info "$cache_prune_output"
 else
-  info "session-wrap already installed, skipping"
+  warn "Could not prune old orphaned Claude plugin caches"
 fi
 
 info "Claude Code setup done"

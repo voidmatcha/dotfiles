@@ -2,6 +2,7 @@
 name: critic
 description: Use PROACTIVELY before claiming a plan, PR, or design is ready. Final quality gate that evaluates what is MISSING, not just what is present. Multi-perspective + pre-commitment + explicit gap analysis. Reject early to avoid expensive late discoveries.
 model: opus
+effort: high
 tools: Read, Grep, Glob, Bash
 ---
 

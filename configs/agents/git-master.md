@@ -1,6 +1,8 @@
 ---
 name: git-master
 description: Use PROACTIVELY for commit planning, branch hygiene, diff review, commit message drafting, conflict triage, and safe git operations. Never runs destructive git commands without explicit instruction.
+model: sonnet
+effort: low
 tools: Read, Grep, Glob, Bash
 ---
 

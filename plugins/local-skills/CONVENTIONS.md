@@ -68,7 +68,8 @@ not the name. This index is for the judgment-call ones that are easy to forget:
 | Mine repeated corrections from local session JSONL | `session-feedback-audit` |
 | Review Korean technical terminology without general copy-editing | `korean-technical-terminology` |
 | Humanize general (non-technical) Korean prose / strip AI-tell rhythm | `humanize-korean` |
-| Korean technical docs — humanize, translation post-edit, term consistency, delta audit | `korean-tech-humanizer` (external repo `~/Documents/korean-tech-humanizer`) |
+| Explicit translation, localization, post-edit, or same-language rewrite | `translation-mcp` |
+| Korean technical editing and fidelity checks inside that flow | `korean-tech-humanizer` (external repo `~/Documents/korean-tech-humanizer`) |
 | Verify this dotfiles repo before install | `dotfiles-verify` |
 | Decide continue / compact / clear / hand off | `context-check` |
 | Hand work to a fresh Claude/Codex session | `handover` |

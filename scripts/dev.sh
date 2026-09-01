@@ -153,37 +153,6 @@ else
   fi
 fi
 
-# ── graphify (Claude/Codex skill: knowledge graph from any folder) ──
-info "Checking graphify..."
-install_graphify_platforms() {
-  local platform
-  for platform in claude codex; do
-    if graphify install --platform "$platform"; then
-      info "graphify skill installed for $platform — use /graphify for mixed docs/PDFs"
-    else
-      warn "graphify install for $platform failed — try: graphify install --platform $platform"
-    fi
-  done
-}
-
-if $DRY_RUN; then
-  info "[dry-run] python3 -m pip install --user graphifyy && graphify install --platform claude && graphify install --platform codex"
-else
-  if command -v graphify &>/dev/null; then
-    info "graphify already installed"
-  else
-    info "Installing graphify (python3 user site)..."
-    # graphify ships under "graphifyy" on PyPI until the "graphify" name is reclaimed
-    if ! python3 -m pip install --user graphifyy 2>/dev/null || ! command -v graphify &>/dev/null; then
-      warn "graphify install failed — try manually: python3 -m pip install --user graphifyy && graphify install --platform claude && graphify install --platform codex"
-    fi
-  fi
-
-  if command -v graphify &>/dev/null; then
-    install_graphify_platforms
-  fi
-fi
-
 # ── defuddle (clean web page extraction) ──
 info "Checking defuddle..."
 if $DRY_RUN; then
@@ -227,14 +196,15 @@ else
 fi
 
 # ── rtk (Claude Code hook for LLM token savings) ──
-# `rtk init --global` registers the in-place hook (settings.json calls
+# `rtk init --global --hook-only` registers the in-place hook without appending
+# an @RTK.md import to the always-loaded CLAUDE.md (settings.json calls
 # `rtk hook claude` directly instead of a wrapper script under
 # ~/.claude/hooks/). claude-settings.json reflects that.
 info "Checking rtk hook setup..."
 if $DRY_RUN; then
-  info "[dry-run] Skipping rtk init --global"
+  info "[dry-run] Skipping rtk init --global --hook-only"
 elif command -v rtk &>/dev/null; then
-  if rtk init --global; then
+  if rtk init --global --hook-only; then
     info "rtk hook registered (restart Claude Code to activate)"
   else
     warn "rtk init failed — Claude Code will run without RTK compression; not blocking install"
@@ -343,14 +313,13 @@ for tool_pkg in "twitter-cli" "rdt-cli"; do
   fi
 done
 
-# Initial cookie-login flow — interactive, must be run by the user manually.
-# We surface a clear reminder rather than blocking install.sh.
+# Initial browser-login flow — interactive, must be run by the user manually.
+# Keep the reminder behind the unified auth entry point rather than teaching
+# each provider's storage details here.
 if ! $DRY_RUN; then
-  if command -v twitter &>/dev/null && [ ! -f "$HOME/.config/twitter-cli/cookies.json" ] && [ ! -f "$HOME/.twitter-cli/cookies.json" ]; then
-    warn "twitter (twitter-cli) installed — uses browser cookie automatically; ensure you're logged in to x.com in Chrome/Firefox"
-  fi
-  if command -v rdt &>/dev/null && [ ! -f "$HOME/.config/rdt-cli/cookies.json" ] && [ ! -f "$HOME/.rdt-cli/cookies.json" ]; then
-    warn "rdt (rdt-cli) installed but not logged in — run: rdt login   (opens browser to capture reddit cookie)"
+  if { command -v uvx &>/dev/null && [ ! -d "$HOME/.linkedin-mcp/profile" ]; } || \
+     { command -v rdt &>/dev/null && [ ! -f "$HOME/.config/rdt-cli/credential.json" ]; }; then
+    warn "Social browser login is incomplete — run: dotfiles-auth setup social"
   fi
 fi
 

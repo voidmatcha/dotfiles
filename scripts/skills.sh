@@ -17,20 +17,23 @@ MATT_POCOCK_SKILLS_REF="${MATT_POCOCK_SKILLS_REF:-2bf70051928429983de3b5718d2771
 GRILL_ME_SKILL_URL="https://raw.githubusercontent.com/mattpocock/skills/${MATT_POCOCK_SKILLS_REF}/skills/productivity/grill-me/SKILL.md"
 OPENAI_SKILLS_REF="${OPENAI_SKILLS_REF:-a8924c2a35cfa290458852c4fad17c9133054c2e}"
 FIGMA_IMPLEMENT_DESIGN_SKILL_URL="https://raw.githubusercontent.com/openai/skills/${OPENAI_SKILLS_REF}/skills/.curated/figma-implement-design/SKILL.md"
+RETIRED_WORKFLOW_SKILLS=(autopilot ralplan ultraqa ultrawork)
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/skills.sh [all|claude|codex] [--dry-run]
+Usage: scripts/skills.sh [all|claude|codex] [--dry-run] [--retire-only]
 
 Installs repo-local skills through the local plugin/skills path and upstream
 standalone skills pinned for reproducibility:
   claude  registers this repo as local-skills@dotfiles-local and installs upstream Claude skills
   codex   symlinks plugins/local-skills/skills/* into ~/.codex/skills and installs upstream Codex skills
   all     does both (default)
+  --retire-only  only retire obsolete workflow skills and the graphify package
 USAGE
 }
 
 mode="all"
+retire_only=false
 while [ "$#" -gt 0 ]; do
   case "$1" in
     all|claude|codex)
@@ -38,6 +41,9 @@ while [ "$#" -gt 0 ]; do
       ;;
     --dry-run)
       DRY_RUN=true
+      ;;
+    --retire-only)
+      retire_only=true
       ;;
     -h|--help)
       usage
@@ -51,6 +57,65 @@ while [ "$#" -gt 0 ]; do
   esac
   shift
 done
+
+retire_workflow_skills() {
+  local trash_dir="$HOME/.Trash/dotfiles-retired-workflow-skills"
+  local name source destination surface index
+  local -a skill_roots surfaces
+  skill_roots=(
+    "$CODEX_CONFIG_DIR/skills"
+    "$HOME/.agents/skills"
+    "$HOME/.claude/skills"
+  )
+  surfaces=(codex agents claude)
+
+  for ((index = 0; index < ${#skill_roots[@]}; index++)); do
+    surface="${surfaces[$index]}"
+    for name in "${RETIRED_WORKFLOW_SKILLS[@]}"; do
+      source="${skill_roots[$index]}/$name"
+      if [ ! -e "$source" ] && [ ! -L "$source" ]; then
+        continue
+      fi
+      destination="$trash_dir/$surface/$name"
+      if [ -e "$destination" ] || [ -L "$destination" ]; then
+        destination="$(next_backup_path "$destination")"
+      fi
+      if $DRY_RUN; then
+        info "[dry-run] retire $surface workflow skill $name -> $destination"
+        continue
+      fi
+      ensure_dir "$(dirname "$destination")"
+      mv "$source" "$destination"
+      info "Retired $surface workflow skill recoverably: $name -> $destination"
+    done
+  done
+}
+
+retire_legacy_graphify() {
+  local graphify_command=""
+  graphify_command="$(command -v graphify 2>/dev/null || true)"
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    [ -z "$graphify_command" ] || \
+      warn "graphify remains installed because python3 cannot verify its package owner"
+    return 0
+  fi
+  if ! python3 -m pip show graphifyy >/dev/null 2>&1; then
+    [ -z "$graphify_command" ] || \
+      warn "graphify at $graphify_command is not owned by the graphifyy package; leaving it untouched"
+    return 0
+  fi
+  if $DRY_RUN; then
+    info "[dry-run] python3 -m pip uninstall -y graphifyy"
+    return 0
+  fi
+  if python3 -m pip uninstall -y graphifyy >/dev/null; then
+    hash -r 2>/dev/null || true
+    info "Removed retired graphifyy package"
+  else
+    warn "Could not remove retired graphifyy package"
+  fi
+}
 
 install_upstream_skill_from_url() {
   local tool_name="$1"
@@ -377,7 +442,14 @@ install_claude_local_plugin() {
         # a fresh copy.
         warn "local Claude plugin skill content drift: source=$source_skill_count cached=$cached_skill_count"
         if bump_local_plugin_patch_version; then
-          if with_timeout 300 claude plugin update "$CLAUDE_PLUGIN_ID" </dev/null; then
+          # The bump changes the marketplace manifest after the earlier
+          # marketplace refresh. Refresh it again before updating the plugin;
+          # otherwise Claude can create the new version directory from stale
+          # marketplace content and repeat this bump forever.
+          if ! with_timeout 180 claude plugin marketplace update "$CLAUDE_MARKETPLACE_NAME" </dev/null; then
+            warn "version bumped but marketplace refresh failed; not updating from stale content"
+            failed=1
+          elif with_timeout 300 claude plugin update "$CLAUDE_PLUGIN_ID" </dev/null; then
             info "bumped local plugin version and refreshed the cache"
           else
             warn "version bumped but 'claude plugin update' failed; run it manually"
@@ -394,6 +466,10 @@ install_claude_local_plugin() {
 
   return "$failed"
 }
+
+retire_workflow_skills
+retire_legacy_graphify
+$retire_only && exit 0
 
 case "$mode" in
   all)

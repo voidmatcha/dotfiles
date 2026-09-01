@@ -1,6 +1,8 @@
 ---
 name: security-reviewer
 description: Use PROACTIVELY before committing security-sensitive changes touching auth, permissions, secrets, shell/network calls, dependencies, CI workflows, or data boundaries. Read-only diff review; returns severity-rated file:line findings.
+model: opus
+effort: high
 tools: Read, Grep, Glob, Bash
 ---
 

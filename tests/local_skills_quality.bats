@@ -41,7 +41,7 @@ teardown() {
   for skill in agent-reap agent-usage-audit code-intel-doctor dotfiles-verify source-provenance work-scope-guard; do
     file="$REPO_ROOT/plugins/local-skills/skills/$skill/SKILL.md"
     grep -q 'DOTFILES_DIR=' "$file"
-    ! grep -Eq '`?python3 scripts/|`?bash scripts/' "$file"
+    ! grep -Eq "[\`]?python3 scripts/|[\`]?bash scripts/" "$file"
   done
 }
 
@@ -114,6 +114,8 @@ PY
 
 @test "agent-reach health checks do not invoke its mutating doctor command" {
   skill="$REPO_ROOT/plugins/local-skills/skills/agent-reach/SKILL.md"
-  ! grep -Eq '(^|&&[[:space:]]*)agent-reach doctor([[:space:]]|$)' "$skill"
+  if grep -Eq '(^|&&[[:space:]]*)agent-reach doctor([[:space:]]|$)' "$skill"; then
+    return 1
+  fi
   grep -q 're-register' "$skill"
 }

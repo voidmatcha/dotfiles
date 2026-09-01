@@ -1,7 +1,6 @@
 {
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
-    "REVIEW_LOOP_CODEX_FLAGS": "--sandbox workspace-write",
     "ENABLE_CODE_SECURITY_REVIEW": "0"
   },
   "includeGitInstructions": false,
@@ -14,6 +13,7 @@
     ],
     "defaultMode": "auto"
   },
+  "model": "opus[1m]",
   "enableAllProjectMcpServers": false,
   "enabledMcpjsonServers": [
     "serena",
@@ -24,8 +24,6 @@
   ],
   "disabledMcpjsonServers": [],
   "skillOverrides": {
-    "superpowers:using-git-worktrees": "off",
-    "superpowers:dispatching-parallel-agents": "off",
     "e2e-reviewer": "user-invocable-only",
     "e2e-test-reviewer": "user-invocable-only",
     "e2e-test-debugger": "user-invocable-only",
@@ -63,6 +61,18 @@
     },
     {
       "serverName": "figma-developer-mcp"
+    },
+    {
+      "serverName": "zeplin"
+    },
+    {
+      "serverName": "atlassian-personal-ro"
+    },
+    {
+      "serverName": "atlassian-work-ro"
+    },
+    {
+      "serverName": "atlassian-work-rw"
     }
   ],
   "deniedMcpServers": [
@@ -138,15 +148,6 @@
       }
     ],
     "UserPromptSubmit": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/context-check.sh"
-          }
-        ]
-      },
       {
         "hooks": [
           {
@@ -254,77 +255,18 @@
     "refreshInterval": 5
   },
   "enabledPlugins": {
-    "ralph-loop@claude-plugins-official": false,
-    "autoresearch@autoresearch": false,
     "claude-hud@claude-hud": true,
-    "skills-janitor@skills-janitor": true,
-    "session-wrap": true,
-    "superpowers@claude-plugins-official": true,
-    "frontend-design@claude-plugins-official": true,
-    "rust-analyzer-lsp@claude-plugins-official": false,
-    "fakechat@claude-plugins-official": false,
-    "vercel@claude-plugins-official": false,
-    "session-report@claude-plugins-official": false,
-    "claude-md-management@claude-plugins-official": true,
-    "hookify@claude-plugins-official": true,
     "security-guidance@claude-plugins-official": true,
-    "review-loop@hamel-review": false,
-    "comprehensive-review@claude-code-workflows": true,
-    "documentation-generation@claude-code-workflows": true,
-    "javascript-typescript@claude-code-workflows": false,
-    "python-development@claude-code-workflows": false,
-    "frontend-mobile-development@claude-code-workflows": false,
-    "security-scanning@claude-code-workflows": false,
-    "unit-testing@claude-code-workflows": false,
-    "git-pr-workflows@claude-code-workflows": false,
-    "tdd-workflows@claude-code-workflows": false,
-    "error-debugging@claude-code-workflows": false,
-    "ui-design@claude-code-workflows": false,
-    "accessibility-compliance@claude-code-workflows": false,
-    "content-marketing@claude-code-workflows": false,
-    "seo-content-creation@claude-code-workflows": false,
-    "seo-technical-optimization@claude-code-workflows": false,
-    "seo-analysis-monitoring@claude-code-workflows": false,
     "claude-mem@thedotmack": true,
-    "local-skills@dotfiles-local": true
+    "local-skills@dotfiles-local": true,
+    "ui-clone-skills@voidmatcha": false
   },
-  "extraKnownMarketplaces": {
-    "claude-code-workflows": {
-      "source": {
-        "source": "github",
-        "repo": "wshobson/agents"
-      }
-    },
-    "claude-hud": {
-      "source": {
-        "source": "github",
-        "repo": "jarrodwatts/claude-hud"
-      }
-    },
-    "skills-janitor": {
-      "source": {
-        "source": "github",
-        "repo": "khendzel/skills-janitor"
-      }
-    },
-    "autoresearch": {
-      "source": {
-        "source": "github",
-        "repo": "uditgoenka/autoresearch"
-      }
-    },
-    "hamel-review": {
-      "source": {
-        "source": "github",
-        "repo": "hamelsmu/claude-review-loop"
-      }
-    }
-  },
-  "alwaysThinkingEnabled": true,
+  "effortLevel": "medium",
   "autoUpdatesChannel": "latest",
   "skipDangerousModePermissionPrompt": true,
   "skipWorkflowUsageWarning": true,
   "preferredNotifChannel": "ghostty",
+  "autoCompactEnabled": true,
   "remoteControlAtStartup": true,
   "agentPushNotifEnabled": true,
   "skipAutoPermissionPrompt": true,

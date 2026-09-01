@@ -2,6 +2,7 @@
 name: scout
 description: Use PROACTIVELY for read-only exploration of unfamiliar codebases, docs trees, or large diffs. Cheap haiku-backed scout — strict context budget, structural tools before Read, absolute paths only. Prefer over the default Explore for any task that involves more than a few targeted lookups.
 model: haiku
+effort: low
 tools: Read, Grep, Glob, Bash
 ---
 

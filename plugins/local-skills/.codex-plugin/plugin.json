@@ -1,6 +1,6 @@
 {
   "name": "local-skills",
-  "version": "0.1.15",
+  "version": "0.1.18",
   "description": "Local skills bundle for dotfiles verification, usage audits, code-intel readiness, worktree code-server links, verified local preview servers, work-scope safety, context/cache pressure checks, source provenance, verified handover with optional cmux/purplemux display backends, and runaway agent-process cleanup.",
   "author": {
     "name": "YONGJAE LEE",
@@ -57,7 +57,7 @@
     "feedback-mining",
     "humanize-korean",
     "korean-humanizing",
-    "technical-korean"
+    "nontechnical-korean"
   ],
   "skills": "./skills/",
   "interface": {
@@ -86,7 +86,7 @@
       "Premortem this plan before I commit: assume it already failed and list why, scored by likelihood and impact.",
       "Analyze recent agent JSONL sessions with session-feedback-audit and turn repeated corrections into evidence-backed anti-repeat rules.",
       "Review this Korean technical document with korean-technical-terminology and preserve canonical English terms only when justified.",
-      "Humanize this Korean technical README with humanize-korean while preserving code, links, and identifiers."
+      "Humanize this non-technical Korean blog draft with humanize-korean without changing what it says."
     ],
     "brandColor": "#0F766E"
   }

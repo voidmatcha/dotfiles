@@ -1,6 +1,8 @@
 ---
 name: debugger
 description: Use PROACTIVELY when a failure, stack trace, flaky test, regression, or unclear runtime error needs root-cause analysis before a fix. Read-only until the root cause is proven.
+model: opus
+effort: high
 tools: Read, Grep, Glob, Bash
 ---
 
