@@ -395,7 +395,20 @@ class OrphanedCacheTest(unittest.TestCase):
             (version / ".orphaned_at").write_text("x", encoding="utf-8")
             with mock.patch.object(DOC, "CACHE_ROOT", cache):
                 rows = DOC.check_orphaned_cache(Path(d))
-            self.assertTrue(any("고아 버전 1개" in detail for _, _, detail in rows))
+            self.assertTrue(any("7일 유예 중 1개" in detail for _, _, detail in rows))
+
+    def test_old_orphaned_version_is_reported_as_prunable(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            cache = Path(d) / "cache"
+            version = cache / "mkt" / "plug" / "1.0.0"
+            version.mkdir(parents=True)
+            marker = version / ".orphaned_at"
+            marker.write_text("x", encoding="utf-8")
+            old = time.time() - 8 * 86400
+            os.utime(marker, (old, old))
+            with mock.patch.object(DOC, "CACHE_ROOT", cache):
+                rows = DOC.check_orphaned_cache(Path(d))
+            self.assertTrue(any("정리 대기 1개" in detail for _, _, detail in rows))
 
     def test_clean_cache_is_ok(self) -> None:
         with tempfile.TemporaryDirectory() as d:

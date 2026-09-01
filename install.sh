@@ -181,13 +181,31 @@ render_file "$DOTFILES_DIR/configs/llmwiki/com.yongjae.llmwiki.plist" \
   "$HOME/Library/LaunchAgents/com.yongjae.llmwiki.plist"
 render_file "$DOTFILES_DIR/configs/llmwiki/com.yongjae.llmwiki-web.plist" \
   "$HOME/Library/LaunchAgents/com.yongjae.llmwiki-web.plist"
+
+reload_launch_agent() {
+  local label="$1" plist="$2"
+  launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
+  if launchctl bootstrap "gui/$(id -u)" "$plist" 2>/dev/null; then
+    return 0
+  fi
+
+  # bootout can return before launchd has fully released the old label. One
+  # bounded retry avoids leaving a previously healthy service stopped.
+  sleep 1
+  launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
+  if launchctl bootstrap "gui/$(id -u)" "$plist" 2>/dev/null; then
+    info "$label loaded on retry"
+    return 0
+  fi
+  warn "could not load $label"
+  return 1
+}
+
 if $DRY_RUN; then
   info "[dry-run] launchctl bootstrap com.yongjae.llmwiki, com.yongjae.llmwiki-web"
 elif command -v launchctl >/dev/null 2>&1; then
   for _job in com.yongjae.llmwiki com.yongjae.llmwiki-web; do
-    launchctl bootout "gui/$(id -u)/$_job" 2>/dev/null || true
-    launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/$_job.plist" 2>/dev/null \
-      || warn "could not load $_job"
+    reload_launch_agent "$_job" "$HOME/Library/LaunchAgents/$_job.plist" || true
   done
 fi
 # 주간 점검. 검사가 있어도 아무도 돌리지 않으면 두 달이 지나간다.
@@ -196,10 +214,8 @@ render_file "$DOTFILES_DIR/configs/launchd/com.yongjae.dotfiles-doctor.plist" \
 if $DRY_RUN; then
   info "[dry-run] launchctl bootstrap com.yongjae.dotfiles-doctor"
 elif command -v launchctl >/dev/null 2>&1; then
-  launchctl bootout "gui/$(id -u)/com.yongjae.dotfiles-doctor" 2>/dev/null || true
-  launchctl bootstrap "gui/$(id -u)" \
-    "$HOME/Library/LaunchAgents/com.yongjae.dotfiles-doctor.plist" 2>/dev/null \
-    || warn "could not load com.yongjae.dotfiles-doctor - weekly health check will not run"
+  reload_launch_agent "com.yongjae.dotfiles-doctor" \
+    "$HOME/Library/LaunchAgents/com.yongjae.dotfiles-doctor.plist" || true
 fi
 
 # 읽기 전용 뷰어를 tailnet 에만 연다. Funnel(공개)은 쓰지 않는다.

@@ -245,6 +245,12 @@ SH
   [[ "$output" == *"[dry-run]"* ]]
   [[ "$output" == *"install Codex cmux skill"* ]]
   [[ "$output" == *"install local Codex skill dotfiles-verify"* ]]
+  run grep -q 'ensure_context_check_codex_hooks' "$REPO_ROOT/scripts/codex.sh"
+  [ "$status" -ne 0 ]
+  run grep -q 'register context-check hooks' "$REPO_ROOT/scripts/codex.sh"
+  [ "$status" -ne 0 ]
+  run grep -q 'context-check Codex hook' "$REPO_ROOT/scripts/codex.sh"
+  [ "$status" -ne 0 ]
   [ ! -e "$home/.codex" ]
 }
 
@@ -357,17 +363,13 @@ SH
 
 
 
-@test "graphify routing is shared, not Claude-only" {
-  grep -q '/graphify' "$REPO_ROOT/configs/AGENTS.md"
-  grep -q 'graphify skill' "$REPO_ROOT/configs/AGENTS.md"
-  ! grep -q 'graphify' "$REPO_ROOT/configs/CLAUDE.md"
-}
-
-@test "dev setup installs graphify for Claude and Codex" {
-  grep -q 'graphify install --platform claude' "$REPO_ROOT/scripts/dev.sh"
-  grep -q 'graphify install --platform codex' "$REPO_ROOT/scripts/dev.sh"
-  grep -q 'python3 -m pip install --user graphifyy' "$REPO_ROOT/scripts/dev.sh"
-  grep -q 'Claude/Codex skill' "$REPO_ROOT/README.md"
+@test "graphify is opt-in instead of part of global setup" {
+  run grep -q '/graphify' "$REPO_ROOT/configs/AGENTS.md"
+  [ "$status" -ne 0 ]
+  run grep -q 'graphify install --platform' "$REPO_ROOT/scripts/dev.sh"
+  [ "$status" -ne 0 ]
+  run grep -q 'pip install --user graphifyy' "$REPO_ROOT/scripts/dev.sh"
+  [ "$status" -ne 0 ]
 }
 
 @test "dev setup installs PyYAML for Codex plugin validation" {
@@ -386,10 +388,13 @@ SH
 @test "zshrc agent entrypoint keeps the serena system-prompt override" {
   zshrc="$REPO_ROOT/configs/.zshrc"
 
-  # claude(): serena system-prompt override, then plain `command claude`.
+  # claude(): serena system-prompt override, then auth-profile routing to the
+  # resolved binary (with a direct fallback when dotfiles-auth is unavailable).
   grep -q 'serena prompts print-cc-system-prompt-override' "$zshrc"
   grep -q -- '--system-prompt=' "$zshrc"
-  grep -q 'command claude ' "$zshrc"
+  grep -q 'claude_bin="$(whence -p claude)"' "$zshrc"
+  grep -q 'dotfiles-auth run auto -- "${launch\[@\]}"' "$zshrc"
+  grep -q '"${launch\[@\]}"' "$zshrc"
 
   # No proxy wrapper entrypoints remain on the agent launch path.
   ! grep -q 'claudeh' "$zshrc"
@@ -686,15 +691,25 @@ SH
   grep -qxF '.claude/hooks/.logs/' "$REPO_ROOT/.gitignore"
 }
 
-@test "install one-time social CLI guidance uses twitter-cli command" {
+@test "repo ignores generated UI continuation locks" {
+  grep -qxF '.ui-re-continuation/' "$REPO_ROOT/.gitignore"
+}
+
+@test "install routes social browser sessions through dotfiles-auth" {
   run grep -F 'command -v bird' "$REPO_ROOT/install.sh"
   [ "$status" -eq 1 ]
 
   run grep -F 'bird login' "$REPO_ROOT/install.sh"
   [ "$status" -eq 1 ]
 
-  grep -q 'command -v twitter' "$REPO_ROOT/install.sh"
-  grep -q 'logged in to x.com in Chrome/Firefox' "$REPO_ROOT/install.sh"
+  grep -q 'dotfiles-auth setup social' "$REPO_ROOT/install.sh"
+  grep -q '.config/rdt-cli/credential.json' "$REPO_ROOT/scripts/dev.sh"
+
+  run grep -F '.config/rdt-cli/cookies.json' "$REPO_ROOT/install.sh"
+  [ "$status" -eq 1 ]
+
+  run grep -F '.config/rdt-cli/cookies.json' "$REPO_ROOT/scripts/dev.sh"
+  [ "$status" -eq 1 ]
 }
 
 @test "shared configs avoid maintainer-specific absolute paths" {
@@ -1178,37 +1193,148 @@ PY
 }
 
 @test "Claude plugin install settings and docs stay aligned" {
-  ! grep -q 'codex@openai-codex' "$REPO_ROOT/configs/claude-settings.json"
-  ! grep -q 'codex@openai-codex' "$REPO_ROOT/scripts/claude.sh"
-  grep -q 'claude-hud@claude-hud' "$REPO_ROOT/configs/claude-settings.json"
-  grep -q 'skills-janitor@skills-janitor' "$REPO_ROOT/configs/claude-settings.json"
-  grep -q 'frontend-design@claude-plugins-official' "$REPO_ROOT/scripts/claude.sh"
-  grep -q 'frontend-design@claude-plugins-official' "$REPO_ROOT/configs/claude-settings.json"
-  run grep -F 'anthropics/skills@frontend-design' "$REPO_ROOT/scripts/claude.sh"
-  [ "$status" -eq 1 ]
-  grep -q '"ui-design@claude-code-workflows": false' "$REPO_ROOT/configs/claude-settings.json"
-  grep -q '"accessibility-compliance@claude-code-workflows": false' "$REPO_ROOT/configs/claude-settings.json"
-  grep -q 'security-guidance@claude-plugins-official' "$REPO_ROOT/configs/claude-settings.json"
-  grep -q 'review-loop@hamel-review' "$REPO_ROOT/configs/claude-settings.json"
-  grep -q 'claude-mem@thedotmack' "$REPO_ROOT/configs/claude-settings.json"
-  grep -q 'local-skills@dotfiles-local' "$REPO_ROOT/configs/claude-settings.json"
-  grep -q 'javascript-typescript@claude-code-workflows' "$REPO_ROOT/configs/claude-settings.json"
-  grep -q 'seo-analysis-monitoring@claude-code-workflows' "$REPO_ROOT/configs/claude-settings.json"
-  grep -q 'REVIEW_LOOP_CODEX_FLAGS' "$REPO_ROOT/configs/claude-settings.json"
-  run grep -F 'typescript-lsp@claude-plugins-official' "$REPO_ROOT/configs/claude-settings.json"
-  [ "$status" -eq 1 ]
-  grep -q 'claude-hud@claude-hud' "$REPO_ROOT/README.md"
-  grep -q 'skills-janitor@skills-janitor' "$REPO_ROOT/README.md"
-  grep -q 'review-loop@hamel-review' "$REPO_ROOT/README.md"
-  grep -q 'session-wrap' "$REPO_ROOT/README.md"
+  python3 - "$REPO_ROOT" <<'PY'
+import json
+import re
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+settings = json.loads((root / "configs/claude-settings.json").read_text())
+assert settings["enabledPlugins"] == {
+    "claude-hud@claude-hud": True,
+    "security-guidance@claude-plugins-official": True,
+    "claude-mem@thedotmack": True,
+    "local-skills@dotfiles-local": True,
+    "ui-clone-skills@voidmatcha": False,
+}
+
+script = (root / "scripts/claude.sh").read_text()
+plugins = re.search(r"PLUGINS=\((.*?)\n\)", script, re.S).group(1)
+for plugin in (
+    "claude-hud@claude-hud",
+    "security-guidance@claude-plugins-official",
+    "claude-mem@thedotmack",
+):
+    assert plugin in plugins
+for retired in (
+    "superpowers@claude-plugins-official",
+    "review-loop@hamel-review",
+    "comprehensive-review@claude-code-workflows",
+    "session-wrap",
+):
+    assert retired not in plugins
+PY
   grep -q 'claude plugin list' "$REPO_ROOT/scripts/claude.sh"
   grep -q 'scripts/skills.sh" claude' "$REPO_ROOT/scripts/claude.sh"
   grep -q 'local-skills@dotfiles-local' "$REPO_ROOT/README.md"
+  grep -Fq 'any(.plugins[$p][]?; .scope == "user")' "$REPO_ROOT/scripts/claude.sh"
 }
 
-@test "Claude setup installs Obsidian skills" {
-  grep -q 'kepano/obsidian-skills' "$REPO_ROOT/scripts/claude.sh"
-  grep -q 'obsidian-skills' "$REPO_ROOT/README.md"
+@test "Claude setup prunes retired global skill packages" {
+  script="$REPO_ROOT/scripts/claude.sh"
+  grep -Fq 'RETIRED_GLOBAL_SKILLS=(' "$script"
+  for skill in humanizer humanize humanize-korean humanize-redo \
+               karpathy-guidelines doc-coauthoring internal-comms \
+               webapp-testing mcp-builder skill-creator graphify; do
+    grep -Fq "\"$skill\"" "$script"
+  done
+  run grep -Eq '^  "(blader/humanizer|epoko77-ai/im-not-ai|forrestchang/andrej-karpathy-skills|anthropics/skills)' "$script"
+  [ "$status" -ne 0 ]
+}
+
+@test "Atlassian MCP profiles are disabled and token-routed" {
+  python3 - "$REPO_ROOT" <<'PY'
+import json
+import sys
+import tomllib
+from pathlib import Path
+
+root = Path(sys.argv[1])
+codex = tomllib.loads((root / "configs/codex/config.toml").read_text())
+names = {"atlassian-personal-ro", "atlassian-work-ro", "atlassian-work-rw"}
+assert names <= set(codex["mcp_servers"])
+settings = json.loads((root / "configs/claude-settings.json").read_text())
+allowed = {entry["serverName"] for entry in settings["allowedMcpServers"]}
+assert names <= allowed
+assert names.isdisjoint(settings["enabledMcpjsonServers"])
+
+profile_dir = root / "configs/atlassian-mcp"
+profiles = sorted(profile_dir.glob("*.json"))
+assert {path.stem for path in profiles} == {
+    "personal-ro",
+    "work-ro",
+    "work-rw",
+}
+assert not (root / "configs/atlassian-mcp.json").exists()
+
+for name in names:
+    assert codex["mcp_servers"][name]["enabled"] is False
+    assert codex["mcp_servers"][name]["url"] == "https://mcp.atlassian.com/v1/mcp"
+
+for path in profiles:
+    profile = json.loads(path.read_text())
+    assert len(profile["mcpServers"]) == 1
+    name, server = next(iter(profile["mcpServers"].items()))
+    assert name in names
+    assert server["url"] == "https://mcp.atlassian.com/v1/mcp"
+    assert "${ATLASSIAN_" in server["headers"]["Authorization"]
+PY
+}
+
+_run_ui_clone_staging_cleanup() {
+  local home="$1" override="${2:-}" runner="$BATS_TEST_TMPDIR/run-ui-cleanup-$RANDOM.sh"
+  {
+    printf '%s\n' 'info() { printf "INFO: %s\\n" "$*"; }'
+    printf '%s\n' 'warn() { printf "WARN: %s\\n" "$*"; }'
+    sed -n '/^cleanup_ui_clone_staging_venv() {/,/^}/p' "$BATS_TEST_DIRNAME/../scripts/claude.sh"
+    printf '%s\n' 'cleanup_ui_clone_staging_venv'
+  } > "$runner"
+  HOME="$home" UI_CLONE_CLAUDE_SRC_DIR="$override" bash "$runner"
+}
+
+@test "Claude cleanup removes only the default disposable ui-clone venv" {
+  local home="$BATS_TEST_TMPDIR/ui-cleanup-home"
+  local default_venv="$home/.local/share/ui-clone-skills-claude-src/.venv"
+  local override="$BATS_TEST_TMPDIR/real-project"
+  mkdir -p "$default_venv" "$override/.venv"
+  printf 'default\n' > "$default_venv/marker"
+  printf 'project\n' > "$override/.venv/marker"
+
+  run _run_ui_clone_staging_cleanup "$home" "$override"
+
+  [ "$status" -eq 0 ]
+  [ ! -e "$default_venv" ]
+  [ -f "$override/.venv/marker" ]
+}
+
+@test "Claude cleanup rejects symlinked ui-clone staging sources" {
+  local home="$BATS_TEST_TMPDIR/ui-source-link-home"
+  local outside="$BATS_TEST_TMPDIR/ui-source-link-outside"
+  mkdir -p "$home/.local/share" "$outside/.venv"
+  printf 'keep\n' > "$outside/.venv/marker"
+  ln -s "$outside" "$home/.local/share/ui-clone-skills-claude-src"
+
+  run _run_ui_clone_staging_cleanup "$home"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"refusing symlinked staging source"* ]]
+  [ -f "$outside/.venv/marker" ]
+}
+
+@test "Claude cleanup rejects a symlinked ui-clone venv" {
+  local home="$BATS_TEST_TMPDIR/ui-venv-link-home"
+  local source="$home/.local/share/ui-clone-skills-claude-src"
+  local outside="$BATS_TEST_TMPDIR/ui-venv-link-outside"
+  mkdir -p "$source" "$outside"
+  printf 'keep\n' > "$outside/marker"
+  ln -s "$outside" "$source/.venv"
+
+  run _run_ui_clone_staging_cleanup "$home"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"refusing symlinked staging venv"* ]]
+  [ -f "$outside/marker" ]
 }
 
 @test "Claude setup removes machine-local ui-clone marketplace from tracked settings" {
@@ -1298,6 +1424,15 @@ assert 'Read(**/secrets/**)' in deny
 assert 'WebFetch' in deny
 assert 'mcp__filesystem' in deny
 assert cfg['permissions']['defaultMode'] == 'auto'
+assert cfg.get('autoCompactEnabled') is True
+
+all_hook_commands = [
+    hook['command']
+    for groups in cfg['hooks'].values()
+    for group in groups
+    for hook in group['hooks']
+]
+assert not any('context-check.sh' in command for command in all_hook_commands), all_hook_commands
 
 commands = []
 for event in cfg['hooks']['PreToolUse']:
@@ -1351,6 +1486,10 @@ assert cfg['allowedMcpServers'] == [
     {'serverName': 'exa'},
     {'serverName': 'linkedin'},
     {'serverName': 'figma-developer-mcp'},
+    {'serverName': 'zeplin'},
+    {'serverName': 'atlassian-personal-ro'},
+    {'serverName': 'atlassian-work-ro'},
+    {'serverName': 'atlassian-work-rw'},
 ]
 assert {'serverName': 'filesystem'} in cfg['deniedMcpServers']
 assert 'serena' in mcp['mcpServers']
@@ -1591,9 +1730,11 @@ JSON
 @test "AGENTS.md stays compact while detailed routing lives in README" {
   grep -q '<10 enabled' "$REPO_ROOT/configs/AGENTS.md"
   grep -q "dotfiles repo's" "$REPO_ROOT/configs/AGENTS.md"
-  grep -q 'Commit message protocol' "$REPO_ROOT/configs/AGENTS.md"
-  grep -q 'Confidence:' "$REPO_ROOT/configs/AGENTS.md"
-  grep -q 'Rejected:' "$REPO_ROOT/configs/AGENTS.md"
+  run grep -q 'Commit message protocol' "$REPO_ROOT/configs/AGENTS.md"
+  [ "$status" -ne 0 ]
+  grep -q 'Commit message protocol' "$REPO_ROOT/README.md"
+  grep -q 'Confidence:' "$REPO_ROOT/README.md"
+  grep -q 'Rejected:' "$REPO_ROOT/README.md"
   grep -q 'Tool routing' "$REPO_ROOT/README.md"
   grep -q 'Jina Reader' "$REPO_ROOT/README.md"
   grep -q 'codegraph' "$REPO_ROOT/README.md"
@@ -1629,21 +1770,17 @@ JSON
   grep -q 'install.sh' "$REPO_ROOT/scripts/claude.sh"
 }
 
-@test "claude.sh keeps PromptScript skills out of global skills CLI installs" {
-  # The skills CLI rejects PromptScript when `--global` is used. These entries
-  # must stay documented but excluded from SKILL_REPOS to avoid bootstrap noise.
-  grep -q 'PromptScript skills' "$REPO_ROOT/scripts/claude.sh"
-  grep -q 'project-session-manager' "$REPO_ROOT/scripts/claude.sh"
-  grep -q 'ai-slop-cleaner' "$REPO_ROOT/scripts/claude.sh"
-  grep -q 'pbakaus/impeccable' "$REPO_ROOT/scripts/claude.sh"
-  grep -q 'kepano/obsidian-skills' "$REPO_ROOT/scripts/claude.sh"
-  grep -q 'vercel-labs/agent-skills' "$REPO_ROOT/scripts/claude.sh"
-  run grep -E '^\s*"yeachan-heo/oh-my-claudecode@(project-session-manager|ai-slop-cleaner)"' "$REPO_ROOT/scripts/claude.sh"
-  [ "$status" -ne 0 ]
-  run grep -E '^\s*"https://github.com/(pbakaus/impeccable|kepano/obsidian-skills)"' "$REPO_ROOT/scripts/claude.sh"
-  [ "$status" -ne 0 ]
-  run grep -E '^\s*"vercel-labs/agent-skills"' "$REPO_ROOT/scripts/claude.sh"
-  [ "$status" -ne 0 ]
+@test "Claude global skill bootstrap is limited to the E2E package" {
+  python3 - "$REPO_ROOT/scripts/claude.sh" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+script = Path(sys.argv[1]).read_text()
+block = re.search(r"SKILL_REPOS=\((.*?)\n\)", script, re.S).group(1)
+entries = re.findall(r'^\s*"([^"]+)"', block, re.M)
+assert entries == ["voidmatcha/e2e-skills"]
+PY
 }
 
 @test "claude.sh installs Claude Code via native installer, not Homebrew cask" {
@@ -2056,6 +2193,32 @@ assert 'Figma hosted — personal/default Codex design-context path' in text
 assert 'Company overlay disables this hosted server by default' in text
 assert 'Figma Desktop — local-only fallback' in text
 assert 'company/local fallback' not in text
+PY
+}
+
+@test "official Zeplin MCP is pinned and disabled until a profile provides its token" {
+  [ -n "$PYTHON_TOMLLIB" ] || skip "no python3 with tomllib available"
+  "$PYTHON_TOMLLIB" - <<PY
+from pathlib import Path
+import json
+import tomllib
+
+root = Path('$REPO_ROOT')
+codex = tomllib.loads((root / 'configs/codex/config.toml').read_text())
+zeplin = codex['mcp_servers']['zeplin']
+assert zeplin['command'] == 'npx'
+assert zeplin['args'] == ['-y', '@zeplin/mcp-server@1.0.6']
+assert zeplin['enabled'] is False
+
+mcp = json.loads((root / 'configs/mcp.json').read_text())['mcpServers']['zeplin']
+assert mcp['command'] == 'npx'
+assert mcp['args'] == ['-y', '@zeplin/mcp-server@1.0.6']
+assert mcp['env']['ZEPLIN_ACCESS_TOKEN'] == '\${ZEPLIN_ACCESS_TOKEN}'
+
+settings = json.loads((root / 'configs/claude-settings.json').read_text())
+allowed = {entry['serverName'] for entry in settings['allowedMcpServers']}
+assert 'zeplin' in allowed
+assert 'zeplin' not in settings['enabledMcpjsonServers']
 PY
 }
 
@@ -2790,14 +2953,15 @@ _run_agents_compose() {
   [ ! -e "$home/.codex/AGENTS.md.backup" ]
 }
 
-@test "Codex AGENTS.md fragment leaves the commit protocol to the shared contract" {
+@test "always-loaded agent contracts leave the commit protocol to README" {
   # If both fragments carry their own commit spec, the composed file dictates
-  # two different specs at once. configs/AGENTS.md solely owns the commit
-  # protocol.
-  run grep -c 'Commit message protocol' "$REPO_ROOT/configs/AGENTS.md"
-  [ "$output" = "1" ]
+  # operational details on every turn. README solely owns the template.
+  run grep -Ei 'Commit message protocol|Confidence:|Rejected:' "$REPO_ROOT/configs/AGENTS.md"
+  [ "$status" -ne 0 ]
   run grep -Ei 'commit protocol|lore_commit' "$REPO_ROOT/configs/codex/AGENTS.md"
   [ "$status" -ne 0 ]
+  run grep -c 'Commit message protocol' "$REPO_ROOT/README.md"
+  [ "$output" = "1" ]
 }
 
 @test "llmwiki hooks resolve a python that has tomllib" {
@@ -2914,4 +3078,64 @@ if problems:
 PY
 
   [ "$status" -eq 0 ]
+}
+
+_run_reload_launch_agent() {
+  local bin="$1" runner="$BATS_TEST_TMPDIR/run-launch-agent-$RANDOM.sh"
+  {
+    printf '%s\n' 'info() { printf "INFO: %s\\n" "$*"; }'
+    printf '%s\n' 'warn() { printf "WARN: %s\\n" "$*"; }'
+    sed -n '/^reload_launch_agent() {/,/^}/p' "$BATS_TEST_DIRNAME/../install.sh"
+    printf '%s\n' 'reload_launch_agent "com.yongja.test" "/tmp/com.yongja.test.plist"'
+  } > "$runner"
+  PATH="$bin:/usr/bin:/bin" bash "$runner"
+}
+
+_make_fake_launchctl() {
+  local bin="$1" failures="$2"
+  mkdir -p "$bin"
+  cat > "$bin/launchctl" <<'SH'
+#!/bin/sh
+printf '%s\n' "$1" >> "$LAUNCHCTL_LOG"
+if [ "$1" = "bootstrap" ]; then
+  count_file="$LAUNCHCTL_LOG.count"
+  count=0
+  [ ! -f "$count_file" ] || count="$(cat "$count_file")"
+  count=$((count + 1))
+  printf '%s\n' "$count" > "$count_file"
+  [ "$count" -gt "$LAUNCHCTL_FAILURES" ] || exit 5
+fi
+exit 0
+SH
+  cat > "$bin/sleep" <<'SH'
+#!/bin/sh
+exit 0
+SH
+  chmod +x "$bin/launchctl" "$bin/sleep"
+  export LAUNCHCTL_FAILURES="$failures"
+  export LAUNCHCTL_LOG="$BATS_TEST_TMPDIR/launchctl-$RANDOM.log"
+}
+
+@test "install retries a transient llmwiki LaunchAgent bootstrap failure once" {
+  local bin="$BATS_TEST_TMPDIR/launchctl-transient-bin"
+  _make_fake_launchctl "$bin" 1
+
+  run _run_reload_launch_agent "$bin"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"loaded on retry"* ]]
+  [ "$(grep -c '^bootout$' "$LAUNCHCTL_LOG")" -eq 2 ]
+  [ "$(grep -c '^bootstrap$' "$LAUNCHCTL_LOG")" -eq 2 ]
+}
+
+@test "install reports a persistent llmwiki LaunchAgent bootstrap failure" {
+  local bin="$BATS_TEST_TMPDIR/launchctl-failure-bin"
+  _make_fake_launchctl "$bin" 2
+
+  run _run_reload_launch_agent "$bin"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"could not load com.yongja.test"* ]]
+  [ "$(grep -c '^bootout$' "$LAUNCHCTL_LOG")" -eq 2 ]
+  [ "$(grep -c '^bootstrap$' "$LAUNCHCTL_LOG")" -eq 2 ]
 }

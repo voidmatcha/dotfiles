@@ -168,6 +168,34 @@ def validate_toml_minimal(text, path):
     bracket_balance = 0
     saw_assignment = False
 
+    def check_value(value, line_no):
+        if value in {"true", "false"} or re.fullmatch(r"[0-9]+", value):
+            return
+        if value.startswith("["):
+            if not value.endswith("]"):
+                raise SyntaxError(f"{path}:{line_no}: unterminated TOML array")
+            ast.literal_eval(value)
+            return
+        if value.startswith("{"):
+            if not value.endswith("}"):
+                raise SyntaxError(f"{path}:{line_no}: unterminated TOML inline table")
+            entries = strip_comment(value[1:-1]).strip()
+            if not entries:
+                return
+            for entry in entries.split(","):
+                if "=" not in entry:
+                    raise SyntaxError(f"{path}:{line_no}: invalid TOML inline table entry: {entry}")
+                entry_key, entry_value = entry.split("=", 1)
+                entry_key = entry_key.strip()
+                if not key_re.match(entry_key):
+                    raise SyntaxError(f"{path}:{line_no}: invalid TOML inline table key: {entry_key}")
+                check_value(entry_value.strip(), line_no)
+            return
+        if value.startswith('"') or value.startswith("'"):
+            ast.literal_eval(value)
+            return
+        raise SyntaxError(f"{path}:{line_no}: unsupported TOML value in fallback parser: {value}")
+
     def check_statement(statement, line_no):
         nonlocal saw_assignment
         if not statement:
@@ -185,23 +213,8 @@ def validate_toml_minimal(text, path):
             raise SyntaxError(f"{path}:{line_no}: invalid TOML key: {key}")
         if not value:
             raise SyntaxError(f"{path}:{line_no}: missing TOML value for {key}")
-        if value in {"true", "false"}:
-            saw_assignment = True
-            return
-        if re.fullmatch(r"[0-9]+", value):
-            saw_assignment = True
-            return
-        if value.startswith("["):
-            if not value.endswith("]"):
-                raise SyntaxError(f"{path}:{line_no}: unterminated TOML array")
-            ast.literal_eval(value)
-            saw_assignment = True
-            return
-        if value.startswith('"') or value.startswith("'"):
-            ast.literal_eval(value)
-            saw_assignment = True
-            return
-        raise SyntaxError(f"{path}:{line_no}: unsupported TOML value in fallback parser: {value}")
+        check_value(value, line_no)
+        saw_assignment = True
 
     for line_no, raw_line in enumerate(text.splitlines(), start=1):
         line = strip_comment(raw_line)

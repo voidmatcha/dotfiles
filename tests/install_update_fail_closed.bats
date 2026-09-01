@@ -233,6 +233,35 @@ SH
   [ "$status" -eq 1 ]
 }
 
+@test "update setup-only applies current config without version upgrades" {
+  root="$TMPDIR_TEST/update-setup-root"
+  fakebin="$TMPDIR_TEST/update-setup-bin"
+  log="$TMPDIR_TEST/update-setup.log"
+  mkdir -p "$root" "$fakebin"
+
+  cat > "$fakebin/git" <<'SH'
+#!/bin/bash
+case "$*" in
+  *"rev-parse --show-toplevel"*) cd "$DOTFILES_DIR" && pwd -P; exit 0 ;;
+esac
+exit 0
+SH
+  cat > "$root/install.sh" <<'SH'
+#!/bin/bash
+printf '%s\n' "$*" > "$CALL_LOG"
+SH
+  make_executable "$fakebin/git"
+  make_executable "$root/install.sh"
+
+  run env DOTFILES_DIR="$root" PATH="$fakebin:$PATH" CALL_LOG="$log" \
+    bash "$REPO_ROOT/scripts/update.sh" --no-pull --setup-only
+
+  [ "$status" -eq 0 ]
+  [ "$(cat "$log")" = "--non-interactive" ]
+  [[ "$output" == *"setup only"* ]]
+  [[ "$output" != *"version upgrades"* ]]
+}
+
 @test "update fails closed and skips install when checkout is not a git repository" {
   root="$TMPDIR_TEST/update-not-repo-root"
   fakebin="$TMPDIR_TEST/update-not-repo-bin"
@@ -601,6 +630,18 @@ if [ "$1 $2 $5" = "mcp add-json remove-loss-test" ]; then
   mv "$tmp" "$HOME/.claude.json"
   exit 0
 fi
+if [ "$1 $2 $5" = "mcp remove secret-test" ]; then
+  tmp="$HOME/.claude.json.tmp"
+  jq 'del(.mcpServers["secret-test"])' "$HOME/.claude.json" > "$tmp"
+  mv "$tmp" "$HOME/.claude.json"
+  exit 0
+fi
+if [ "$1 $2 $5" = "mcp add-json secret-test" ]; then
+  tmp="$HOME/.claude.json.tmp"
+  jq --argjson entry "$6" '.mcpServers["secret-test"] = $entry' "$HOME/.claude.json" > "$tmp"
+  mv "$tmp" "$HOME/.claude.json"
+  exit 0
+fi
 if [ "$1 $2 $5" = "mcp add-json leak-test" ]; then
   printf '%s\n' "$*" >&2
   exit 55
@@ -630,28 +671,27 @@ SH
   [[ "$output" == *"Claude Code is still unavailable after the native install attempt"* ]]
 }
 
-@test "Claude MCP registration fails when a required rendering prerequisite is absent" {
+@test "Claude MCP registration fails when jq is absent" {
   root="$TMPDIR_TEST/claude-prereq-root"
   home="$TMPDIR_TEST/claude-prereq-home"
   fakebin="$TMPDIR_TEST/claude-prereq-bin"
   log="$TMPDIR_TEST/claude-prereq.log"
   prepare_claude_fixture "$root" "$home" "$fakebin" \
     '{"mcpServers":{"prereq-test":{"type":"http","url":"https://example.test"}}}'
-  ln -s "$(command -v jq)" "$fakebin/jq"
   printf '%s\n' '{"mcpServers":{}}' > "$home/.claude.json"
 
   run env HOME="$home" DOTFILES_DIR="$root" \
     UI_CLONE_INSTALL_DIR="$home/.local/share/ui-clone-skills" \
-    NON_INTERACTIVE=true PATH="$fakebin:/usr/bin:/bin" CALL_LOG="$log" \
+    NON_INTERACTIVE=true PATH="$fakebin:/bin" CALL_LOG="$log" \
     bash "$REPO_ROOT/scripts/claude.sh"
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"cannot register MCPs from $root/configs/mcp.json"* ]]
   run grep -Fq 'mcp add-json --scope user prereq-test' "$log"
-  [ "$status" -eq 1 ]
+  [ "$status" -ne 0 ]
 }
 
-@test "Claude MCP skips unresolved secret placeholders without removing working config" {
+@test "Claude MCP stores secret placeholders without rendering their values" {
   root="$TMPDIR_TEST/claude-missing-root"
   home="$TMPDIR_TEST/claude-missing-home"
   fakebin="$TMPDIR_TEST/claude-missing-bin"
@@ -669,12 +709,12 @@ JSON
     bash "$REPO_ROOT/scripts/claude.sh"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"missing environment placeholder"* ]]
   run grep -Fq 'mcp remove --scope user secret-test' "$log"
-  [ "$status" -eq 1 ]
+  [ "$status" -eq 0 ]
   run grep -Fq 'mcp add-json --scope user secret-test' "$log"
-  [ "$status" -eq 1 ]
-  jq -e '.mcpServers["secret-test"].url == "https://working.example"' "$home/.claude.json"
+  [ "$status" -eq 0 ]
+  jq -e '.mcpServers["secret-test"].headers["x-api-key"] == "$FIGMA_API_KEY"' \
+    "$home/.claude.json"
 }
 
 @test "Claude MCP rolls back the backed up entry when replacement add fails" {
@@ -761,7 +801,7 @@ JSON
   [[ "$output" == *"remove failed after mutating config; restored and verified"* ]]
 }
 
-@test "Claude MCP never echoes rendered secret JSON from a failing CLI" {
+@test "Claude MCP never echoes credential JSON from a failing CLI" {
   root="$TMPDIR_TEST/claude-redaction-root"
   home="$TMPDIR_TEST/claude-redaction-home"
   fakebin="$TMPDIR_TEST/claude-redaction-bin"

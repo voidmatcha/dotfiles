@@ -20,6 +20,7 @@ source "$(cd "$(dirname "$0")" && pwd)/lib/common.sh"
 #   scripts/update.sh           pull + install.sh --upgrade
 #   scripts/update.sh --check   preview only (install.sh --dry-run --upgrade)
 #   scripts/update.sh --no-pull  skip the git pull step
+#   scripts/update.sh --setup-only  apply config without tool/app upgrades
 #
 # Honors DRY_RUN. claude-code (the running app / cask) is left for deliberate
 # upgrade. Independent refresh/install failures are collected so all safe steps
@@ -27,16 +28,19 @@ source "$(cd "$(dirname "$0")" && pwd)/lib/common.sh"
 
 APPLY=true
 DO_PULL=true
+DO_UPGRADE=true
 for arg in "$@"; do
   case "$arg" in
     --check) APPLY=false ;;
     --no-pull) DO_PULL=false ;;
+    --setup-only) DO_UPGRADE=false ;;
     -h|--help)
       cat <<'USAGE'
-Usage: scripts/update.sh [--check] [--no-pull]
+Usage: scripts/update.sh [--check] [--no-pull] [--setup-only]
   (default)   git pull + install.sh --upgrade (idempotent setup + version bumps)
   --check     preview only; change nothing
   --no-pull   skip the git pull step
+  --setup-only  apply current config without upgrading tools or applications
 USAGE
       exit 0
       ;;
@@ -116,21 +120,35 @@ else
   info "[check] would: git -C $DOTFILES_DIR submodule update --init --recursive"
 fi
 
-# 2) full idempotent setup + per-tool version upgrades
+# 2) full idempotent setup, with upgrades unless setup-only was requested.
 if [ "$checkout_refresh_failed" -ne 0 ]; then
   warn "skipping install.sh because the requested checkout refresh did not complete safely"
 elif $APPLY; then
-  info "install.sh --non-interactive --upgrade (setup + version upgrades; skips what's current)"
-  if SKIP_COMPANY_OVERLAY="$skip_company_overlay" \
-      bash "$DOTFILES_DIR/install.sh" --non-interactive --upgrade; then
-    info "install.sh --upgrade succeeded"
+  install_args=(--non-interactive)
+  install_label="install.sh setup only"
+  if $DO_UPGRADE; then
+    install_args+=(--upgrade)
+    install_label="install.sh --upgrade"
+    info "install.sh --non-interactive --upgrade (setup + version upgrades; skips what's current)"
   else
-    record_failure "install.sh --upgrade"
+    info "install.sh --non-interactive (setup only; no tool or app upgrades)"
+  fi
+  if SKIP_COMPANY_OVERLAY="$skip_company_overlay" \
+      bash "$DOTFILES_DIR/install.sh" "${install_args[@]}"; then
+    info "$install_label succeeded"
+  else
+    record_failure "$install_label"
   fi
 else
-  info "install.sh --dry-run --upgrade (preview — no changes)"
-  if ! bash "$DOTFILES_DIR/install.sh" --dry-run --upgrade; then
-    record_failure "install.sh --dry-run --upgrade"
+  check_args=(--dry-run)
+  check_label="install.sh --dry-run setup only"
+  if $DO_UPGRADE; then
+    check_args+=(--upgrade)
+    check_label="install.sh --dry-run --upgrade"
+  fi
+  info "$check_label (preview — no changes)"
+  if ! bash "$DOTFILES_DIR/install.sh" "${check_args[@]}"; then
+    record_failure "$check_label"
   fi
 fi
 

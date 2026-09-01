@@ -102,6 +102,10 @@ Claude imports `@~/.agent/AGENTS.md` through [`configs/CLAUDE.md`](configs/CLAUD
 
 Codex setup writes `~/.codex/config.toml` from [`configs/codex/config.toml`](configs/codex/config.toml). It enables `[features] goals = true`, keeps `mcp_servers` entries in generated TOML, and installs Codex skills with `scripts/skills.sh codex`.
 
+Heavy model modes stay harness-specific and opt-in: Claude reserves Fable for
+its hardest, longest-running work, while Codex reserves Ultra for large tasks
+with independently bounded parallel lanes. Neither mode broadens task scope.
+
 | Surface | Role | Source |
 | --- | --- | --- |
 | [Claude Code] | Claude execution with shared AGENTS.md rules, hooks, MCP, and [RTK] policy. | [`scripts/claude.sh`](scripts/claude.sh), [`configs/CLAUDE.md`](configs/CLAUDE.md), [`configs/claude-settings.json`](configs/claude-settings.json) |
@@ -150,18 +154,9 @@ These are installed or enabled in addition to the repo local skills listed below
 | Pressure-test a plan. | [`grill-me`](scripts/skills.sh) | Standalone Claude and Codex skill installed from a pinned upstream ref. |
 | Implement from Figma. | [`figma-implement-design`](scripts/skills.sh) | Codex skill installed from a pinned upstream ref. |
 | See Claude session state. | [`claude-hud@claude-hud`](configs/claude-settings.json) | Shows a local Claude status HUD. |
-| Audit skill inventory. | [`skills-janitor@skills-janitor`](configs/claude-settings.json) | Helps inspect and clean up installed skills. |
-| Wrap Claude sessions. | [`session-wrap`](scripts/skills.sh) | Claude session wrapping plugin pinned by the installer. |
-| Use Claude workflow helpers. | [`superpowers`](configs/claude-settings.json) | Enables official workflow helpers while noisy subskills stay disabled. |
-| Review frontend design. | [`frontend-design`](configs/claude-settings.json) | Adds official frontend design guidance. |
-| Manage CLAUDE.md files. | [`claude-md-management`](configs/claude-settings.json) | Adds official guidance for CLAUDE.md style files. |
-| Work with hooks. | [`hookify`](configs/claude-settings.json) | Adds official hook workflow helpers. |
 | Review security basics. | [`security-guidance`](configs/claude-settings.json) | Adds official security guidance. |
-| Review code broadly. | [`comprehensive-review`](configs/claude-settings.json) | Adds a Claude code review workflow bundle. |
-| Generate docs. | [`documentation-generation`](configs/claude-settings.json) | Adds a Claude documentation workflow bundle. |
-| Keep Claude memory. | [`claude-mem`](configs/claude-settings.json) | Enables the Claude memory plugin through local settings. |
-| Review with Codex handoff. | [`review-loop@hamel-review`](configs/claude-settings.json) | Listed in settings for review-loop workflows and disabled by default. |
-| Work with Obsidian notes. | [`obsidian-skills`](scripts/claude.sh) | Claude plugin installed from `kepano/obsidian-skills`. |
+| Capture session history for llmwiki. | [`claude-mem`](configs/claude-settings.json) | Supplies the Claude/Codex session rows that llmwiki imports into its event log and vault. |
+| Review Korean technical edits. | [`translation-mcp`](configs/codex/config.toml) + `korean-tech-humanizer` | Uses the MCP policy/review flow with local meaning-preserving editing and fidelity checks. |
 
 ## Local skills: why they exist
 
@@ -180,7 +175,7 @@ Local skills turn recurring session decisions into named, checkable procedures. 
 | Debug a bug, regression, or flaky failure. | [`hypothesis-debugging`](plugins/local-skills/skills/hypothesis-debugging/SKILL.md) | Separates facts from assumptions and tracks falsifiable hypotheses. |
 | Mine local agent sessions for repeated feedback. | [`session-feedback-audit`](plugins/local-skills/skills/session-feedback-audit/SKILL.md) | Extracts recurring corrections and re-requests from local JSONL with extensible phrase pattern packs, then produces rules only from cross-file evidence. |
 | Review terminology in Korean technical writing. | [`korean-technical-terminology`](plugins/local-skills/skills/korean-technical-terminology/SKILL.md) | Keeps canonical English where precision matters, follows established Korean usage, and rewrites awkward calques without becoming a general grammar checker. |
-| Rewrite AI-sounding Korean prose so it reads as human-written. | [`humanize-korean`](plugins/local-skills/skills/humanize-korean/SKILL.md) | Detects 40+ tells across ten categories — translationese, mechanical parallelism, passive overuse, uniform rhythm — and rewrites style only, leaving the content untouched. Technical-document editing goes to `korean-tech-humanizer` instead. |
+| Rewrite general non-technical Korean prose. | [`humanize-korean`](plugins/local-skills/skills/humanize-korean/SKILL.md) | Handles the narrow general-prose path. Translation and technical editing use `translation-mcp` with `korean-tech-humanizer` instead. |
 | Curate the llmwiki vault by hand. | [`llmwiki-curate`](plugins/local-skills/skills/llmwiki-curate/SKILL.md) | Writes the two things the nightly job cannot: `## 실패한 시도` lessons judged one candidate at a time, and Library notes from material dropped in `raw/`. Collection, compile, and snapshot stay automatic and LLM-free. |
 | Track job postings in the llmwiki vault. | [`job-watch`](plugins/local-skills/skills/job-watch/SKILL.md) | Refreshes tracked postings, confirms whether one is still open, registers new ones, and scans target companies. Status refresh is deterministic and script-driven; judgement stays with the reader. |
 | Serve a local report or build preview. | [`local-preview-server`](plugins/local-skills/skills/local-preview-server/SKILL.md) | Starts verified localhost or tailnet preview URLs. Default bind is `127.0.0.1`. |
@@ -205,9 +200,90 @@ Claude/Codex sessions.
 
 | Surface | Config | Policy |
 | --- | --- | --- |
-| [Claude Code] MCP | [`configs/mcp.json`](configs/mcp.json) | Registers local and hosted MCPs for Claude Code. Hooks and deny rules catch common mistakes. |
-| [Codex] MCP | [`configs/codex/config.toml`](configs/codex/config.toml) | Registers [serena], [codegraph], [context7], [OpenAI Docs MCP], and personal/default [Figma hosted MCP][Figma MCP]. |
+| [Claude Code] MCP | [`configs/mcp.json`](configs/mcp.json) | Registers local and hosted MCPs, including profile-routed Figma and the official pinned Zeplin server. Hooks and deny rules catch common mistakes. |
+| [Codex] MCP | [`configs/codex/config.toml`](configs/codex/config.toml) | Registers [serena], [codegraph], [context7], [OpenAI Docs MCP], personal/default [Figma hosted MCP][Figma MCP], and disabled Zeplin/Atlassian profiles. |
+| [Claude Code] Atlassian profiles | [`configs/atlassian-mcp/`](configs/atlassian-mcp/) | Project-scope, one-server templates. Load only `personal-ro.json`, `work-ro.json`, or `work-rw.json` for the active project. |
 | Company/local fallback | `company/` overlay when present | Uses company-scoped MCP or local browser surfaces when hosted tools are inappropriate. |
+
+Credentials stay outside Git and should not be copied into every client config.
+`dotfiles-auth` centralizes browser login, macOS Keychain storage, safe status
+checks, repository routing, and process-scoped injection:
+
+```bash
+dotfiles-auth status
+dotfiles-auth catalog                # names, routes, bindings, and stores; no values
+dotfiles-auth setup all               # all OAuth flows + token-management pages
+dotfiles-auth setup personal          # gh, Codex, Figma, Atlassian browser login
+dotfiles-auth setup social            # LinkedIn, X/Twitter, Reddit browser sessions
+dotfiles-auth set all                 # personal + work-read credentials
+dotfiles-auth register sentry SENTRY_AUTH_TOKEN work-ro
+dotfiles-auth set sentry              # Keychain owns the hidden one-time prompt
+dotfiles-auth profile set work-ro     # writes only to this repo's .git/config
+dotfiles-auth run work-ro -- sentry-cli info
+dotfiles-auth run work-rw -- codex    # RW credentials remain command-scoped
+```
+
+Zsh completion covers commands, setup scopes, profiles, and registered
+environment-token names. Restart the terminal or run `source ~/.zshrc` after
+installation, then use `dotfiles-auth <TAB>`; completion reads only the safe
+`catalog` metadata and never retrieves Keychain values.
+
+`setup all`, `setup personal`, and `setup work` open the official Figma,
+Zeplin, and Atlassian token-management pages after the supported OAuth flows.
+Confirm the active browser account before generating a personal or work token;
+the command opens an allowlisted page but never reads browser storage or copies
+cookies. A failed browser launch is reported without aborting the other login
+flows.
+
+The default is `personal-ro`. A repository can select `work-ro` through local
+Git config; `work-rw` cannot be persisted. Claude and Codex shell wrappers call
+`dotfiles-auth run auto`, so Keychain values reach only the selected child
+process. Figma and Zeplin use separate personal/work Keychain entries; the
+selected profile exposes only the conventional `FIGMA_API_KEY` and
+`ZEPLIN_ACCESS_TOKEN` names expected by their MCP servers. Git HTTPS continues
+to use `git-credential-osxkeychain`, `gh auth
+login` uses the system credential store, and SSH passphrases use the same
+Keychain through `UseKeychain`.
+
+`dotfiles-auth catalog` is the discovery contract for both people and agents.
+It reports each credential's kind, profile route, environment binding, and
+storage owner—including Git and browser-managed sessions—without retrieving a
+secret value. Use it instead of searching Keychain, browser profiles, or shell
+files for credentials.
+
+`set personal`, `set work`, and `set all` batch the registered credentials;
+`set all` intentionally excludes `work-rw`. Any environment-token consumer—CLI,
+SDK, automation, or MCP—can use `register <name> <ENV_VAR> <profile>` without an
+auth-script edit. Routing metadata lives at
+`~/.config/dotfiles-auth/credentials.tsv`, while the value stays in Keychain.
+`unregister <name>` removes both. The consuming program must still support the
+declared environment variable; registration does not install or reconfigure it.
+
+Browser sessions are a separate credential kind. The current [LinkedIn MCP
+server] keeps its local browser profile under `~/.linkedin-mcp/`, [twitter-cli]
+uses the signed-in browser directly by default, and [rdt-cli] owns its saved
+Reddit session. `dotfiles-auth setup social` orchestrates those supported login
+flows and `status` reports their local state, but it never copies raw cookies
+into the shared environment. If a different client truly requires literal
+token variables, register those variables individually and route them only to
+the required profile.
+
+Jira and Confluence share the selected Atlassian identity because both are
+served by Atlassian Rovo MCP. Personal/work and read/write credentials remain
+separate; their provider scopes, not the profile label, enforce permissions.
+
+Atlassian API credentials, when OAuth is not sufficient for multiple identities
+or a hard RO/RW split, use the matching Keychain entry and exactly one profile:
+
+- Claude Code: copy or merge one file from `configs/atlassian-mcp/` into the
+  project's `.mcp.json`. The allowlist permits all three names, but global
+  settings enable none of them.
+- Codex: keep the three global entries disabled and set `enabled = true` for
+  only the matching server in project-local `.codex/config.toml`.
+
+Use `personal-ro` for personal Jira/Confluence reads, `work-ro` for company
+reads, and `work-rw` only for an explicitly requested mutation. The token scopes
+remain the actual read/write boundary.
 
 Do not route internal URLs through hosted tools such as [Exa], [Jina Reader], or personal/default [Figma hosted MCP][Figma MCP]. Company Figma context is separate. Use the company fallback (`figma-developer-mcp`) or a local browser surface.
 
@@ -223,10 +299,19 @@ Do not route internal URLs through hosted tools such as [Exa], [Jina Reader], or
 | Broad public web research. | [Exa] | Public search only, not for sensitive or internal URLs. |
 | Authenticated or sensitive browsing. | [agent-browser] or local browser | Keeps auth and internal context out of hosted readers. |
 | Throwaway browser automation. | [agent-browser] | Clean browser automation for local targets; reap leftovers with [`agent-reap`](plugins/local-skills/skills/agent-reap/SKILL.md). |
-| Knowledge graph exploration. | [graphify] | Installed as a Claude/Codex skill with `graphify install --platform claude` and `graphify install --platform codex`. |
 | Session context policy. | [`context-check`](plugins/local-skills/skills/context-check/SKILL.md) | Returns continue, compact, clear, or handoff advice. |
 
-Web tooling note: [defuddle] is installed with `npm install -g defuddle`. [graphify] is installed by [`scripts/dev.sh`](scripts/dev.sh).
+Web tooling note: [defuddle] is installed with `npm install -g defuddle`.
+
+When `defuddle` or a direct request returns a bot wall, redirect loop, empty
+body, or Cloudflare interstitial, use [agent-browser]. A dead deep link should
+be rediscovered from the site's own index before it is recorded as removed.
+Use `agent-browser get text <selector>` or `agent-browser eval <js>` to inspect
+the page; close an existing daemon first when a different profile matters.
+
+For a raw Claude Bash result that RTK compressed, run `rtk proxy <cmd>`. For an
+explicit context-pressure diagnosis, run
+`python3 plugins/local-skills/skills/context-check/scripts/context_check.py diagnose --cwd "$PWD"`.
 
 #### Research fact policy
 
@@ -284,6 +369,23 @@ plugins/local-skills/skills/local-preview-server/scripts/local-preview-server.sh
 ```
 
 ## Verification
+
+### Commit message protocol
+
+Non-trivial commits include the following trailer block. Trivial typo,
+dependency-bump, and formatting-only commits skip it.
+
+```text
+<subject line — imperative, ≤72 chars>
+
+<body wrapped at 80 columns>
+
+Constraint: <external limits; omit when none>
+Rejected: <alternatives considered and why they were rejected; omit when none>
+Confidence: <high | medium | low>
+Scope-risk: <plausible breakage outside this diff; "none" is valid>
+Not-tested: <unverified environment, integration, or race; "none" is valid>
+```
 
 Run the full verifier before claiming installer behavior:
 
@@ -358,11 +460,11 @@ See [`company/README.md`](company/README.md) for overlay maintenance.
 [gettext]: https://www.gnu.org/software/gettext/
 [git-filter-repo]: https://github.com/newren/git-filter-repo
 [gitleaks]: https://github.com/gitleaks/gitleaks
-[graphify]: https://github.com/safishamsi/graphify
 [Hermes Agent]: https://github.com/NousResearch/hermes-agent
 [Homebrew]: https://brew.sh/
 [Jina Reader]: https://jina.ai/reader/
 [lefthook]: https://lefthook.dev/
+[LinkedIn MCP server]: https://github.com/stickerdaniel/linkedin-mcp-server
 [Maven]: https://maven.apache.org/
 [nvm]: https://github.com/nvm-sh/nvm
 [Node.js]: https://nodejs.org/
@@ -372,6 +474,7 @@ See [`company/README.md`](company/README.md) for overlay maintenance.
 [purplemux]: https://github.com/subicura/purplemux
 [pyenv]: https://github.com/pyenv/pyenv
 [Python]: https://www.python.org/
+[rdt-cli]: https://github.com/jackwener/rdt-cli
 [RTK]: https://www.rtk-ai.app/
 [SDKMAN!]: https://sdkman.io/
 [serena]: https://github.com/oraios/serena
@@ -379,5 +482,6 @@ See [`company/README.md`](company/README.md) for overlay maintenance.
 [Tailscale Serve]: https://tailscale.com/kb/1242/tailscale-serve/
 [Tailscale SSH]: https://tailscale.com/kb/1193/tailscale-ssh/
 [Tokscale]: https://tokscale.ai/u/voidmatcha
+[twitter-cli]: https://github.com/jackwener/twitter-cli
 [uv]: https://docs.astral.sh/uv/
 [Zsh]: https://www.zsh.org/

@@ -8,6 +8,8 @@ configs/.gitconfig-*.backup*
 .sisyphus/
 # Handover run artifacts (handover.py DEFAULT_OUT_ROOT) — per-run, never commit.
 .handover/
+# UI reverse-engineering continuation locks are per-session runtime state.
+.ui-re-continuation/
 # Serena MCP runtime state (project.local.yml, memories/, cache/) — machine-local.
 .serena/
 *.secrets.env

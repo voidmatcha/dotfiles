@@ -52,6 +52,7 @@ SKIP_SUFFIXES = {".pyc", ".pyo"}
 
 CAPTURE_WINDOW_DAYS = 7
 MARKETPLACE_STALE_DAYS = 7
+ORPHAN_GRACE_DAYS = 7
 
 
 def repo_root() -> Path:
@@ -467,12 +468,12 @@ def check_llmwiki_capture(_root: Path) -> list[tuple[str, str, str]]:
 
 
 def check_orphaned_cache(_root: Path) -> list[tuple[str, str, str]]:
-    """Claude Code stamps .orphaned_at but never deletes anything.
+    """Report the orphan grace queue used by claude.sh.
 
     `claude plugin prune` only looks at dependency plugins and leaves the
     version cache alone. It keeps piling up for a local plugin whose version is
-    bumped on every edit. This only reports - deletion is irreversible and a
-    running session may be reading that path.
+    bumped on every edit. claude.sh removes marked versions after seven days;
+    the grace period protects already-running sessions.
     """
     if not CACHE_ROOT.is_dir():
         return [("orphaned-cache", "skip", "캐시 루트 없음")]
@@ -494,17 +495,28 @@ def check_orphaned_cache(_root: Path) -> list[tuple[str, str, str]]:
     # The version cache is three levels: marketplace/plugin/version. An
     # .orphaned_at at a shallower or deeper path is another tool's marker and is
     # not counted.
-    total = count = 0
+    fresh_total = fresh_count = old_total = old_count = 0
+    cutoff = time.time() - ORPHAN_GRACE_DAYS * 86400
     for marker in CACHE_ROOT.glob("*/*/*/.orphaned_at"):
         version_dir = marker.parent
         if version_dir.name.startswith("temp_local_") or \
                 version_dir.parent.parent.name.startswith("temp_local_"):
             continue
-        count += 1
-        total += sum(f.stat().st_size for f in version_dir.rglob("*") if f.is_file())
-    if count:
+        size = sum(f.stat().st_size for f in version_dir.rglob("*") if f.is_file())
+        if marker.stat().st_mtime <= cutoff:
+            old_count += 1
+            old_total += size
+        else:
+            fresh_count += 1
+            fresh_total += size
+    if old_count:
         out.append(("orphaned-cache", "info",
-                    f"고아 버전 {count}개 {total // 1024 // 1024}MB — 자동 정리되지 않는다"))
+                    f"정리 대기 {old_count}개 {old_total // 1024 // 1024}MB — "
+                    f"다음 Claude 설정 적용 때 제거된다"))
+    if fresh_count:
+        out.append(("orphaned-cache", "info",
+                    f"7일 유예 중 {fresh_count}개 {fresh_total // 1024 // 1024}MB — "
+                    f"실행 중 세션 보호를 위해 보존"))
     return out or [("orphaned-cache", "ok", "고아 캐시 없음")]
 
 
