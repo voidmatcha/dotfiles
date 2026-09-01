@@ -112,6 +112,11 @@ link_file "$DOTFILES_DIR/configs/.gitconfig"           "$HOME/.gitconfig"
 link_file "$DOTFILES_DIR/configs/.gitconfig-personal"  "$HOME/.gitconfig-personal"
 link_file "$DOTFILES_DIR/configs/.gitconfig-work"      "$HOME/.gitconfig-work"
 link_file "$DOTFILES_DIR/configs/.gitignore_global"    "$HOME/.gitignore_global"
+ensure_dir "$HOME/.local/bin"
+link_file "$DOTFILES_DIR/scripts/auth.sh"              "$HOME/.local/bin/dotfiles-auth"
+ensure_dir "$HOME/.local/share/zsh/site-functions"
+link_file "$DOTFILES_DIR/configs/zsh-completions/_dotfiles-auth" \
+  "$HOME/.local/share/zsh/site-functions/_dotfiles-auth"
 
 # shared agent config (canonical)
 ensure_dir "$HOME/.agent"
@@ -274,27 +279,22 @@ echo ""
 info "Done."
 info "Restart your terminal or run 'source ~/.zshrc'."
 
-# ── Manual one-time login flows (interactive — surface clear instructions) ──
+# ── Manual one-time login flows (interactive — surface one entry point) ──
 echo ""
-warn "=== One-time login flows for social-platform CLIs ==="
-warn "These open a browser to capture cookies — run them once after install:"
-if command -v twitter &>/dev/null && [ ! -f "$HOME/.config/twitter-cli/cookies.json" ] && [ ! -f "$HOME/.twitter-cli/cookies.json" ]; then
-  warn "  twitter      # X/Twitter reads browser cookies; make sure you're logged in to x.com in Chrome/Firefox"
-else
-  info "  twitter      # (already has cookies available or not installed)"
-fi
-if command -v rdt &>/dev/null && [ ! -f "$HOME/.config/rdt-cli/cookies.json" ] && [ ! -f "$HOME/.rdt-cli/cookies.json" ]; then
-  warn "  rdt login    # Reddit cookie capture (required since 2024)"
-else
-  info "  rdt login    # (already logged in or not installed)"
-fi
-warn "yt-dlp needs no login; Jina Reader and defuddle need no login by default."
+warn "=== One-time browser sessions ==="
+warn "  dotfiles-auth setup social   # LinkedIn, X/Twitter, Reddit"
+warn "Sessions remain in each provider's local browser profile; they are not copied into shell variables."
+info "  yt-dlp needs no login; Jina Reader and defuddle need no login by default."
 info ""
-info "=== Optional API keys (~/.dev.secrets.env) ==="
-info "  Exa MCP currently runs anonymously via the hosted endpoint —"
-info "  no key needed. If you hit the free-plan rate limit (HTTP 429),"
-info "  get a key at https://dashboard.exa.ai/ and re-register the server"
-info "  with a header: claude mcp add --transport http -H 'x-api-key: ...' exa https://mcp.exa.ai/mcp"
+info "=== Unified authentication ==="
+info "  dotfiles-auth status          # no secret values are read or printed"
+info "  dotfiles-auth catalog         # credential owner + route map, no values"
+info "  dotfiles-auth setup all       # OAuth flows + official token pages"
+info "  dotfiles-auth setup personal  # browser OAuth for gh/Codex/Figma/Atlassian"
+info "  dotfiles-auth setup social    # provider-owned LinkedIn/X/Reddit sessions"
+info "  dotfiles-auth set all         # personal + work-read tokens -> Keychain"
+info "  dotfiles-auth register sentry SENTRY_AUTH_TOKEN work-ro  # any CLI/SDK/MCP token"
+info "  dotfiles-auth profile set work-ro  # repository-local routing"
 info "  GitHub Operations on the public dotfiles use 'gh' CLI directly."
 info "  The company overlay (if active) adds GitHub MCP servers — see company/AGENTS-company.md."
 info ""

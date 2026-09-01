@@ -34,6 +34,12 @@
       "command": "npx",
       "args": ["-y", "figma-developer-mcp@0.12.0", "--stdio"],
       "env": { "FIGMA_API_KEY": "${FIGMA_API_KEY}" }
+    },
+    "zeplin": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@zeplin/mcp-server@1.0.6"],
+      "env": { "ZEPLIN_ACCESS_TOKEN": "${ZEPLIN_ACCESS_TOKEN}" }
     }
   }
 }

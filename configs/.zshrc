@@ -25,6 +25,11 @@ fpath+=${ZSH_CUSTOM:-${ZSH:-~/.oh-my-zsh}/custom}/plugins/zsh-completions/src
 
 source "$ZSH/oh-my-zsh.sh"
 
+# dotfiles-owned completions are installed under ~/.local/share rather than
+# mixed into Homebrew or Oh My Zsh plugin directories.
+[ -r "$HOME/.local/share/zsh/site-functions/_dotfiles-auth" ] && \
+  source "$HOME/.local/share/zsh/site-functions/_dotfiles-auth"
+
 # ── Local bin (early — uv tool installs go here, serena check below needs it) ──
 export PATH="$HOME/.local/bin:$PATH"
 
@@ -62,14 +67,35 @@ command -v direnv &>/dev/null && eval "$(direnv hook zsh)"
 # MCP tools. Bypass the function entirely with `command claude`.
 if command -v claude &>/dev/null; then
   claude() {
-    local -a extra
+    local -a extra launch
+    local claude_bin
+    claude_bin="$(whence -p claude)"
     # serena prompt override (optional — skipped if serena absent).
     if command -v serena &>/dev/null; then
       local override
       override="$(serena prompts print-cc-system-prompt-override 2>/dev/null)"
       [ -n "$override" ] && extra+=(--system-prompt="$override")
     fi
-    command claude ${extra[@]+"${extra[@]}"} "$@"
+    launch=("$claude_bin" ${extra[@]+"${extra[@]}"} "$@")
+    if command -v dotfiles-auth &>/dev/null; then
+      dotfiles-auth run auto -- "${launch[@]}"
+    else
+      "${launch[@]}"
+    fi
+  }
+fi
+
+# Keep API and MCP credentials process-scoped for Codex too. Git-local
+# `dotfiles.authProfile` selects personal-ro/work-ro; work-rw stays explicit.
+if command -v codex &>/dev/null; then
+  codex() {
+    local codex_bin
+    codex_bin="$(whence -p codex)"
+    if command -v dotfiles-auth &>/dev/null; then
+      dotfiles-auth run auto -- "$codex_bin" "$@"
+    else
+      "$codex_bin" "$@"
+    fi
   }
 fi
 
@@ -95,10 +121,10 @@ __dotfiles_cleanup_orphan_hud_panes() {
 __dotfiles_cleanup_orphan_hud_panes >/dev/null 2>&1 || true
 precmd_functions+=(__dotfiles_cleanup_orphan_hud_panes)
 
-# ── User-local secrets (optional, gitignored everywhere) ──
-# Loaded if present. Use this for API keys (EXA_API_KEY when paid plan,
-# OPENAI_API_KEY for local scripts, etc.). Most MCP servers in this dotfiles
-# run keyless on free tiers, so this file is optional.
+# ── Legacy user-local secrets (migration compatibility) ──
+# New MCP/API credentials belong in macOS Keychain through dotfiles-auth.
+# Keep loading the old file until `dotfiles-auth status` shows each replacement
+# stored; then remove the legacy declaration instead of adding new ones here.
 [ -f "$HOME/.dev.secrets.env" ] && . "$HOME/.dev.secrets.env"
 
 # ── Company-local secrets (optional) ──

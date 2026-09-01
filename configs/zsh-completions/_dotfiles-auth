@@ -1,0 +1,73 @@
+#compdef dotfiles-auth
+
+_dotfiles_auth_credential_names() {
+  local catalog
+  catalog="$(command dotfiles-auth catalog 2>/dev/null)" || return 0
+  print -r -- "$catalog" | awk -F '\t' 'NR > 1 && $2 == "env-token" { print $1 }'
+}
+
+_dotfiles-auth() {
+  local -a commands credentials profiles
+  commands=(
+    'status:show authentication state without secret values'
+    'catalog:show credential ownership and routing without secret values'
+    'setup:run a supported browser or OAuth login flow'
+    'set:store a credential or credential group in Keychain'
+    'register:register an environment-token consumer'
+    'unregister:remove a custom credential registration'
+    'remove:remove one Keychain credential'
+    'profile:show or set the repository authentication profile'
+    'run:inject one profile into a child command'
+    'help:show command help'
+  )
+  profiles=(personal-ro work-ro work-rw none)
+  credentials=("${(@f)$(_dotfiles_auth_credential_names)}")
+
+  if (( CURRENT == 2 )); then
+    _describe -t commands 'dotfiles-auth command' commands
+    return
+  fi
+
+  case "${words[2]}" in
+    setup)
+      (( CURRENT == 3 )) && _values 'setup scope' all core personal work social
+      ;;
+    set)
+      if (( CURRENT == 3 )); then
+        _values 'credential or group' all personal work work-rw "${credentials[@]}"
+      fi
+      ;;
+    register)
+      case "$CURRENT" in
+        3) _message 'credential name' ;;
+        4) _message 'environment variable name' ;;
+        5) _values 'profile' personal-ro work-ro work-rw ;;
+      esac
+      ;;
+    unregister|remove)
+      if (( CURRENT == 3 && ${#credentials[@]} > 0 )); then
+        _describe -t credentials 'credential' credentials
+      fi
+      ;;
+    profile)
+      if (( CURRENT == 3 )); then
+        _values 'profile action' show set clear
+      elif (( CURRENT == 4 )) && [[ "${words[3]}" == set ]]; then
+        _values 'profile' personal-ro work-ro none
+      fi
+      ;;
+    run)
+      if (( CURRENT == 3 )); then
+        _values 'profile' auto "${profiles[@]}"
+      elif (( CURRENT == 4 )); then
+        compadd -- --
+      elif (( CURRENT > 4 )) && [[ "${words[4]}" == -- ]]; then
+        _normal
+      fi
+      ;;
+  esac
+}
+
+if (( ${+functions[compdef]} )); then
+  compdef _dotfiles-auth dotfiles-auth
+fi

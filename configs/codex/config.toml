@@ -108,6 +108,42 @@ enabled = false
 startup_timeout_sec = 5
 tool_timeout_sec = 120
 
+# Official Zeplin MCP. The repo auth profile maps the selected personal/work
+# Keychain entry to ZEPLIN_ACCESS_TOKEN. Keep disabled until the project needs
+# Zeplin so an absent token does not create startup noise.
+[mcp_servers.zeplin]
+command = "npx"
+args = ["-y", "@zeplin/mcp-server@1.0.6"]
+enabled = false
+startup_timeout_sec = 30
+tool_timeout_sec = 120
+
+# Official Atlassian Rovo MCP profiles for Jira and Confluence. Keep every
+# identity disabled globally and enable only one matching profile per project.
+# Each environment variable contains the complete Authorization header value
+# (for example, "Basic ..." or "Bearer ..."). The token's scopes enforce the
+# read/write boundary; the profile name alone does not grant it.
+[mcp_servers.atlassian-personal-ro]
+url = "https://mcp.atlassian.com/v1/mcp"
+enabled = false
+env_http_headers = { Authorization = "ATLASSIAN_PERSONAL_RO_AUTH" }
+startup_timeout_sec = 15
+tool_timeout_sec = 120
+
+[mcp_servers.atlassian-work-ro]
+url = "https://mcp.atlassian.com/v1/mcp"
+enabled = false
+env_http_headers = { Authorization = "ATLASSIAN_WORK_RO_AUTH" }
+startup_timeout_sec = 15
+tool_timeout_sec = 120
+
+[mcp_servers.atlassian-work-rw]
+url = "https://mcp.atlassian.com/v1/mcp"
+enabled = false
+env_http_headers = { Authorization = "ATLASSIAN_WORK_RW_AUTH" }
+startup_timeout_sec = 15
+tool_timeout_sec = 120
+
 # Local translation Worker from the korean-tech-humanizer repo. This template is
 # copied verbatim to every machine, so it cannot carry a checkout path. It calls
 # a launcher by name instead; the repo's `pnpm setup:local` installs that
