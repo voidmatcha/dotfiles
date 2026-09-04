@@ -18,7 +18,8 @@ Provenance: Upstream: https://github.com/Panniantong/agent-reach; License: unkno
 ## Safety boundary
 
 - Public sources only by default. Do not send company, client, localhost, private repository, authenticated, or secret-bearing URLs through hosted readers/search tools such as Exa, Jina Reader, or third-party scrapers.
-- Work-scope (NAVER): for `*.navercorp.com`, internal, or authenticated URLs, never use Jina (`r.jina.ai`) or any hosted reader/scraper. Fetch locally with `defuddle` or `agent-browser open <URL> --profile "Default" --allowed-domains <host>` instead. See the routing table in `company/configs/AGENTS-company.md`.
+- Work-scope (NAVER): for `*.navercorp.com`, internal, or authenticated URLs, never use Jina (`r.jina.ai`) or any hosted reader/scraper. Fetch locally with `agent-browser --profile "$HOME/.local/share/agent-browser/profiles/work" open <URL>`. Use the `personal` sibling only for personal identity. Never attach automation to the daily Chrome profile or an always-open browser debugging endpoint. See the routing table in `company/configs/AGENTS-company.md`.
+- Persistent authenticated profiles do not provide agent-browser's domain-containment mode. When strict containment matters more than saved login state, use a fresh unauthenticated session with an explicit domain allowlist.
 - Prefer official documentation, upstream repositories, release notes, and source pages before social summaries.
 - Treat CLI/social results as leads until opened and checked. Report unavailable tools instead of claiming a channel worked.
 - Use `/tmp` for temporary fetched content. Use `~/.agent-reach/` only for persistent tool state.

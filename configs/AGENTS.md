@@ -7,12 +7,12 @@ safety, and routing here; open this dotfiles repo's `README.md` for detailed com
 
 - Ask only when ambiguity changes the result or the next action is destructive,
   irreversible, credential-gated, or external-production.
-- Preserve unrelated work and do not clean up code outside the request.
-- Recommend only tools installed by this dotfiles setup.
-- Public research uses `agent-reach`. Keep sensitive or internal URLs out of
-  hosted readers, and use authenticated social platforms at human pace.
-- Keep <10 enabled MCP servers and <80 active tools per project.
-  Disable unused servers per project instead of uninstalling global profiles.
+- Preserve unrelated work; do not clean up outside the request or recommend tools not installed by this setup.
+- Public research uses `agent-reach`. Keep sensitive/internal URLs in
+  identity-specific `agent-browser` profiles, never hosted readers, daily Chrome, or an
+  always-open debug port; use social sites at human pace.
+- Keep <10 enabled MCP servers and <80 active tools per project; disable unused
+  servers per project instead of uninstalling global profiles.
 - Do not create stray top-level Markdown files. Private `*.local.md` overrides
   require a tracked contract and cannot weaken safety or verification rules.
 - Verify material external facts at the research source. Treat subagent output

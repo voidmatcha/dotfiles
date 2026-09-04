@@ -2,7 +2,7 @@
 
 Use for public job/company/person pages when the user asks for hiring-market or career context.
 
-> **Work-scope (NAVER) guard:** LinkedIn scraping and Jina (`r.jina.ai`) are forbidden in work scope. Note that `mcporter`-invoked MCPs run as a separate process and are NOT covered by `deniedMcpServers`, so a denied MCP like `linkedin-scraper` can still be launched here and bypass the denial — do not use it for internal or policy-restricted lookups. Route any non-public lookup through `defuddle` or `agent-browser open <URL> --profile "Default"` locally.
+> **Work-scope (NAVER) guard:** LinkedIn scraping and Jina (`r.jina.ai`) are forbidden in work scope. Note that `mcporter`-invoked MCPs run as a separate process and are NOT covered by `deniedMcpServers`, so a denied MCP like `linkedin-scraper` can still be launched here and bypass the denial — do not use it for internal or policy-restricted lookups. Route non-public work lookups through `agent-browser --profile "$HOME/.local/share/agent-browser/profiles/work" open <URL>` locally. Never reuse the personal or daily Chrome profile.
 
 ## LinkedIn MCP, if configured
 

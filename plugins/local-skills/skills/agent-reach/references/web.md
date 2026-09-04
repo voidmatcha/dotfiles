@@ -11,7 +11,11 @@ curl -s "https://r.jina.ai/https://example.com/article"
 
 Use only for public URLs. Do not send internal, localhost, company, authenticated, or secret-bearing pages.
 
-> **Work-scope (NAVER) guard:** Jina (`r.jina.ai`) and other hosted readers/scrapers are forbidden for `*.navercorp.com`, internal, or authenticated URLs. Note that `mcporter`-invoked MCPs run as a separate process and are NOT covered by `deniedMcpServers`, so they can bypass the denial — do not route internal or policy-restricted lookups through them. Fetch non-public pages locally with `defuddle` or `agent-browser open <URL> --profile "Default" --allowed-domains <host>`.
+> **Work-scope (NAVER) guard:** Jina (`r.jina.ai`) and other hosted readers/scrapers are forbidden for `*.navercorp.com`, internal, or authenticated URLs. Note that `mcporter`-invoked MCPs run as a separate process and are NOT covered by `deniedMcpServers`, so they can bypass the denial — do not route internal or policy-restricted lookups through them. Fetch non-public pages locally with `agent-browser --profile "$HOME/.local/share/agent-browser/profiles/work" open <URL>`. Keep this profile separate from personal and daily Chrome state.
+
+Persistent authenticated profiles do not provide agent-browser's domain
+containment. If strict containment is required, use a fresh unauthenticated
+session with an explicit domain allowlist instead of loading saved login state.
 
 ## Web reader MCP
 

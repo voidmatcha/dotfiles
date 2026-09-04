@@ -22,7 +22,7 @@ These are separate counters, not one additive savings total.
 
 | Surface | Current evidence | Safe interpretation |
 | --- | --- | --- |
-| [RTK] ingress reduction | 23,903 global commands. 26.2M estimated tokens removed (57.3%). In this repo: 1.26M removed (63.5%). | Substantial command/tool-output reduction before transcript ingress. Not a bill-savings percentage. |
+| [RTK] ingress reduction | `rtk gain` records command-output reduction estimates. The hook keeps search rewrites and bypasses `cat`/`head`/`tail`, whose default RTK read path returns full content. | Directional tool-output estimate only. Do not report it as realized token or billing savings. |
 | Public usage ledger | [Tokscale]: 93.711B tokens and 95.8% cache-read through 2026-07-05. | Public token-mix snapshot. Not causality proof for one repo change. |
 | Headroom proxy health *(retired 2026-08)* | 22,337 routed requests. 18,469 cached (82.7%). 54 failed (0.24%). 0 rate-limited. 1 cache-bust. | Measured while the Headroom proxy was in use. It is proxy telemetry, never a token-savings figure — output-token savings were never claimed, because no baseline or holdout run existed. Kept as a record of what was measured; the layer has since been removed. |
 
@@ -57,6 +57,11 @@ Update an existing machine:
 ./update.sh --no-pull
 ```
 
+The default update rerun converges installed package-manager tools and direct
+release binaries to the latest release on each configured update channel.
+Intentional skill commit pins and the 1.5 GB whisper model are preserved; use
+`--setup-only` to skip explicit refreshes of already-installed tools.
+
 Health/status snapshot:
 
 ```bash
@@ -81,6 +86,7 @@ Run a focused installer when full setup is not needed:
 
 ```bash
 ./scripts/brew.sh
+./scripts/retire.sh
 ./scripts/macos.sh
 ./scripts/dev.sh
 ./scripts/shell.sh
@@ -91,6 +97,11 @@ Run a focused installer when full setup is not needed:
 ./scripts/tailscale.sh
 ./scripts/services.sh
 ```
+
+Full installs run `scripts/retire.sh` after Homebrew setup. Its append-only
+allowlist removes only tools this repository previously installed; broad
+package-manager cleanup is intentionally excluded so independently installed
+software survives synchronization across machines.
 
 </details>
 
@@ -158,6 +169,12 @@ These are installed or enabled in addition to the repo local skills listed below
 | Capture session history for llmwiki. | [`claude-mem`](configs/claude-settings.json) | Supplies the Claude/Codex session rows that llmwiki imports into its event log and vault. |
 | Review Korean technical edits. | [`translation-mcp`](configs/codex/config.toml) + `korean-tech-humanizer` | Uses the MCP policy/review flow with local meaning-preserving editing and fidelity checks. |
 
+`scripts/claude.sh` installs and updates `ui-clone-skills@voidmatcha`, but the
+plugin stays disabled globally so its hooks and tool surface do not enter
+unrelated sessions. A repository that needs the workflow opts in with
+`"ui-clone-skills@voidmatcha": true` under `enabledPlugins` in its gitignored
+`.claude/settings.local.json`.
+
 ## Local skills: why they exist
 
 Local skills turn recurring session decisions into named, checkable procedures. They are listed one-by-one so each can be audited later.
@@ -204,6 +221,10 @@ Claude/Codex sessions.
 | [Codex] MCP | [`configs/codex/config.toml`](configs/codex/config.toml) | Registers [serena], [codegraph], [context7], [OpenAI Docs MCP], personal/default [Figma hosted MCP][Figma MCP], and disabled Zeplin/Atlassian profiles. |
 | [Claude Code] Atlassian profiles | [`configs/atlassian-mcp/`](configs/atlassian-mcp/) | Project-scope, one-server templates. Load only `personal-ro.json`, `work-ro.json`, or `work-rw.json` for the active project. |
 | Company/local fallback | `company/` overlay when present | Uses company-scoped MCP or local browser surfaces when hosted tools are inappropriate. |
+
+Claude setup also removes the repository's explicit retired user-scope MCP
+allowlist, currently `chrome-devtools`, so rerunning setup converges older
+machines. It does not prune unknown or independently managed MCP registrations.
 
 Credentials stay outside Git and should not be copied into every client config.
 `dotfiles-auth` centralizes browser login, macOS Keychain storage, safe status
@@ -297,11 +318,25 @@ Do not route internal URLs through hosted tools such as [Exa], [Jina Reader], or
 | Rename, edit, or inspect references. | [serena] | LSP-backed symbol-aware edits and references. |
 | Clean public web page extraction. | [Jina Reader] or [defuddle] | Fast Markdown extraction for public pages. Example: `defuddle parse <url> --markdown`. |
 | Broad public web research. | [Exa] | Public search only, not for sensitive or internal URLs. |
-| Authenticated or sensitive browsing. | [agent-browser] or local browser | Keeps auth and internal context out of hosted readers. |
+| Authenticated or sensitive browsing. | [agent-browser] with an identity-specific persistent profile | Keeps auth and internal context out of hosted readers without exposing the daily Chrome profile. |
 | Throwaway browser automation. | [agent-browser] | Clean browser automation for local targets; reap leftovers with [`agent-reap`](plugins/local-skills/skills/agent-reap/SKILL.md). |
 | Session context policy. | [`context-check`](plugins/local-skills/skills/context-check/SKILL.md) | Returns continue, compact, clear, or handoff advice. |
 
 Web tooling note: [defuddle] is installed with `npm install -g defuddle`.
+
+Authenticated browser state uses separate local-only profiles. Choose the path
+that matches the active identity; never combine personal and work sessions:
+
+```bash
+agent-browser --profile "$HOME/.local/share/agent-browser/profiles/personal" open <url>
+agent-browser --profile "$HOME/.local/share/agent-browser/profiles/work" open <url>
+```
+
+These directories contain login state, stay outside Git, and should be used only
+on the matching trust surface. Do not attach automation to the daily Chrome
+profile or keep a browser debugging endpoint open. Persistent authenticated
+profiles also do not provide agent-browser's domain-containment mode; use a
+fresh unauthenticated session when strict network containment is required.
 
 When `defuddle` or a direct request returns a bot wall, redirect loop, empty
 body, or Cloudflare interstitial, use [agent-browser]. A dead deep link should
@@ -309,8 +344,10 @@ be rediscovered from the site's own index before it is recorded as removed.
 Use `agent-browser get text <selector>` or `agent-browser eval <js>` to inspect
 the page; close an existing daemon first when a different profile matters.
 
-For a raw Claude Bash result that RTK compressed, run `rtk proxy <cmd>`. For an
-explicit context-pressure diagnosis, run
+For a byte-exact Claude Bash result, redirect `rtk proxy <cmd>` output to a
+temporary file and inspect that file directly; the proxy alone is not evidence
+that a surrounding transcript preserved every byte. For an explicit
+context-pressure diagnosis, run
 `python3 plugins/local-skills/skills/context-check/scripts/context_check.py diagnose --cwd "$PWD"`.
 
 #### Research fact policy
