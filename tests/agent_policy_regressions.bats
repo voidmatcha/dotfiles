@@ -15,7 +15,7 @@ root = Path(sys.argv[1])
 claude = json.loads((root / "configs/claude-settings.json").read_text())
 codex = tomllib.loads((root / "configs/codex/config.toml").read_text())
 
-assert claude["model"] == "opus[1m]"
+assert "model" not in claude
 assert claude["effortLevel"] == "medium"
 assert codex["model"] == "gpt-5.6-sol"
 assert codex["model_reasoning_effort"] == "medium"
@@ -74,6 +74,26 @@ settings = json.loads(
     (Path(sys.argv[1]) / "configs/claude-settings.json").read_text()
 )
 assert "alwaysThinkingEnabled" not in settings
+PY
+}
+
+@test "RTK hook keeps search compression but bypasses zero-value read rewrites" {
+  python3 - "$REPO_ROOT" <<'PY'
+import sys
+import tomllib
+from pathlib import Path
+
+root = Path(sys.argv[1])
+config = tomllib.loads((root / "configs/rtk-config.toml").read_text())
+excluded = set(config["hooks"]["exclude_commands"])
+
+assert {"cat", "head", "tail", "curl", "playwright"} <= excluded
+assert {"grep", "rg"}.isdisjoint(excluded)
+
+guide = (root / "configs/RTK.md").read_text()
+assert "directional estimate" in guide
+assert "rtk read -l aggressive" in guide
+assert "cat/head/tail" in guide
 PY
 }
 

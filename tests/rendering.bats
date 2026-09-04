@@ -207,9 +207,13 @@ PY
   readme="$REPO_ROOT/company/README.md"
   [ -f "$agents" ] || skip "company overlay not present"
 
-  grep -q 'agent-browser open <URL> --profile "Default"' "$agents"
+  grep -q 'agent-browser' "$agents"
   grep -q 'agent-browser.*not an MCP server' "$agents"
-  grep -q 'agent-browser open <url> --profile "Default"' "$readme"
+  grep -q 'agent-browser' "$readme"
+  run grep -F -- '--profile "Default"' "$agents" "$readme"
+  [ "$status" -eq 1 ]
+  run grep -E -- '--auto-connect|--remote-debugging-port' "$agents" "$readme"
+  [ "$status" -eq 1 ]
 }
 
 @test "company guidance permits provider-official MCPs without internal data" {

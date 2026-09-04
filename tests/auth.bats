@@ -401,11 +401,29 @@ SH
   codex_home="$TEST_HOME/.codex"
   agents_skills="$TEST_HOME/.agents/skills"
   claude_skills="$TEST_HOME/.claude/skills"
-  mkdir -p "$codex_home/skills/autopilot" "$codex_home/skills/ralplan" \
-    "$codex_home/skills/ultraqa" "$codex_home/skills/ultrawork" \
-    "$codex_home/skills/keep-me" "$agents_skills" "$claude_skills"
+  retired_skills=(
+    autopilot
+    ralplan
+    ultraqa
+    ultrawork
+    asset-improver
+    cmux-doctor
+    cmux-handoff-runner
+    purplemux-bridge
+  )
+  mkdir -p "$codex_home/skills/keep-me" "$agents_skills" "$claude_skills"
   touch "$codex_home/skills/keep-me/SKILL.md"
-  for name in autopilot ralplan ultraqa ultrawork; do
+  cat > "$TEST_HOME/.agents/.skill-lock.json" <<'JSON'
+{
+  "version": 3,
+  "skills": {
+    "ultrawork": {"source": "yeachan-heo/oh-my-claudecode"},
+    "keep-me": {"source": "user/example"}
+  }
+}
+JSON
+  for name in "${retired_skills[@]}"; do
+    mkdir -p "$codex_home/skills/$name"
     mkdir -p "$agents_skills/$name"
     ln -s "../../.agents/skills/$name" "$claude_skills/$name"
   done
@@ -415,7 +433,7 @@ SH
 
   [ "$status" -eq 0 ]
   [ -d "$codex_home/skills/keep-me" ]
-  for name in autopilot ralplan ultraqa ultrawork; do
+  for name in "${retired_skills[@]}"; do
     [ ! -e "$codex_home/skills/$name" ]
     [ ! -e "$agents_skills/$name" ]
     [ ! -L "$claude_skills/$name" ]
@@ -423,6 +441,8 @@ SH
     [ -d "$TEST_HOME/.Trash/dotfiles-retired-workflow-skills/agents/$name" ]
     [ -L "$TEST_HOME/.Trash/dotfiles-retired-workflow-skills/claude/$name" ]
   done
+  [ "$(python3 -c 'import json,sys; print("ultrawork" in json.load(open(sys.argv[1]))["skills"])' "$TEST_HOME/.agents/.skill-lock.json")" = "False" ]
+  [ "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["skills"]["keep-me"]["source"])' "$TEST_HOME/.agents/.skill-lock.json")" = "user/example" ]
 }
 
 @test "skills cleanup uninstalls graphify only when pip owns it" {
