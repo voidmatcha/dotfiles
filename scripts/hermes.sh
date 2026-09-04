@@ -11,7 +11,11 @@ INSTALLER_URL="https://raw.githubusercontent.com/NousResearch/hermes-agent/main/
 
 if $DRY_RUN; then
   if command -v hermes >/dev/null 2>&1; then
-    info "[dry-run] hermes already installed — would skip"
+    if $UPGRADE; then
+      info "[dry-run] hermes update --yes"
+    else
+      info "[dry-run] hermes already installed — would skip"
+    fi
   else
     info "[dry-run] curl -fsSL $INSTALLER_URL | bash"
   fi
@@ -19,7 +23,12 @@ if $DRY_RUN; then
 fi
 
 if command -v hermes >/dev/null 2>&1; then
-  info "hermes already installed ($(hermes --version 2>/dev/null || echo unknown)) — skipping"
+  info "hermes already installed ($(hermes --version 2>/dev/null || echo unknown))"
+  if $UPGRADE; then
+    info "Updating Hermes Agent..."
+    with_timeout 300 hermes update --yes </dev/null \
+      || warn "Hermes update failed/timed out — continuing with the installed version"
+  fi
   exit 0
 fi
 

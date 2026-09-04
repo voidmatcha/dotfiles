@@ -115,14 +115,21 @@ fi
 # ── purplemux: ensure global npm install ──
 purplemux_ready=false
 if $DRY_RUN; then
-  info "[dry-run] would check purplemux and install with npm if missing"
+  if $UPGRADE; then
+    info "[dry-run] would check purplemux and run npm install -g purplemux@latest"
+  else
+    info "[dry-run] would check purplemux and install with npm if missing"
+  fi
   purplemux_ready=true
 elif command -v purplemux >/dev/null 2>&1; then
   info "Found purplemux ($(purplemux --version 2>/dev/null || echo unknown))"
+  if $UPGRADE && [ -z "${PURPLEMUX_APP_DIR:-}" ]; then
+    ensure_npm_global_latest "purplemux" "purplemux" \
+      || warn "purplemux update failed — continuing with the installed version"
+  fi
   purplemux_ready=true
 elif command -v npm >/dev/null 2>&1; then
-  info "Installing purplemux via npm..."
-  if npm install -g purplemux; then
+  if ensure_npm_global_latest "purplemux" "purplemux"; then
     purplemux_ready=true
   fi
 else
@@ -192,19 +199,34 @@ agentwatch_ready=false
 agentwatch_launch_path=""
 agentwatch_stable_path="/opt/homebrew/bin:/usr/local/bin:$HOME/.bun/bin:$HOME/.local/bin:/usr/bin:/bin"
 if $DRY_RUN; then
-  info "[dry-run] would check agentwatch and install @voidmatcha/agentwatch (bun preferred, npm fallback)"
+  if $UPGRADE; then
+    info "[dry-run] would check agentwatch and install @voidmatcha/agentwatch@latest (bun preferred, npm fallback)"
+  else
+    info "[dry-run] would check agentwatch and install @voidmatcha/agentwatch if missing (bun preferred, npm fallback)"
+  fi
   agentwatch_ready=true
 elif agentwatch_launch_path=$(PATH="$agentwatch_stable_path" command -v agentwatch 2>/dev/null); then
   info "Found agentwatch ($($agentwatch_launch_path --version 2>/dev/null || echo unknown))"
+  if $UPGRADE; then
+    if [[ "$agentwatch_launch_path" == "$HOME/.bun/bin/"* ]] && command -v bun >/dev/null 2>&1; then
+      bun install -g @voidmatcha/agentwatch@latest \
+        || warn "agentwatch update failed — continuing with the installed version"
+    elif command -v npm >/dev/null 2>&1; then
+      npm install -g @voidmatcha/agentwatch@latest \
+        || warn "agentwatch update failed — continuing with the installed version"
+    else
+      warn "Neither bun nor npm found — cannot update agentwatch"
+    fi
+  fi
   agentwatch_ready=true
 elif command -v bun >/dev/null 2>&1; then
   info "Installing @voidmatcha/agentwatch via bun..."
-  if bun install -g @voidmatcha/agentwatch; then
+  if bun install -g @voidmatcha/agentwatch@latest; then
     agentwatch_ready=true
   fi
 elif command -v npm >/dev/null 2>&1; then
   info "Installing @voidmatcha/agentwatch via npm..."
-  if npm install -g @voidmatcha/agentwatch; then
+  if npm install -g @voidmatcha/agentwatch@latest; then
     agentwatch_ready=true
   fi
 else

@@ -12,16 +12,18 @@ info "Setting up Claude Code..."
 # native build self-manages versions through `claude update`. Provision by
 # downloading the official installer and running it from disk — curl-pipe-bash
 # is denied by our pretool-guard, and download-then-run lets the script be
-# inspected first. Idempotent: if claude already exists we just check for an
-# update; otherwise we run the installer (defaults to the stable channel).
+# inspected first. An explicit --upgrade checks an installed binary; setup-only
+# reruns preserve it. A missing binary uses the stable installer.
 install_claude_code() {
   if command -v claude &>/dev/null; then
-    info "claude present ($(claude --version 2>/dev/null | awk '{print $1}')) — checking for updates"
-    if $DRY_RUN; then
-      info "[dry-run] claude update"
-    else
-      with_timeout 120 claude update </dev/null \
-        || warn "claude update failed/timed out (continuing with the installed build)"
+    info "claude present ($(claude --version 2>/dev/null | awk '{print $1}'))"
+    if $UPGRADE; then
+      if $DRY_RUN; then
+        info "[dry-run] claude update"
+      else
+        with_timeout 120 claude update </dev/null \
+          || warn "claude update failed/timed out (continuing with the installed build)"
+      fi
     fi
     return 0
   fi
@@ -51,18 +53,9 @@ install_claude_code() {
 }
 install_claude_code
 
-# npm 11.x breaks npx for packages not in package.json
-if ! command -v skills &>/dev/null; then
-  if $DRY_RUN; then
-    info "[dry-run] npm install -g skills"
-  else
-    if npm install -g skills; then
-      info "skills CLI installed"
-    else
-      info "⚠️  skills CLI install failed"
-    fi
-  fi
-fi
+# npm 11.x breaks npx for packages not in package.json.
+ensure_npm_global_latest "skills" "skills" \
+  || warn "skills CLI install/update failed — continuing with the installed version"
 
 SKILL_REPOS=(
   "voidmatcha/e2e-skills"
@@ -433,6 +426,44 @@ fi
 # `claude mcp add-json`). Symlinking configs/mcp.json into ~/.claude/.mcp.json
 # does NOT work — verified: `claude mcp add --scope user` writes to
 # ~/.claude.json directly.
+RETIRED_USER_MCPS=(
+  "chrome-devtools"
+)
+
+prune_retired_user_mcps() {
+  local name cleanup_failed=0
+  for name in "${RETIRED_USER_MCPS[@]}"; do
+    if $DRY_RUN; then
+      info "[dry-run] claude mcp remove --scope user $name (if present)"
+      continue
+    fi
+
+    # Leave independently managed MCPs untouched. This allowlist contains only
+    # registrations that this repository used to own and has since retired.
+    # shellcheck disable=SC2016 # jq variable is passed via --arg.
+    if ! json_entry_exists "$HOME/.claude.json" '.mcpServers[$n] != null' \
+        --arg n "$name"; then
+      continue
+    fi
+    if ! command -v claude &>/dev/null; then
+      warn "claude not available — cannot remove retired MCP: $name"
+      cleanup_failed=1
+      continue
+    fi
+
+    # shellcheck disable=SC2016 # jq variable is passed via --arg.
+    if with_timeout 30 claude mcp remove --scope user "$name" >/dev/null 2>&1 \
+        && ! json_entry_exists "$HOME/.claude.json" '.mcpServers[$n] != null' \
+          --arg n "$name"; then
+      info "Removed retired user-scope MCP: $name"
+    else
+      warn "Failed to remove retired user-scope MCP: $name"
+      cleanup_failed=1
+    fi
+  done
+  return "$cleanup_failed"
+}
+
 restore_mcp_entry() {
   local name="$1" entry="$2"
   with_timeout 30 claude mcp remove --scope user "$name" >/dev/null 2>&1 || true
@@ -577,6 +608,10 @@ PY
 
   return "$registration_failed"
 }
+
+if ! prune_retired_user_mcps; then
+  warn "Retired user-scope MCP cleanup was incomplete"
+fi
 
 info "Registering user-scope MCP servers from configs/mcp.json..."
 register_mcp_from_file "$DOTFILES_DIR/configs/mcp.json"

@@ -22,9 +22,9 @@ source "$(cd "$(dirname "$0")" && pwd)/lib/common.sh"
 #   scripts/update.sh --no-pull  skip the git pull step
 #   scripts/update.sh --setup-only  apply config without tool/app upgrades
 #
-# Honors DRY_RUN. claude-code (the running app / cask) is left for deliberate
-# upgrade. Independent refresh/install failures are collected so all safe steps
-# run, but the final status remains non-zero when any requested step failed.
+# Honors DRY_RUN. Independent refresh/install failures are collected so all
+# safe steps run, but the final status remains non-zero when any requested step
+# failed.
 
 APPLY=true
 DO_PULL=true

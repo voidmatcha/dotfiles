@@ -17,7 +17,19 @@ MATT_POCOCK_SKILLS_REF="${MATT_POCOCK_SKILLS_REF:-2bf70051928429983de3b5718d2771
 GRILL_ME_SKILL_URL="https://raw.githubusercontent.com/mattpocock/skills/${MATT_POCOCK_SKILLS_REF}/skills/productivity/grill-me/SKILL.md"
 OPENAI_SKILLS_REF="${OPENAI_SKILLS_REF:-a8924c2a35cfa290458852c4fad17c9133054c2e}"
 FIGMA_IMPLEMENT_DESIGN_SKILL_URL="https://raw.githubusercontent.com/openai/skills/${OPENAI_SKILLS_REF}/skills/.curated/figma-implement-design/SKILL.md"
-RETIRED_WORKFLOW_SKILLS=(autopilot ralplan ultraqa ultrawork)
+RETIRED_WORKFLOW_SKILLS=(
+  autopilot
+  ralplan
+  ultraqa
+  ultrawork
+  asset-improver
+  cmux-doctor
+  cmux-handoff-runner
+  purplemux-bridge
+)
+RETIRED_LOCKED_SKILL_SOURCES=(
+  "ultrawork=yeachan-heo/oh-my-claudecode"
+)
 
 usage() {
   cat <<'USAGE'
@@ -89,6 +101,79 @@ retire_workflow_skills() {
       info "Retired $surface workflow skill recoverably: $name -> $destination"
     done
   done
+}
+
+retire_workflow_skill_metadata() {
+  local lock_file="$HOME/.agents/.skill-lock.json"
+  local trash_file="$HOME/.Trash/dotfiles-retired-workflow-skills/metadata/.skill-lock.json"
+  local mode="apply" removed
+
+  [ -f "$lock_file" ] || return 0
+  command -v python3 >/dev/null 2>&1 || {
+    warn "python3 not found; cannot retire stale workflow skill metadata"
+    return 1
+  }
+  $DRY_RUN && mode="dry-run"
+  if [ "$mode" = "apply" ]; then
+    trash_file="$(next_backup_path "$trash_file")"
+  fi
+
+  if ! removed="$(python3 - "$lock_file" "$trash_file" "$mode" \
+      "${RETIRED_LOCKED_SKILL_SOURCES[@]}" <<'PY'
+import json
+import os
+import shutil
+import sys
+import tempfile
+from pathlib import Path
+
+lock_file = Path(sys.argv[1])
+backup_file = Path(sys.argv[2])
+mode = sys.argv[3]
+expected = dict(item.split("=", 1) for item in sys.argv[4:])
+
+data = json.loads(lock_file.read_text(encoding="utf-8"))
+skills = data.get("skills")
+if not isinstance(skills, dict):
+    raise SystemExit("skill lock has no object-valued skills field")
+
+retired = [
+    name
+    for name, source in expected.items()
+    if isinstance(skills.get(name), dict)
+    and skills[name].get("source") == source
+]
+if not retired:
+    raise SystemExit(0)
+
+print(", ".join(sorted(retired)))
+if mode == "dry-run":
+    raise SystemExit(0)
+
+backup_file.parent.mkdir(parents=True, exist_ok=True)
+shutil.copy2(lock_file, backup_file)
+for name in retired:
+    del skills[name]
+
+with tempfile.NamedTemporaryFile(
+    "w", encoding="utf-8", dir=lock_file.parent, delete=False
+) as handle:
+    json.dump(data, handle, ensure_ascii=False, indent=2)
+    handle.write("\n")
+    temp_name = handle.name
+os.replace(temp_name, lock_file)
+PY
+  )"; then
+    warn "Could not reconcile retired workflow skill metadata: $lock_file"
+    return 1
+  fi
+
+  [ -n "$removed" ] || return 0
+  if [ "$mode" = "dry-run" ]; then
+    info "[dry-run] retire workflow skill metadata: $removed"
+  else
+    info "Retired workflow skill metadata: $removed (backup: $trash_file)"
+  fi
 }
 
 retire_legacy_graphify() {
@@ -468,6 +553,7 @@ install_claude_local_plugin() {
 }
 
 retire_workflow_skills
+retire_workflow_skill_metadata
 retire_legacy_graphify
 $retire_only && exit 0
 

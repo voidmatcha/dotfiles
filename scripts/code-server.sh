@@ -13,9 +13,14 @@ CODE_SERVER_EXTENSIONS=(
 
 install_code_server_extensions() {
   local ext
+  local -a install_args
   if $DRY_RUN; then
     for ext in "${CODE_SERVER_EXTENSIONS[@]}"; do
-      info "[dry-run] code-server --install-extension $ext"
+      if $UPGRADE; then
+        info "[dry-run] code-server --install-extension $ext --force"
+      else
+        info "[dry-run] code-server --install-extension $ext"
+      fi
     done
     return 0
   fi
@@ -26,8 +31,12 @@ install_code_server_extensions() {
   fi
 
   for ext in "${CODE_SERVER_EXTENSIONS[@]}"; do
+    install_args=(--install-extension "$ext")
+    if $UPGRADE; then
+      install_args+=(--force)
+    fi
     info "Installing code-server extension: $ext"
-    with_timeout 90 code-server --install-extension "$ext" \
+    with_timeout 90 code-server "${install_args[@]}" \
       || warn "code-server extension install failed: $ext"
   done
 }

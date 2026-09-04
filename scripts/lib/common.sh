@@ -162,6 +162,27 @@ with_timeout() {
   LC_ALL=C LC_CTYPE=C LANG=C perl -e 'alarm shift; exec @ARGV' "$secs" "$@"
 }
 
+# run_sdkman <sdk args...>
+# Current SDKMAN releases contain shell-specific parameter expansion. Sourcing
+# them into macOS' Bash 3.2 can fail before `sdk` runs, while the configured
+# interactive shell is zsh. Keep SDKMAN in a zsh subprocess and let its on-disk
+# candidate symlinks carry the result back to later shells.
+run_sdkman() {
+  if ! command -v zsh >/dev/null 2>&1; then
+    warn "zsh not found — cannot run SDKMAN safely"
+    return 1
+  fi
+  if [ ! -s "$HOME/.sdkman/bin/sdkman-init.sh" ]; then
+    warn "SDKMAN init script not found"
+    return 1
+  fi
+
+  SDKMAN_DIR="$HOME/.sdkman" zsh -c '
+    source "$SDKMAN_DIR/bin/sdkman-init.sh"
+    sdk "$@"
+  ' dotfiles-sdkman "$@"
+}
+
 # sudo_ok "<description>"
 # Gate for sudo-requiring steps. Interactive runs always proceed (sudo prompts
 # as usual). Non-interactive runs proceed only when sudo works without a
@@ -201,6 +222,145 @@ git_pull_if_clean() {
     return 0
   fi
   git -C "$dir" pull --ff-only --quiet 2>/dev/null || warn "git pull failed: $dir"
+}
+
+# ensure_npm_global_latest <package> <cli>
+# Install a missing global CLI, or ask npm to converge it to the registry's
+# latest release during an explicit --upgrade run. npm itself performs the
+# version comparison, so an already-current package remains a cheap no-op.
+ensure_npm_global_latest() {
+  local package="$1"
+  local cli="$2"
+
+  if $DRY_RUN; then
+    if $UPGRADE; then
+      info "[dry-run] npm install -g ${package}@latest"
+    else
+      info "[dry-run] npm install -g ${package}@latest (if $cli is missing)"
+    fi
+    return 0
+  fi
+
+  if command -v "$cli" >/dev/null 2>&1 && ! $UPGRADE; then
+    info "$cli already installed"
+    return 0
+  fi
+  if ! command -v npm >/dev/null 2>&1; then
+    warn "npm not found — cannot install or update $package"
+    return 1
+  fi
+
+  if command -v "$cli" >/dev/null 2>&1; then
+    info "Ensuring $cli is at the latest release..."
+  else
+    info "Installing $cli (global)..."
+  fi
+  npm install -g "${package}@latest"
+}
+
+# ensure_pipx_latest <package> <cli>
+# pipx has a native upgrade operation and preserves the existing environment
+# when the installed release is already current.
+ensure_pipx_latest() {
+  local package="$1"
+  local cli="$2"
+
+  if $DRY_RUN; then
+    if $UPGRADE; then
+      info "[dry-run] pipx upgrade $package"
+    else
+      info "[dry-run] pipx install $package (if $cli is missing)"
+    fi
+    return 0
+  fi
+
+  if ! command -v pipx >/dev/null 2>&1; then
+    warn "pipx not found — cannot install or update $package"
+    return 1
+  fi
+  if command -v "$cli" >/dev/null 2>&1; then
+    if $UPGRADE; then
+      info "Ensuring $cli is at the latest release..."
+      pipx upgrade "$package"
+    else
+      info "$cli already installed"
+    fi
+  else
+    info "Installing $cli via pipx..."
+    pipx install "$package"
+  fi
+}
+
+# ensure_github_release_binary_latest <repo> <asset> <destination> <name>
+# Refresh a directly downloaded GitHub release binary only when the latest tag
+# differs. The candidate is downloaded and version-checked beside the existing
+# binary before an atomic rename, so a network or asset failure keeps the last
+# working version intact.
+ensure_github_release_binary_latest() {
+  local repo="$1"
+  local asset="$2"
+  local destination="$3"
+  local name="$4"
+  local metadata latest_tag latest_version latest_url current_output current_version
+  local candidate candidate_output candidate_version
+
+  if [ -x "$destination" ] && ! $UPGRADE; then
+    info "$name already installed"
+    return 0
+  fi
+  if $DRY_RUN; then
+    if [ -x "$destination" ]; then
+      info "[dry-run] check $repo latest release and update $destination if newer"
+    else
+      info "[dry-run] install $repo latest release to $destination"
+    fi
+    return 0
+  fi
+  if ! command -v jq >/dev/null 2>&1; then
+    warn "$name: jq is required to resolve GitHub release metadata"
+    return 1
+  fi
+
+  if ! metadata="$(curl -fsSL "https://api.github.com/repos/${repo}/releases/latest")"; then
+    warn "$name: failed to query the latest GitHub release"
+    return 1
+  fi
+  latest_tag="$(printf '%s' "$metadata" | jq -r '.tag_name // empty')"
+  latest_version="${latest_tag#v}"
+  latest_url="$(printf '%s' "$metadata" | jq -r --arg asset "$asset" \
+    '.assets[]? | select(.name == $asset) | .browser_download_url' | head -1)"
+  if [ -z "$latest_tag" ] || [ -z "$latest_url" ] || [ "$latest_url" = "null" ]; then
+    warn "$name: latest release does not contain asset $asset"
+    return 1
+  fi
+
+  if [ -x "$destination" ]; then
+    current_output="$("$destination" --version 2>/dev/null || true)"
+    current_version="$(printf '%s' "$current_output" | grep -Eo '[0-9]+(\.[0-9]+)+' | head -1 || true)"
+    if [ -n "$current_version" ] && [ "$current_version" = "$latest_version" ]; then
+      info "$name is already latest ($latest_tag)"
+      return 0
+    fi
+  fi
+
+  mkdir -p "$(dirname "$destination")"
+  candidate="$(mktemp "${destination}.tmp.XXXXXX")"
+  if ! curl -fsSL "$latest_url" -o "$candidate"; then
+    rm -f "$candidate"
+    warn "$name: download failed from $latest_url; keeping the installed version"
+    return 1
+  fi
+  chmod +x "$candidate"
+  candidate_output="$("$candidate" --version 2>/dev/null || true)"
+  candidate_version="$(printf '%s' "$candidate_output" | grep -Eo '[0-9]+(\.[0-9]+)+' | head -1 || true)"
+  if [ -z "$candidate_version" ] || [ "$candidate_version" != "$latest_version" ]; then
+    rm -f "$candidate"
+    warn "$name: downloaded asset failed version validation; keeping the installed version"
+    return 1
+  fi
+
+  mv -f "$candidate" "$destination"
+  info "$name updated to $latest_tag"
 }
 
 # company_overlay_current [dotfiles-root]

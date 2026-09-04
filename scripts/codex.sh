@@ -426,7 +426,7 @@ if $DRY_RUN; then
       info "[dry-run] would: npm install -g @openai/codex@latest"
     fi
   else
-    info "[dry-run] npm install -g @openai/codex"
+    info "[dry-run] npm install -g @openai/codex@latest"
   fi
   install_codex_cmux_skill
   ensure_claude_mem_codex_hooks >/dev/null
@@ -440,7 +440,7 @@ if $DRY_RUN; then
 fi
 
 # ── Install Codex CLI ──
-#   npm install -g @openai/codex
+#   npm install -g @openai/codex@latest
 codex_upgrade_failed=0
 if command -v codex &>/dev/null; then
   CODEX_VERSION=$(codex --version 2>/dev/null || echo "unknown")
@@ -458,7 +458,7 @@ if command -v codex &>/dev/null; then
     fi
   fi
 elif $DRY_RUN; then
-  info "[dry-run] npm install -g @openai/codex"
+  info "[dry-run] npm install -g @openai/codex@latest"
 else
   if ! command -v npm &>/dev/null; then
     warn "npm not found in PATH"
@@ -466,10 +466,10 @@ else
     exit 1
   fi
 
-  if npm install -g @openai/codex; then
+  if npm install -g @openai/codex@latest; then
     info "Codex CLI installed"
   else
-    warn "npm install -g @openai/codex failed"
+    warn "npm install -g @openai/codex@latest failed"
     exit 1
   fi
 fi

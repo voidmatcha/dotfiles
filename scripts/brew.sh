@@ -21,13 +21,21 @@ else
   info "Homebrew already installed"
 fi
 
+# Remove only explicitly retired tools before the current bundle is applied.
+# This prevents old casks/formulae from blocking their replacements while
+# preserving packages the user installed independently.
+bash "$DOTFILES_DIR/scripts/retire.sh"
+
 # Run Brewfile
 info "Installing packages from Brewfile..."
 if $DRY_RUN; then
-  info "[dry-run] Skipping brew bundle"
+  if $UPGRADE; then
+    info "[dry-run] would: brew bundle --file=$DOTFILES_DIR/Brewfile"
+  else
+    info "[dry-run] would: brew bundle --file=$DOTFILES_DIR/Brewfile --no-upgrade"
+  fi
   info "[dry-run] Packages that would be installed:"
   cat "$DOTFILES_DIR/Brewfile"
-  $UPGRADE && info "[dry-run] would: brew upgrade --formula (outdated formulae)"
 else
   # Trust only the Bun formula rather than the whole tap.
   if brew trust --help >/dev/null 2>&1; then
@@ -42,13 +50,12 @@ else
     info "Removing docker-completion (conflicts with docker formula's bundled completions)"
     brew uninstall --force docker-completion
   fi
-  brew bundle --file="$DOTFILES_DIR/Brewfile"
-
-  # --upgrade: bump already-installed formulae (brew update ran above).
-  if $UPGRADE; then
-    info "Upgrading outdated formulae (--upgrade)..."
-    brew upgrade --formula || warn "brew upgrade reported errors (continuing)"
-  fi
+  brew_bundle_args=(--file="$DOTFILES_DIR/Brewfile")
+  # brew bundle already upgrades outdated entries declared in the Brewfile.
+  # Setup-only explicitly disables that behavior; never call bare `brew
+  # upgrade`, which would mutate unrelated formulae and casks on the machine.
+  $UPGRADE || brew_bundle_args+=(--no-upgrade)
+  brew bundle "${brew_bundle_args[@]}"
 fi
 
 info "Homebrew setup done"

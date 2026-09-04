@@ -6,16 +6,46 @@ source "$(cd "$(dirname "$0")" && pwd)/lib/common.sh"
 
 # ── nvm + Node.js ──
 info "Installing nvm..."
+install_nvm_latest() {
+  local allow_fallback="$1"
+  local nvm_version installer
+
+  if $DRY_RUN; then
+    info "[dry-run] install/update nvm from its latest GitHub release"
+    return 0
+  fi
+
+  nvm_version="$(curl -fsSL https://api.github.com/repos/nvm-sh/nvm/releases/latest 2>/dev/null \
+    | grep '"tag_name"' | cut -d'"' -f4 || true)"
+  if [ -z "$nvm_version" ]; then
+    if $allow_fallback; then
+      nvm_version="v0.40.5"
+      warn "nvm latest release lookup failed — using bootstrap fallback $nvm_version"
+    else
+      warn "nvm latest release lookup failed — keeping the installed version"
+      return 1
+    fi
+  fi
+
+  installer="$(mktemp)"
+  if curl -fsSL "https://raw.githubusercontent.com/nvm-sh/nvm/${nvm_version}/install.sh" -o "$installer" \
+      && NVM_VERSION="$nvm_version" bash "$installer"; then
+    info "nvm converged to $nvm_version"
+  else
+    rm -f "$installer"
+    warn "nvm install/update failed — continuing with the installed version"
+    return 1
+  fi
+  rm -f "$installer"
+}
+
 if [ -d "$HOME/.nvm" ]; then
   info "nvm already installed"
-else
-  if $DRY_RUN; then
-    info "[dry-run] Skipping nvm install"
-  else
-    NVM_VERSION=$(curl -fsSL https://api.github.com/repos/nvm-sh/nvm/releases/latest 2>/dev/null | grep '"tag_name"' | cut -d'"' -f4 || true)
-    NVM_VERSION="${NVM_VERSION:-v0.40.5}"
-    curl -o- "https://raw.githubusercontent.com/nvm-sh/nvm/${NVM_VERSION}/install.sh" | bash
+  if $UPGRADE; then
+    install_nvm_latest false || true
   fi
+else
+  install_nvm_latest true || true
 fi
 
 if ! $DRY_RUN; then
@@ -40,6 +70,9 @@ fi
 info "Installing SDKMAN..."
 if [ -d "$HOME/.sdkman" ]; then
   info "SDKMAN already installed"
+  if $DRY_RUN && $UPGRADE; then
+    info "[dry-run] sdk selfupdate force"
+  fi
 else
   if $DRY_RUN; then
     info "[dry-run] Skipping SDKMAN install"
@@ -49,18 +82,17 @@ else
 fi
 
 if ! $DRY_RUN; then
-  export SDKMAN_DIR="$HOME/.sdkman"
-  # set +u: SDKMAN references unset variables internally (ZSH_VERSION, SDKMAN_CANDIDATES_CACHE, etc.)
-  set +u
-  # shellcheck source=/dev/null
-  [[ -s "$SDKMAN_DIR/bin/sdkman-init.sh" ]] && source "$SDKMAN_DIR/bin/sdkman-init.sh"
+  if $UPGRADE; then
+    info "Updating SDKMAN..."
+    run_sdkman selfupdate force < /dev/null \
+      || warn "SDKMAN self-update failed — continuing with the installed version"
+  fi
 
   info "Installing Java LTS..."
-  sdk install java < /dev/null 2>/dev/null || info "⚠️  Java install failed — check manually"
+  run_sdkman install java < /dev/null 2>/dev/null || info "⚠️  Java install failed — check manually"
 
   info "Installing Maven..."
-  sdk install maven < /dev/null 2>/dev/null || info "⚠️  Maven install failed — check manually"
-  set -u
+  run_sdkman install maven < /dev/null 2>/dev/null || info "⚠️  Maven install failed — check manually"
 else
   info "[dry-run] Skipping Java + Maven install"
 fi
@@ -71,6 +103,7 @@ info "Installing pyenv..."
 # loaded yet in this non-interactive shell, but the install would still be there).
 if command -v pyenv &>/dev/null || [ -x "$HOME/.pyenv/bin/pyenv" ]; then
   info "pyenv already installed"
+  $UPGRADE && git_pull_if_clean "$HOME/.pyenv"
 else
   if $DRY_RUN; then
     info "[dry-run] Skipping pyenv install"
@@ -100,16 +133,8 @@ fi
 
 # ── Playwright CLI (for coding agents) ──
 info "Installing Playwright CLI..."
-if $DRY_RUN; then
-  info "[dry-run] Skipping Playwright CLI install"
-else
-  if ! command -v playwright-cli &>/dev/null; then
-    info "Installing Playwright CLI (global)"
-    npm install -g @playwright/cli@latest 2>/dev/null || info "⚠️  Playwright CLI install failed — check manually"
-  else
-    info "Playwright CLI already installed"
-  fi
-fi
+ensure_npm_global_latest "@playwright/cli" "playwright-cli" \
+  || warn "Playwright CLI install/update failed — check manually"
 
 # ── whisper-cpp model download ──
 WHISPER_MODELS_DIR="$HOME/.whisper/models"
@@ -130,7 +155,11 @@ fi
 # ── serena (MCP server: semantic code search + editing) ──
 info "Checking serena..."
 if $DRY_RUN; then
-  info "[dry-run] uv tool install serena-agent@latest && serena init"
+  if $UPGRADE; then
+    info "[dry-run] uv tool upgrade serena-agent --prerelease=allow && serena init"
+  else
+    info "[dry-run] uv tool install serena-agent@latest if missing && serena init"
+  fi
 elif ! command -v uv &>/dev/null; then
   warn "uv not installed — skipping serena (run brew bundle first)"
 else
@@ -139,6 +168,10 @@ else
     if ! uv tool install -p 3.13 serena-agent@latest --prerelease=allow; then
       warn "serena install failed — try manually: uv tool install -p 3.13 serena-agent@latest --prerelease=allow"
     fi
+  elif $UPGRADE; then
+    info "Ensuring serena is at the latest release..."
+    uv tool upgrade serena-agent --prerelease=allow \
+      || warn "serena update failed — continuing with the installed version"
   else
     info "serena already installed"
   fi
@@ -155,45 +188,21 @@ fi
 
 # ── defuddle (clean web page extraction) ──
 info "Checking defuddle..."
-if $DRY_RUN; then
-  info "[dry-run] npm install -g defuddle"
-else
-  if ! command -v defuddle &>/dev/null; then
-    info "Installing defuddle (global)"
-    npm install -g defuddle 2>/dev/null || info "⚠️  defuddle install failed — check manually"
-  else
-    info "defuddle already installed"
-  fi
-fi
+ensure_npm_global_latest "defuddle" "defuddle" \
+  || warn "defuddle install/update failed — check manually"
 
 # ── codegraph (pre-indexed code knowledge graph MCP for Claude/Codex) ──
 # Read-only complement to serena. Per-project SQLite index built by tree-sitter;
 # zero-config, watcher auto-syncs on save. Personal user-scope only — not in
 # NAVER MCP catalog, so excluded from ~/work/.mcp.json (company project scope).
 info "Checking codegraph..."
-if $DRY_RUN; then
-  info "[dry-run] npm install -g @colbymchenry/codegraph"
-else
-  if ! command -v codegraph &>/dev/null; then
-    info "Installing codegraph (global)"
-    npm install -g @colbymchenry/codegraph 2>/dev/null || info "⚠️  codegraph install failed — check manually"
-  else
-    info "codegraph already installed ($(codegraph --version 2>/dev/null || echo unknown))"
-  fi
-fi
+ensure_npm_global_latest "@colbymchenry/codegraph" "codegraph" \
+  || warn "codegraph install/update failed — check manually"
 
 # ── ccusage (Claude Code usage dashboard) ──
 info "Checking ccusage..."
-if $DRY_RUN; then
-  info "[dry-run] Skipping ccusage install"
-else
-  if ! command -v ccusage &>/dev/null; then
-    info "Installing ccusage (global)"
-    npm install -g ccusage 2>/dev/null || info "⚠️  ccusage install failed — check manually"
-  else
-    info "ccusage already installed"
-  fi
-fi
+ensure_npm_global_latest "ccusage" "ccusage" \
+  || warn "ccusage install/update failed — check manually"
 
 # ── rtk (Claude Code hook for LLM token savings) ──
 # `rtk init --global --hook-only` registers the in-place hook without appending
@@ -228,66 +237,52 @@ fi
 
 # ── agent-browser (Vercel Labs) ──
 info "Checking agent-browser..."
-if $DRY_RUN; then
-  info "[dry-run] Skipping agent-browser install"
+ARCH="$(uname -m)"
+if [ "$ARCH" = "arm64" ]; then
+  AGENT_BROWSER_ASSET="agent-browser-darwin-arm64"
 else
-  # Check both PATH and the install location (~/.local/bin may not be on
-  # PATH yet during install.sh execution).
-  if command -v agent-browser &>/dev/null || [ -x "$HOME/.local/bin/agent-browser" ]; then
-    info "agent-browser already installed"
-  else
-    info "Installing agent-browser..."
-    mkdir -p "$HOME/.local/bin"
-    ARCH="$(uname -m)"
-    if [ "$ARCH" = "arm64" ]; then
-      ASSET="agent-browser-darwin-arm64"
-    else
-      ASSET="agent-browser-darwin-x64"
-    fi
-    LATEST_URL="$(curl -fsSL https://api.github.com/repos/vercel-labs/agent-browser/releases/latest 2>/dev/null \
-      | grep "browser_download_url" | grep "$ASSET\"" | head -1 | cut -d'"' -f4)"
-    if [ -z "$LATEST_URL" ]; then
-      warn "agent-browser: failed to resolve release URL (GitHub API rate-limit or asset rename?) — install manually"
-    elif curl -fsSL "$LATEST_URL" -o "$HOME/.local/bin/agent-browser" && chmod +x "$HOME/.local/bin/agent-browser"; then
-      info "agent-browser installed ($LATEST_URL)"
-    else
-      warn "agent-browser: download failed from $LATEST_URL — install manually"
-      rm -f "$HOME/.local/bin/agent-browser"
-    fi
-  fi
+  AGENT_BROWSER_ASSET="agent-browser-darwin-x64"
 fi
+ensure_github_release_binary_latest \
+  "vercel-labs/agent-browser" "$AGENT_BROWSER_ASSET" \
+  "$HOME/.local/bin/agent-browser" "agent-browser" \
+  || warn "agent-browser install/update failed — continuing with the installed version"
 
 # ── portless (port management) ──
 info "Checking portless..."
-if $DRY_RUN; then
-  info "[dry-run] Skipping portless install"
-else
-  if ! command -v portless &>/dev/null; then
-    info "Installing portless (global)"
-    npm install -g portless 2>/dev/null || info "⚠️  portless install failed — check manually"
-  else
-    info "portless already installed"
-  fi
-fi
+ensure_npm_global_latest "portless" "portless" \
+  || warn "portless install/update failed — check manually"
 
 # ── feedparser (RSS/Atom parser, Python lib used inline by agents) ──
 info "Checking feedparser..."
 if $DRY_RUN; then
-  info "[dry-run] python3 -m pip install --user feedparser"
-elif python3 -c "import feedparser" 2>/dev/null; then
+  if $UPGRADE; then
+    info "[dry-run] python3 -m pip install --user --upgrade feedparser"
+  else
+    info "[dry-run] python3 -m pip install --user feedparser if missing"
+  fi
+elif python3 -c "import feedparser" 2>/dev/null && ! $UPGRADE; then
   info "feedparser already installed"
 else
-  python3 -m pip install --user feedparser 2>/dev/null || warn "feedparser install failed — try: python3 -m pip install --user feedparser"
+  pip_args=(install --user)
+  $UPGRADE && pip_args+=(--upgrade)
+  python3 -m pip "${pip_args[@]}" feedparser 2>/dev/null || warn "feedparser install/update failed"
 fi
 
 # ── PyYAML (Codex plugin validator dependency) ──
 info "Checking PyYAML..."
 if $DRY_RUN; then
-  info "[dry-run] python3 -m pip install --user PyYAML"
-elif python3 -c "import yaml" 2>/dev/null; then
+  if $UPGRADE; then
+    info "[dry-run] python3 -m pip install --user --upgrade PyYAML"
+  else
+    info "[dry-run] python3 -m pip install --user PyYAML if missing"
+  fi
+elif python3 -c "import yaml" 2>/dev/null && ! $UPGRADE; then
   info "PyYAML already installed"
 else
-  python3 -m pip install --user PyYAML 2>/dev/null || warn "PyYAML install failed — try: python3 -m pip install --user PyYAML"
+  pip_args=(install --user)
+  $UPGRADE && pip_args+=(--upgrade)
+  python3 -m pip "${pip_args[@]}" PyYAML 2>/dev/null || warn "PyYAML install/update failed"
 fi
 
 # ── Social-platform read tools (Agent-Reach upstream tools) ──
@@ -302,15 +297,8 @@ for tool_pkg in "twitter-cli" "rdt-cli"; do
     rdt-cli)     cli="rdt"     ;;
   esac
   info "Checking $cli ($tool_pkg)..."
-  if $DRY_RUN; then
-    info "[dry-run] pipx install $tool_pkg"
-  elif command -v "$cli" &>/dev/null; then
-    info "$cli already installed"
-  elif command -v pipx &>/dev/null; then
-    pipx install "$tool_pkg" 2>/dev/null || warn "$tool_pkg install failed — try: pipx install $tool_pkg"
-  else
-    warn "pipx not installed — skipping $tool_pkg. Install pipx first (brew install pipx)"
-  fi
+  ensure_pipx_latest "$tool_pkg" "$cli" \
+    || warn "$tool_pkg install/update failed — continuing with the installed version"
 done
 
 # Initial browser-login flow — interactive, must be run by the user manually.
@@ -325,15 +313,7 @@ fi
 
 # ── wrangler (Cloudflare Workers/Pages/R2/D1 CLI) ──
 info "Checking wrangler..."
-if $DRY_RUN; then
-  info "[dry-run] Skipping wrangler install"
-else
-  if ! command -v wrangler &>/dev/null; then
-    info "Installing wrangler (global)"
-    npm install -g wrangler 2>/dev/null || info "⚠️  wrangler install failed — check manually"
-  else
-    info "wrangler already installed"
-  fi
-fi
+ensure_npm_global_latest "wrangler" "wrangler" \
+  || warn "wrangler install/update failed — check manually"
 
 info "Dev environment setup done"
